@@ -385,6 +385,7 @@ class Asset:
                 when = "за всё время" if since is None else f"с {MON[since.month - 1]} {since.year}"
                 out.append({"type": "record", "leg": leg, "up": higher, "score": 4 + min(yrs, 10) * 0.6 + (1 if since is None else 0),
                             "tag": f"{LEG_WORD[leg]}: {'максимум' if higher else 'минимум'} {when}",
+                            "what": f"{'максимум' if higher else 'минимум'} {when}",
                             "zone_from": since or self.dates[0], "zone": "вся история" if since is None else when})
         return out
 
@@ -394,7 +395,7 @@ class Asset:
             k = weekly_streak(self.legs[leg], self.dates, i)
             if k >= 2:
                 out.append({"type": "streak", "leg": leg, "up": True, "score": min(2.5 + k * 0.8, 7),
-                            "tag": f"{LEG_WORD[leg]} растёт {k}-ю неделю подряд", "zone_from": self.dates[i] - timedelta(days=7 * k + 3),
+                            "tag": f"{LEG_WORD[leg]} растёт {k}-ю неделю подряд", "what": f"{k}-ю неделю подряд", "zone_from": self.dates[i] - timedelta(days=7 * k + 3),
                             "zone": f"{k} нед подряд"})
         return out
 
@@ -449,6 +450,7 @@ class Asset:
                 if ratio >= MOVE_RATIO and abs(mv) / max(v[i], 1) >= scr.ATR_MIN_REL * math.sqrt(n):
                     out.append({"type": "move", "leg": leg, "up": mv > 0, "score": 3 + min(ratio, 10) * 0.5, "n": n,
                                 "tag": f"×{ratio:.1f}".replace(".", ","), "note": note, "ratio": ratio,
+                                "what": f"×{ratio:.1f} {note}".replace(".", ","),
                                 "zone_from": self.dates[i - n], "zone": zone, "start": self.dates[i - n]})
         return out
 
@@ -491,17 +493,37 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         main = c["sig"][0]
         last = len(a.dates) - 1
         leg, vals, dates = main["leg"], a.legs[main["leg"]], a.dates
-        signal = main.get("signal") or leg_verb(leg, main["up"])
+        # Заголовок — одна фраза: «Физлица нарастили шорт — максимум за всё время». Ниже — одна тихая строка:
+        # до двух находок, которые подтверждают главную (та же сторона, то же направление) или дают контекст цены.
+        # Противоречивые (растёт и лонг, и шорт) не показываем — как завод, который пишет про одну тему.
+        if main.get("signal"):
+            signal = main["signal"]
+        elif leg in ("nl", "ns"):                  # число людей — своими словами: «Людей в шорте — максимум за всё время»
+            signal = f"{LEG_WORD[leg]} — {main['what']}"
+        else:
+            signal = leg_verb(leg, main["up"]) + " — " + main["what"]
+        side = lambda g: "L" if g["leg"] in ("long", "nl") else "S"  # noqa: E731
         tags: List[Dict[str, Any]] = []
-        seen = set()
-        for g in c["sig"]:                         # главная находка + до двух других того же дня
-            if len(tags) >= 3 or g["tag"] in seen:
+        if main["type"] == "divergence":
+            tags.append({"tone": "muted", "text": main["tag"]})
+        seen = {main["tag"]}
+        for g in c["sig"][1:]:
+            if len(tags) >= 2 or g["tag"] in seen:
+                continue
+            agrees = g["type"] in ("divergence", "reversal") or (side(g) == side(main) and g["up"] == main["up"])
+            if not agrees:
                 continue
             seen.add(g["tag"])
-            if g["type"] == "move":
-                tags.append({"tone": "pill", "text": g["tag"], "note": g["note"]})
+            what = g.get("what") or g["tag"]
+            if g["type"] in ("divergence", "reversal"):
+                text = what
+            elif main["type"] in ("divergence", "reversal"):    # у заголовка без стороны — называем сторону
+                text = g["tag"][0].lower() + g["tag"][1:]
+            elif g["leg"] == leg:
+                text = what
             else:
-                tags.append({"tone": "fill" if g["type"] == "record" and g["zone"] == "вся история" else "accent", "text": g["tag"]})
+                text = f"{LEG_WORD[g['leg']].lower()} — {what}"
+            tags.append({"tone": "muted", "text": text})
         # История: такие же находки этой стороны за 3 года, по одной на эпизод, нынешний не в счёт
         key, far = _sig_key(main), max(300, last - 750)
         hits, info = [], {}
@@ -525,8 +547,9 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         if past["cases"]:
             start = min(start, date.fromisoformat(past["cases"][-1]["date"]) - timedelta(days=20))
         start = max(start, dates[0])
-        chart: Dict[str, Any] = {"type": "legs", "leg": leg,
-                                 "zone": {"from": max(zf, dates[0]).isoformat(), "label": main["zone"]}}
+        chart: Dict[str, Any] = {"type": "legs", "leg": leg}
+        if main["zone"] != "вся история":          # зона на весь график ничего не выделяет — рекорд и так в заголовке
+            chart["zone"] = {"from": max(zf, dates[0]).isoformat(), "label": main["zone"]}
         if main.get("start"):
             chart["start"] = {"date": main["start"].isoformat(), "value": round(vals[dates.index(main["start"])])}
         daily_from = start if past["cases"] or (dates[last] - start).days <= 760 else dates[last] - timedelta(days=760)

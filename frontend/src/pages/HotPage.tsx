@@ -82,17 +82,15 @@ function Plaque({ children, tone }: { children: ReactNode; tone: 'fill' | 'accen
   return <span style={style[tone]}>{children}</span>;
 }
 
+// Под заголовком позиций — одна тихая строка: подтверждающие находки через точку, без заливок и оранжевого
+// (оранжевый — только зона события на графике).
 function OiTags({ tags }: { tags: HotTag[] }) {
   const { t } = useTranslation();
+  if (!tags.length) return null;
   return (
-    <>
-      {tags.map((tg, i) => (
-        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Plaque tone={tg.tone}>{t(tg.text)}</Plaque>
-          {tg.note && <Plaque tone="muted">{t(tg.note)}</Plaque>}
-        </span>
-      ))}
-    </>
+    <span style={{ fontSize: 13, lineHeight: 1.35, color: 'var(--text-muted)' }}>
+      {tags.map(tg => t(tg.text) + (tg.note ? ` ${t(tg.note)}` : '')).join(' · ')}
+    </span>
   );
 }
 
@@ -176,7 +174,7 @@ export function HotCardView({ card }: { card: HotCard }) {
   } else if (card.kind === 'flows') {
     plaques = <>
       <Plaque tone="strong">{t('{{v}} млрд ₽', { v: sgn(card.amount, Math.abs(card.amount) >= 10 ? 0 : 2) })}</Plaque>
-      {card.note && <Plaque tone="accent">{t(card.note)}</Plaque>}
+      {card.note && <Plaque tone="muted">{t(card.note)}</Plaque>}
       <Plaque tone="muted">{card.date_label}</Plaque>
     </>;
     chart = <BarsChartCard chart={card.chart} highlight={picked} />;
@@ -205,7 +203,7 @@ export function HotCardView({ card }: { card: HotCard }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.25, color: 'var(--text-primary)' }}>{t(card.signal)}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minHeight: 22 }}>{plaques}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>{plaques}</div>
       </div>
       <div style={{ minWidth: 0, marginTop: 2 }}>{chart}</div>
       {(card.kind === 'oi' || card.kind === 'flows' || card.kind === 'season') && card.past && <PastCases past={card.past} onPick={setPicked} />}

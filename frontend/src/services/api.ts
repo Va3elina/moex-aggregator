@@ -3612,7 +3612,7 @@ export interface HotPastCase {
   curve?: [number, number][];                                     // сезонность: путь того года (торговый день, %)
 }
 export interface HotPast { title: string; horizons: string[]; cases: HotPastCase[]; base_up: number | null }
-export interface HotTag { tone: 'fill' | 'accent' | 'pill'; text: string; note?: string }
+export interface HotTag { tone: 'fill' | 'accent' | 'pill' | 'muted'; text: string; note?: string }
 
 export interface HotOiCard {
   kind: 'oi'; id: string; sectype: string; name: string; signal: string; tags: HotTag[]; date: string;
