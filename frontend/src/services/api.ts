@@ -3606,7 +3606,12 @@ export interface HotSeasonChart {
   zone_to: number;
 }
 // r — изменение цены через каждый период из horizons; from/zone — окно прошлого сдвига (для показа на графике)
-export interface HotPastCase { date: string; label: string; r: (number | null)[]; from?: string; zone?: string }
+export interface HotPastCase {
+  date: string; label: string; r: (number | null)[];
+  from?: string; zone?: string;                                   // позиции: окно прошлого сдвига
+  hl?: string; run?: { from: string; to: string; label: string } | null;   // фонды: столбик и серия случая
+  curve?: [number, number][];                                     // сезонность: путь того года (торговый день, %)
+}
 export interface HotPast { title: string; horizons: string[]; cases: HotPastCase[]; base_up: number | null }
 export interface HotTag { tone: 'fill' | 'accent' | 'pill'; text: string; note?: string }
 
@@ -3624,7 +3629,7 @@ export interface HotTradesCard {
 }
 export interface HotSeasonCard {
   kind: 'season'; id: string; secid: string; sectype: string; name: string; signal: string; hits: string;
-  date_label: string; chart: HotSeasonChart;
+  date_label: string; chart: HotSeasonChart; past?: HotPast;
 }
 export type HotCard = HotOiCard | HotFlowsCard | HotTradesCard | HotSeasonCard;
 export interface HotResponse { generated_at: string; as_of: string; cards: HotCard[]; errors?: string[] }

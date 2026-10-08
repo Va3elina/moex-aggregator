@@ -387,7 +387,7 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
                 if g["status"] == "sharp" and (g["direction"] == "up") == direction_up:
                     sig[k] = g["ratio"]
             verb = leg_verb(leg, direction_up).replace("Физлица ", "").capitalize()
-            past = {"title": "Прошлые резкие сдвиги за 2 недели",
+            past = {"title": "История",
                     "horizons": [h for h, _ in OI_HORIZONS],
                     "cases": [past_case(px.get(s), dates[k], f"{verb} ×{sig[k]:.1f}".replace(".", ","), OI_HORIZONS,
                                         **{"from": dates[max(0, k - scr.MED_WINDOW)].isoformat(), "zone": "2 недели"})
@@ -561,8 +561,9 @@ def scan_funds(user, today: date, db=None) -> List[Dict[str, Any]]:
                 secid, what = FUND_ASSET[cat]
                 px = [(r[0], float(r[1])) for r in db.execute(text(
                     "SELECT trade_date, close FROM index_data WHERE secid = :x AND close > 0 ORDER BY 1"), {"x": secid}).fetchall()]
-                rows = [past_case(px, t - timedelta(days=1), c["signal"]) for t, c in fund_past(months, weeks, today, case, px)]
-                card["past"] = {"title": f"Прошлые такие же случаи · {what} после", "cases": rows[::-1][:PAST_MAX],
+                rows = [past_case(px, t - timedelta(days=1), c["signal"], hl=c["chart"]["hl"], run=c["chart"].get("run"))
+                        for t, c in fund_past(months, weeks, today, case, px)]
+                card["past"] = {"title": "История", "asset": what, "cases": rows[::-1][:PAST_MAX],
                                 "horizons": [h for h, _ in FUND_HORIZONS],
                                 "base_up": base_up(px, date(2022, 3, 1))}
             cards.append(card)
@@ -653,6 +654,18 @@ def scan_season(db, today: date) -> List[Dict[str, Any]]:
         if not avg or not cur:
             continue
         today_td = cur[-1][0]
+        # история по годам: тот же отрезок в прошлые годы и путь года целиком (по наведению — вместо текущего)
+        by_year: Dict[int, List[Tuple[date, float]]] = {}
+        for d, v in closes:
+            by_year.setdefault(d.year, []).append((d, v))
+        hist = []
+        for y, v in sorted(yrs, reverse=True)[:PAST_MAX]:
+            row = by_year.get(y, [])
+            if len(row) < 100:
+                continue
+            base = row[0][1]
+            hist.append({"date": f"{y}-{today.month:02d}-{today.day:02d}", "label": str(y), "r": [v],
+                         "curve": [[k, round((c / base - 1) * 100, 2)] for k, (_, c) in enumerate(row) if k % 2 == 0]})
         cards.append({
             "kind": "season", "id": f"season:{secid}", "secid": secid, "sectype": sectype, "name": name,
             "signal": "Следующие 3 месяца " + ("чаще рос" if rising else "чаще падал"),
@@ -660,6 +673,7 @@ def scan_season(db, today: date) -> List[Dict[str, Any]]:
             "date_label": f"{_day(today)} → {_day(today + timedelta(days=SEASON_DAYS))}",
             "chart": {"type": "season", "avg": avg, "cur": cur, "today": today_td,
                       "zone_to": min(today_td + 63, avg[-1][0]), "rising": rising},
+            "past": {"title": "История", "horizons": ["за 3 месяца"], "cases": hist, "base_up": None},
         })
     return cards
 
