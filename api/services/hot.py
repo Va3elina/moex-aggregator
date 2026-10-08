@@ -386,6 +386,12 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
                     "cases": [past_case(px.get(s), dates[k], f"{verb} ×{sig[k]:.1f}".replace(".", ","))
                               for k in past_episodes(sorted(sig), last, scr.MED_WINDOW)]}
         signal = leg_verb(leg, direction_up)
+        if past:
+            # в списке — случаи за 3 года: каждый виден на графике и подсвечивается по наведению
+            far = dates[last] - timedelta(days=1095)
+            past["cases"] = [x for x in past["cases"] if x["date"] >= far.isoformat()][-PAST_MAX:]
+            if past["cases"]:
+                start = min(start, date.fromisoformat(past["cases"][0]["date"]) - timedelta(days=20))
         if c["wk"]:
             tags.append({"tone": "pill", "text": f"×{c['wk']:.1f}".replace(".", ","), "note": "за 2 недели"})
         if c["day"] and (not c["wk"] or c["dir_day"] == c["dir_wk"]):   # дневной сдвиг против двухнедельного не показываем
