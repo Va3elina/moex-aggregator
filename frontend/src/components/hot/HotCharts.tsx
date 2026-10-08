@@ -1,8 +1,8 @@
 /**
  * HotCharts — компактные графики карточек витрины «Главное» (/hot).
  *
- * Оформление — как у графиков сайта (цена — var(--chart-line-1), позиция —
- * var(--oi-cyan) как «Чистая позиция» на «Открытых позициях», потоки —
+ * Оформление — как у графиков сайта (цена — var(--chart-line-1), лонги и шорты —
+ * зелёный и красный, как покупки и продажи на «Открытых позициях», потоки —
  * --funds-flow-*, моно-подписи осей, плашка последнего значения), но движок
  * свой и под маленькую карточку: без навигатора, подсказка не выходит за
  * карточку. Подписи только в строке над графиком (легенда слева, период
@@ -18,11 +18,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as RMouseEvent, ReactNode } from 'react';
 import { monthShort } from '../../i18n';
-import type { HotBarsChart, HotLineChart, HotSeasonChart } from '../../services/api';
+import type { HotBarsChart, HotLegsChart, HotSeasonChart } from '../../services/api';
 
 const H = 200;
 const FONT = 'var(--font-mono)';
-const POS = 'var(--oi-cyan, var(--chart-line-2))';
+const LONG = 'var(--funds-flow-positive)';
+const SHORT = 'var(--funds-flow-negative)';
 const PRICE = 'var(--chart-line-1)';
 const UP = 'var(--funds-flow-positive)';
 const DN = 'var(--funds-flow-negative)';
@@ -40,6 +41,8 @@ const LINE_M = { l: 42, r: 54, t: 26, b: 22 };
 const ts = (d: string) => Date.parse((d.length === 7 ? `${d}-15` : d) + 'T00:00:00Z');
 const monY = (d: string) => `${monthShort(Number(d.slice(5, 7)) - 1)} ${d.slice(2, 4)}`;
 const dayMon = (d: string) => `${Number(d.slice(8, 10))} ${monthShort(Number(d.slice(5, 7)) - 1)} ${d.slice(2, 4)}`;
+// Объём ноги: 32 тыс, 1,2 тыс, 950
+const kfmt = (v: number) => (Math.abs(v) >= 10000 ? `${Math.round(v / 1000)} тыс` : Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1).replace('.', ',')} тыс` : String(Math.round(v)));
 const pct = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))}%`;
 const num = (v: number, d = 0) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('ru-RU', { maximumFractionDigits: d })}`;
 const fmtPrice = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: Math.abs(v) < 100 ? 1 : 0 });
@@ -180,37 +183,36 @@ function Tip({ x, y, w, rows }: { x: number; y: number; w: number; rows: ReactNo
   );
 }
 
-/** Чистая позиция физлиц (лонг минус шорт, % от всех их позиций — перекос скринера) + цена: зона события,
- *  точки минимумов и максимумов, прежний рекорд с пунктиром до сегодня, плашка значения справа. */
-export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; priceLabel: string }) {
+/** Лонги и шорты физлиц + цена: нога события толще (зона, точки её минимумов и максимумов, прежний рекорд с
+ *  пунктиром до сегодня, начало сдвига), вторая нога тоньше; плашки обеих ног за правым краем поля. */
+export function LegsChartCard({ chart, priceLabel }: { chart: HotLegsChart; priceLabel: string }) {
   const [ref, w] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
   const m = LINE_M;
   const data = chart.series;
   const n = data.length;
-  const xr = w - m.r;              // правый край поля: дальше ось процентов и плашка значения
+  const ev = chart.leg === 'long' ? 1 : 2;              // колонка ноги события в series
+  const xr = w - m.r;
   const geo = useMemo(() => {
     if (!w || n < 2) return null;
     const x0 = ts(data[0][0]), x1 = ts(data[n - 1][0]);
     const X = (t: number) => m.l + ((t - x0) / Math.max(x1 - x0, 1)) * (w - m.l - m.r - END_GAP);
-    const vals = data.map(d => d[1]);
-    let lo = Math.min(...vals), hi = Math.max(...vals);
-    const pad = (hi - lo) * 0.12 || 5;
-    lo = Math.max(-100, lo - pad); hi = Math.min(100, hi + pad);
+    const all = data.flatMap(d => [d[1], d[2]]);
+    let lo = Math.min(...all), hi = Math.max(...all);
+    const pad = (hi - lo) * 0.12 || 1;
+    lo = Math.max(0, lo - pad); hi += pad;
     const Y = (v: number) => H - m.b - ((v - lo) / (hi - lo)) * (H - m.t - m.b);
     const pr = (chart.price ?? []).filter((v): v is number => v != null);
     let plo = Math.min(...pr), phi = Math.max(...pr);
     const ppad = (phi - plo) * 0.1 || 1;
     plo -= ppad; phi += ppad;
     const P = (v: number) => H - m.b - ((v - plo) / (phi - plo)) * (H - m.t - m.b);
-    // точек столько, сколько помещается без толкотни: одна на ~26 px ширины
-    const marks = swings(vals, Math.max(5, Math.floor((w - m.l - m.r) / 26)));
+    const marks = swings(data.map(d => d[ev]), Math.max(5, Math.floor((w - m.l - m.r) / 26)));
     return { X, Y, P, lo, hi, plo, phi, x0, x1, hasPrice: pr.length > 1, marks };
-  }, [w, data, n, chart.price, m]);
+  }, [w, data, n, chart.price, m, ev]);
 
   const iStart = chart.start ? data.findIndex(d => d[0] >= chart.start!.date) : -1;
   const iLevel = chart.level?.date ? data.findIndex(d => d[0] === chart.level!.date) : -1;
-  // обычные точки не дублируют прежний рекорд, начало сдвига и сегодняшнее значение
   const dots = (geo?.marks ?? []).filter(p => Math.abs(p.i - iLevel) > 1 && Math.abs(p.i - iStart) > 1);
   const snap = [n - 1, iLevel, iStart, ...dots.map(p => p.i)].filter(i => i >= 0);
 
@@ -223,16 +225,16 @@ export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; pric
       const d = Math.abs(geo.X(ts(data[i][0])) - px);
       if (d < bd) { bd = d; best = i; }
     }
-    // на точку легко навести: в пределах 6 px подсказка встаёт на неё
     for (const i of snap) if (Math.abs(geo.X(ts(data[i][0])) - px) <= 6) { best = i; break; }
     setHover(best);
   };
 
   if (!geo) return <div ref={ref} style={{ height: H }} />;
   const { X, Y, P } = geo;
-  const pts = data.map(d => [X(ts(d[0])), Y(d[1])] as [number, number]);
+  const evColor = chart.leg === 'long' ? LONG : SHORT;
+  const line = (col: 1 | 2) => data.map(d => [X(ts(d[0])), Y(d[col])] as [number, number]);
+  const evPts = line(ev as 1 | 2);
   const span = (geo.x1 - geo.x0) / 864e5;
-  // ось X: годы на длинном ряду, месяцы на коротком
   const xt: { x: number; label: string }[] = [];
   if (span > 700) {
     for (let y = new Date(geo.x0).getUTCFullYear() + 1; y <= new Date(geo.x1).getUTCFullYear(); y++)
@@ -248,13 +250,21 @@ export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; pric
   const yt = niceTicks(geo.lo, geo.hi, 3);
   const ptk = geo.hasPrice ? niceTicks(geo.plo, geo.phi, 3) : [];
   const zx = chart.zone ? Math.min(X(ts(chart.zone.from)), xr - 8) : null;
-  const nowX = X(ts(chart.now.date)), nowY = Y(chart.now.value);
-  const pillY = Math.min(Math.max(nowY, m.t), H - m.b);
+  const nowX = X(ts(chart.now.date));
+  // плашки обеих ног: нога события — залитая, вторая — контуром; не наезжают друг на друга
+  let yEv = Math.min(Math.max(Y(chart.leg === 'long' ? chart.now.long : chart.now.short), m.t), H - m.b);
+  let yOt = Math.min(Math.max(Y(chart.leg === 'long' ? chart.now.short : chart.now.long), m.t), H - m.b);
+  if (Math.abs(yEv - yOt) < 20) {
+    const mid = (yEv + yOt) / 2, up = yEv <= yOt ? -1 : 1;
+    yEv = mid + up * 10; yOt = mid - up * 10;
+  }
+  const otColor = chart.leg === 'long' ? SHORT : LONG;
+  const evNow = chart.leg === 'long' ? chart.now.long : chart.now.short;
+  const otNow = chart.leg === 'long' ? chart.now.short : chart.now.long;
   const head = headRow(
-    [{ color: POS, text: 'чистая позиция, %' }, ...(geo.hasPrice ? [{ color: PRICE, text: 'цена' }] : [])],
+    [{ color: LONG, text: 'лонги' }, { color: SHORT, text: 'шорты' }, ...(geo.hasPrice ? [{ color: PRICE, text: 'цена' }] : [])],
     zx != null && chart.zone ? { text: chart.zone.label, a: zx, b: xr } : null, xr);
-  // прежний рекорд вплотную к сегодняшней точке (тот же заход) — не рисуем: точка «сегодня» его закрывает
-  const lv = iLevel >= 0 && nowX - pts[iLevel][0] >= 14 ? pts[iLevel] : null;
+  const lv = iLevel >= 0 && nowX - evPts[iLevel][0] >= 14 ? evPts[iLevel] : null;
   const hv = hover != null ? data[hover] : null;
 
   return (
@@ -264,9 +274,9 @@ export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; pric
         {zx != null && <Zone a={zx} b={xr} bottom={H - m.b} />}
         {yt.map(v => (
           <g key={`y${v}`}>
-            <line x1={m.l} x2={xr} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? MUTED : GRID} strokeWidth={1} />
-            {Math.abs(Y(v) - pillY) > 13 && (
-              <text x={xr + 6} y={Y(v)} fontSize={10} fontFamily={FONT} fontWeight={700} fill={POS} dominantBaseline="central">{pct(v)}</text>
+            <line x1={m.l} x2={xr} y1={Y(v)} y2={Y(v)} stroke={GRID} strokeWidth={1} />
+            {Math.abs(Y(v) - yEv) > 13 && Math.abs(Y(v) - yOt) > 13 && (
+              <text x={xr + 6} y={Y(v)} fontSize={10} fontFamily={FONT} fontWeight={700} fill={MUTED} dominantBaseline="central">{kfmt(v)}</text>
             )}
           </g>
         ))}
@@ -278,24 +288,28 @@ export function LineChartCard({ chart, priceLabel }: { chart: HotLineChart; pric
         ))}
         {geo.hasPrice && (
           <path d={path((chart.price ?? []).map((v, i) => v == null ? null : [X(ts(data[i][0])), P(v)] as [number, number]).filter((p): p is [number, number] => !!p))}
-            fill="none" stroke={PRICE} strokeWidth={1.3} opacity={0.55} />
+            fill="none" stroke={PRICE} strokeWidth={1.2} opacity={0.45} />
         )}
+        <path d={path(line((3 - ev) as 1 | 2))} fill="none" stroke={otColor} strokeWidth={1.4} opacity={0.6} strokeLinejoin="round" />
         {lv && <line x1={lv[0]} x2={nowX} y1={lv[1]} y2={lv[1]} stroke={INK} strokeWidth={1} strokeDasharray="3 3" opacity={0.55} />}
-        <path d={path(pts)} fill="none" stroke={POS} strokeWidth={1.9} strokeLinejoin="round" />
-        {iStart >= 0 && <path d={path(pts.slice(iStart))} fill="none" stroke={ACC} strokeWidth={3.4} strokeLinejoin="round" strokeLinecap="round" />}
-        {dots.map(p => <circle key={`s${p.i}`} cx={pts[p.i][0]} cy={pts[p.i][1]} r={3.2} fill={PANEL} stroke={INK} strokeWidth={1.3} />)}
+        <path d={path(evPts)} fill="none" stroke={evColor} strokeWidth={2.2} strokeLinejoin="round" />
+        {iStart >= 0 && <path d={path(evPts.slice(iStart))} fill="none" stroke={evColor} strokeWidth={3.6} strokeLinejoin="round" strokeLinecap="round" />}
+        {dots.map(p => <circle key={`s${p.i}`} cx={evPts[p.i][0]} cy={evPts[p.i][1]} r={3.2} fill={PANEL} stroke={INK} strokeWidth={1.3} />)}
         {lv && <circle cx={lv[0]} cy={lv[1]} r={4.5} fill={INK} stroke={PANEL} strokeWidth={1.5} />}
-        {iStart >= 0 && <circle cx={pts[iStart][0]} cy={pts[iStart][1]} r={4} fill={PANEL} stroke={ACC} strokeWidth={2} />}
-        <circle cx={nowX} cy={nowY} r={5.5} fill={ACC} stroke={INK} strokeWidth={1.6} />
-        <rect x={xr + 4} y={pillY - 9} width={46} height={18} rx={4} fill={POS} />
-        <text x={xr + 27} y={pillY} fontSize={10.5} fontFamily={FONT} fontWeight={800} fill="var(--text-inverse)" textAnchor="middle" dominantBaseline="central">{pct(chart.now.value)}</text>
+        {iStart >= 0 && <circle cx={evPts[iStart][0]} cy={evPts[iStart][1]} r={4} fill={PANEL} stroke={evColor} strokeWidth={2} />}
+        <circle cx={nowX} cy={Y(evNow)} r={5.5} fill={evColor} stroke={INK} strokeWidth={1.6} />
+        <rect x={xr + 4} y={yOt - 9} width={46} height={18} rx={4} fill={PANEL} stroke={otColor} strokeWidth={1.5} />
+        <text x={xr + 27} y={yOt} fontSize={10} fontFamily={FONT} fontWeight={800} fill={otColor} textAnchor="middle" dominantBaseline="central">{kfmt(otNow)}</text>
+        <rect x={xr + 4} y={yEv - 9} width={46} height={18} rx={4} fill={evColor} />
+        <text x={xr + 27} y={yEv} fontSize={10} fontFamily={FONT} fontWeight={800} fill="var(--text-inverse)" textAnchor="middle" dominantBaseline="central">{kfmt(evNow)}</text>
         {hv && <line x1={X(ts(hv[0]))} x2={X(ts(hv[0]))} y1={m.t} y2={H - m.b} stroke={MUTED} strokeDasharray="2 3" />}
         <rect x={m.l} y={0} width={Math.max(0, xr - m.l)} height={H - m.b} fill="transparent" onMouseMove={onMove} />
       </svg>
       {hv && hover != null && (
-        <Tip x={X(ts(hv[0]))} y={Y(hv[1])} w={w} rows={[
+        <Tip x={X(ts(hv[0]))} y={Y(hv[ev])} w={w} rows={[
           <span style={{ color: MUTED }}>{dayMon(hv[0])}{hover === iLevel && chart.level ? ` · ${chart.level.label}` : ''}</span>,
-          <span><span style={{ color: POS, fontWeight: 700 }}>●</span> Чистая позиция {pct(hv[1])}</span>,
+          <span><span style={{ color: LONG, fontWeight: 700 }}>●</span> Лонги {kfmt(hv[1])}</span>,
+          <span><span style={{ color: SHORT, fontWeight: 700 }}>●</span> Шорты {kfmt(hv[2])}</span>,
           ...(chart.price?.[hover] != null ? [<span><span style={{ color: PRICE, fontWeight: 700 }}>●</span> {priceLabel} {fmtPrice(chart.price[hover]!)}</span>] : []),
         ]} />
       )}
