@@ -148,7 +148,24 @@ def _intraday(fig, ax, ch):
                 va="bottom", fontsize=14, fontweight="bold", color=ACC)
 
 
-DRAW = {"bars": _bars, "flow": _flow, "hbars": _hbars, "intraday": _intraday}
+def _season3m(fig, ax, ch):
+    """Сезонность по активу (правило /hot): одна шкала «% с начала года»; медианный путь прошлых лет — серый на весь
+    год, нынешний год — оранжевый до сегодня; следующие 3 месяца — лёгкая заливка без подписей."""
+    x, y = pd.DatetimeIndex(ch["x"]), np.asarray(ch["y"], dtype=float)
+    ax.plot(x, y, color=GREY, lw=2.2)
+    if len(ch.get("x2", [])):
+        ax.plot(pd.DatetimeIndex(ch["x2"]), np.asarray(ch["y2"], dtype=float), color=ACC, lw=2.6)
+    now = pd.Timestamp(ch["now"])
+    ax.axvspan(now, min(now + pd.Timedelta(days=ch.get("days", 91)), x[-1]), color=ACC, alpha=0.08, lw=0)
+    ax.axhline(0, color=INK, lw=1)
+    _yfmt(ax, lambda v: ("+" if v > 0 else "−" if v < 0 else "") + f"{abs(v):.0f}%")
+    ax.set_ylabel("% с начала года", fontsize=14, color=INK)
+    months = pd.date_range(x[0], x[-1], freq="MS")
+    ax.set_xticks([m + pd.Timedelta(days=14) for m in months], [MON[m.month - 1] for m in months])
+    ax.set_xlim(x[0], x[-1])
+
+
+DRAW = {"bars": _bars, "flow": _flow, "hbars": _hbars, "intraday": _intraday, "season3m": _season3m}
 
 
 def draw(card: dict, path: str):
@@ -159,6 +176,9 @@ def draw(card: dict, path: str):
     try:
         DRAW[typ](fig, ax, ch)
         _title(fig, ch.get("title", ""))
+        if ch.get("subtitle"):
+            lines = len(textwrap.wrap(ch.get("title", ""), 74))
+            fig.text(0.02, 0.97 - 0.055 * lines - 0.01, ch["subtitle"], ha="left", va="top", fontsize=13, color=MUTED)
         fig.text(0.02, 0.02, SOURCE.get(card.get("kind"), SOURCE["default"]), fontsize=11, color=MUTED)
         fig.savefig(path, dpi=DPI, facecolor="white")
     finally:

@@ -59,6 +59,17 @@ QUERIES = {
                          WHERE interval = 24 AND type = 'stock' AND begin_time >= '2021-01-01'""",
     "candles_perp": """SELECT secid, CAST(begin_time AS date) AS d, close FROM candles
                        WHERE interval = 24 AND secid IN ('USDRUBF', 'CNYRUBF', 'EURRUBF', 'GLDRUBF', 'IMOEXF')""",
+    # сезонность по всем активам (signals/insights/season.py): индексы, валюты, золото и акции со связью с фьючерсом —
+    # вся история, правило «10 полных лет»
+    "season_index": """SELECT secid, trade_date AS d, close FROM index_data
+                       WHERE secid IN ('IMOEX', 'RTSI', 'RGBI', 'USD000UTSTOM', 'CNYRUB_TOM', 'EUR_RUB__TOM',
+                                       'GLDRUB_TOM') AND close > 0""",
+    "season_stocks": """
+        SELECT c.secid, CAST(c.begin_time AS date) AS d, c.close, m.display_name
+          FROM candles c
+          JOIN (SELECT stock_ticker, max(display_name) AS display_name FROM ticker_futures_map
+                 WHERE display_name IS NOT NULL GROUP BY stock_ticker) m ON m.stock_ticker = c.secid
+         WHERE c.interval = 24 AND c.type = 'stock' AND c.close > 0""",
     "funds": "SELECT fund_id, ticker, name, category, subcategory FROM funds",
     "fund_data": "SELECT fund_id, trade_date, nav, pay FROM fund_data WHERE trade_date >= '2021-01-01'",
     "breadth": "SELECT trade_date, ema_period, universe, percent_above FROM breadth_history",

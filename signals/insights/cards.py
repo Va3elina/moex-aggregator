@@ -1308,7 +1308,79 @@ def funds_card(cat, as_of, leg=None) -> dict:
 
 
 # ── карточка: сезонность ─────────────────────────────────────────────────────────
+def season3m_card(code, as_of) -> dict:
+    """Сезонность по любому активу — правило витрины /hot (signals/insights/season.py): следующие 3 месяца в истории
+    шли в одну сторону минимум в 3 годах из 4. График — прежний вид сезонности: медианный путь по календарным дням
+    (оранжевая), нынешний год (серая), пунктир — сегодня."""
+    from signals.insights import season
+    name, full = season.series(code)
+    if full is None:
+        raise ValueError(f"нет ряда для сезонности «{code}»")
+    s = upto(full, as_of)
+    t = s.index[-1]
+    c = season.condition(s, t)
+    yrs = season.years_returns(s, t)
+    subj, up_w, down_w = season.word(code, name)
+    end = t + pd.Timedelta(days=season.DAYS)
+    vals = [v for _, v in yrs]
+    n_up = sum(v > 0 for v in vals)
+    med = float(np.median(vals)) if vals else 0.0
+    rising = c["rising"] if c else med > 0
+    hits = n_up if rising else len(vals) - n_up
+    pc = lambda v: f"{v:+.1f}".replace(".", ",").replace("-", "−") + "%"  # noqa: E731
+    head = (f"Сезонность: {name} - с {d_ru(t, t)} по {d_ru(end, t)} {up_w if rising else down_w} в {hits} из "
+            f"{len(vals)} лет, обычно {pc(med)}")
+    facts = [f"следующие 3 месяца (с {d_ru(t, t)} по {d_ru(end, t)}) {subj} {up_w if rising else down_w} в {hits} из "
+             f"{len(vals)} лет ({yrs[0][0]}-{yrs[-1][0]}), медиана {pc(med)}" if yrs else f"истории по {subj} мало"]
+    if yrs:
+        best, worst = max(yrs, key=lambda r: r[1]), min(yrs, key=lambda r: r[1])
+        facts.append(f"лучший год - {best[0]} ({pc(best[1])}), худший - {worst[0]} ({pc(worst[1])})")
+        against = [f"{y}: {pc(v)}" for y, v in yrs if (v > 0) != rising]
+        if against:
+            facts.append(f"{'против правила' if c else 'в другую сторону'} - {', '.join(against)}")
+    after = ["за эти 3 месяца по годам: " + ", ".join(f"{y}: {pc(v)}" for y, v in yrs)] if yrs else []
+    ytd = s[s.index.year == t.year]
+    price = []
+    if len(ytd):
+        price.append(f"{subj} на {d_ru(t, t)} - {px_ru(float(s.iloc[-1]), subj if code in season.WORD else 'акции')}"
+                     f"; с начала года {p_ru(float(ytd.iloc[-1] / ytd.iloc[0] - 1))}")
+    y52 = s[s.index > t - pd.Timedelta(days=365)]
+    if len(y52) > 20:
+        price.append(f"за год: минимум {d_ru(y52.idxmin(), t)}, максимум {d_ru(y52.idxmax(), t)}; сейчас "
+                     f"{p_ru(float(y52.iloc[-1] / y52.max() - 1))} от максимума за год")
+    limits = [NO_FORECAST,
+              f"это статистика календаря за {len(vals)} лет, а не закономерность: в отдельные годы было иначе - это видно "
+              f"в строке по годам; «обычно» - медиана, не среднее",
+              "ход считается от этой даты до той же даты +91 день в каждом году; цены до сплитов пересчитаны в "
+              "нынешний масштаб"]
+    # график: медианный путь по календарным дням прошлых лет и путь этого года
+    # одна шкала «% с начала года»: медианный путь прошлых лет (серый, весь год, сглажен по 7 дням) и нынешний год
+    # (оранжевый, до сегодня); заливка — следующие 3 месяца, о которых находка
+    mp = season.smooth_path(season.median_path(s, t.year))
+    cur = season.paths(s[s.index.year == t.year]).get(t.year)
+    xs0 = pd.Timestamp(t.year, 1, 1)
+    span = f"{yrs[0][0]}–{t.year - 1}" if yrs else f"до {t.year}"
+    chart = {"type": "season3m", "days": season.DAYS, "now": t,
+             "title": f"{name}: следующие 3 месяца {up_w if rising else down_w} в {hits} из {len(vals)} лет, "
+                      f"обычно {pc(med)}",
+             "subtitle": f"серая — медианный путь {span}, оранжевая — {t.year}; заливка — следующие 3 месяца",
+             "x": xs0 + pd.to_timedelta(mp.index, unit="D"), "y": mp.values,
+             "x2": xs0 + pd.to_timedelta(cur.index, unit="D") if cur is not None else pd.DatetimeIndex([]),
+             "y2": cur.values if cur is not None else np.array([])}
+    return {"kind": "seasonality", "spec": {"code": code}, "as_of": t, "headline": head,
+            "focus": [f"находка: {head}",
+                      "ТИП ПОСТА: СЕЗОННОСТЬ - что обычно бывает с бумагой в ближайшие 3 месяца и в скольких годах из "
+                      "скольких; это история календаря, не прогноз"] + facts[1:2],
+            "facts": facts, "after": after, "analogy": [], "price": price, "context": [], "trend": [], "history": [],
+            "limits": limits, "chart": chart,
+            "chart_note": [f"на графике - путь {season.of(code, name)} по календарю, в % с начала года: медианный путь прошлых лет "
+                           f"(серая линия, весь год) и {t.year} год до сегодня (оранжевая); заливкой - следующие 3 месяца"],
+            "hashtag": HASHTAG["seasonality"]}
+
+
 def seasonality_card(code, as_of) -> dict:
+    if code not in ("Si", "MIX"):
+        return season3m_card(code, as_of)     # остальные активы — правило витрины /hot
     P, names, groups, to_stock, idx, stk, perp, usd = data()
     label, full = ("доллар", usd) if code == "Si" else ("индекс Мосбиржи", idx["IMOEX"].dropna())
     s = upto(full, as_of)
@@ -1892,7 +1964,7 @@ def brief_text(card: dict, focus: bool = False, context: dict | None = None) -> 
 def draw_chart(card: dict, path: str):
     """Картинка к черновику. Фонды, сделки фондов и макро — простые технические графики (signals/insights/charts.py,
     Вадим 08.10); позиции и сезонность — прежний вид, ниже."""
-    if card["chart"]["type"] in ("bars", "flow", "hbars", "intraday"):
+    if card["chart"]["type"] in ("bars", "flow", "hbars", "intraday", "season3m"):
         from signals.insights import charts
         charts.draw(card, path)
         return
