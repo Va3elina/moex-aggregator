@@ -17,7 +17,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as RMouseEvent, ReactNode } from 'react';
 import { monthShort } from '../../i18n';
-import type { HotBarsChart, HotLegsChart, HotSeasonChart } from '../../services/api';
+import type { HotBarsChart, HotLegsChart, HotPastCase, HotSeasonChart } from '../../services/api';
 
 const H = 200;
 const FONT = 'var(--font-mono)';
@@ -147,9 +147,9 @@ function Tip({ x, y, w, rows }: { x: number; y: number; w: number; rows: ReactNo
   );
 }
 
-/** Нога сигнала (лонги или шорты физлиц) + цена: зона события и начало сдвига. Больше ничего по умолчанию —
- *  прошлый похожий случай подсвечивается точкой, только когда на него наводят в списке под графиком. */
-export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegsChart; priceLabel: string; highlight?: string | null }) {
+/** Нога сигнала (лонги или шорты физлиц) + цена: зона события и начало сдвига. Наводят на прошлый случай в списке
+ *  под графиком — нынешний сигнал гаснет, а прошлый рисуется так же: его зона, начало и точка. */
+export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegsChart; priceLabel: string; highlight?: HotPastCase | null }) {
   const [ref, w] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
   const m = LINE_M;
@@ -174,9 +174,13 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
     return { X, Y, P, lo, hi, plo, phi, x0, x1, hasPrice: pr.length > 1 };
   }, [w, data, n, chart.price, m, ev]);
 
-  const iStart = chart.start ? data.findIndex(d => d[0] >= chart.start!.date) : -1;
-  // подсвеченный прошлый случай: первая точка ряда не раньше его даты (история прорежена до недель)
-  const iHl = highlight && highlight >= data[0]?.[0] ? data.findIndex(d => d[0] >= highlight) : -1;
+  // прошлый случай под курсором — вместо нынешнего: его окно (from → date) в том же оформлении
+  const past = highlight && highlight.date >= (data[0]?.[0] ?? '') ? highlight : null;
+  const iEnd = past ? data.findIndex(d => d[0] >= past.date) : n - 1;
+  const startDate = past ? past.from ?? past.date : chart.start?.date;
+  const iStart = startDate ? data.findIndex(d => d[0] >= startDate) : -1;
+  const zoneFrom = past ? startDate : chart.zone?.from;
+  const zoneLabel = past ? `${past.zone ?? ''} · ${dayMon(past.date)}`.replace(/^ · /, '') : chart.zone?.label;
 
   const onMove = (e: RMouseEvent<SVGRectElement>) => {
     if (!geo) return;
@@ -209,20 +213,21 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
   }
   const yt = niceTicks(geo.lo, geo.hi, 3);
   const ptk = geo.hasPrice ? niceTicks(geo.plo, geo.phi, 3) : [];
-  const zx = chart.zone ? Math.min(X(ts(chart.zone.from)), xr - 8) : null;
+  const zx = zoneFrom ? Math.min(X(ts(zoneFrom)), xr - 8) : null;
+  const zEnd = past && iEnd >= 0 ? Math.min(pts[iEnd][0] + 3, xr) : xr;
   const nowV = chart.leg === 'long' ? chart.now.long : chart.now.short;
-  const nowX = X(ts(chart.now.date)), nowY = Y(nowV);
+  const nowY = Y(nowV);
   const pillY = Math.min(Math.max(nowY, m.t), H - m.b);
   const head = headRow(
     [{ color, text: chart.leg === 'long' ? 'лонги' : 'шорты' }, ...(geo.hasPrice ? [{ color: PRICE, text: 'цена' }] : [])],
-    zx != null && chart.zone ? { text: chart.zone.label, a: zx, b: xr } : null, xr);
+    zx != null && zoneLabel ? { text: zoneLabel, a: zx, b: zEnd } : null, xr);
   const hv = hover != null ? data[hover] : null;
 
   return (
     <div ref={ref} style={{ position: 'relative', height: H }} onMouseLeave={() => setHover(null)}>
       <svg width={w} height={H} style={{ display: 'block' }}>
-        <HeadRow head={head} zoneText={chart.zone?.label} />
-        {zx != null && <Zone a={zx} b={xr} bottom={H - m.b} />}
+        <HeadRow head={head} zoneText={zoneLabel} />
+        {zx != null && <Zone a={zx} b={zEnd} bottom={H - m.b} />}
         {yt.map(v => (
           <g key={`y${v}`}>
             <line x1={m.l} x2={xr} y1={Y(v)} y2={Y(v)} stroke={GRID} strokeWidth={1} />
@@ -242,13 +247,9 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
             fill="none" stroke={PRICE} strokeWidth={1.2} opacity={0.45} />
         )}
         <path d={path(pts)} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-        {iStart >= 0 && <path d={path(pts.slice(iStart))} fill="none" stroke={color} strokeWidth={3.6} strokeLinejoin="round" strokeLinecap="round" />}
-        {iHl >= 0 && <>
-          <line x1={pts[iHl][0]} x2={pts[iHl][0]} y1={m.t} y2={H - m.b} stroke={INK} strokeDasharray="2 3" opacity={0.6} />
-          <circle cx={pts[iHl][0]} cy={pts[iHl][1]} r={5} fill={INK} stroke={PANEL} strokeWidth={1.6} />
-        </>}
+        {iStart >= 0 && iEnd >= iStart && <path d={path(pts.slice(iStart, iEnd + 1))} fill="none" stroke={color} strokeWidth={3.6} strokeLinejoin="round" strokeLinecap="round" />}
         {iStart >= 0 && <circle cx={pts[iStart][0]} cy={pts[iStart][1]} r={4} fill={PANEL} stroke={color} strokeWidth={2} />}
-        <circle cx={nowX} cy={nowY} r={5.5} fill={color} stroke={INK} strokeWidth={1.6} />
+        {iEnd >= 0 && <circle cx={pts[iEnd][0]} cy={pts[iEnd][1]} r={5.5} fill={color} stroke={INK} strokeWidth={1.6} />}
         <rect x={xr + 4} y={pillY - 9} width={46} height={18} rx={4} fill={color} />
         <text x={xr + 27} y={pillY} fontSize={10} fontFamily={FONT} fontWeight={800} fill="var(--text-inverse)" textAnchor="middle" dominantBaseline="central">{kfmt(nowV)}</text>
         {hv && <line x1={X(ts(hv[0]))} x2={X(ts(hv[0]))} y1={m.t} y2={H - m.b} stroke={MUTED} strokeDasharray="2 3" />}

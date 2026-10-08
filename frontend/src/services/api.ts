@@ -3605,8 +3605,9 @@ export interface HotSeasonChart {
   today: number;
   zone_to: number;
 }
-export interface HotPastCase { date: string; label: string; m1: number | null; m3: number | null }
-export interface HotPast { title: string; cases: HotPastCase[]; base_up: number | null }
+// r — изменение цены через каждый период из horizons; from/zone — окно прошлого сдвига (для показа на графике)
+export interface HotPastCase { date: string; label: string; r: (number | null)[]; from?: string; zone?: string }
+export interface HotPast { title: string; horizons: string[]; cases: HotPastCase[]; base_up: number | null }
 export interface HotTag { tone: 'fill' | 'accent' | 'pill'; text: string; note?: string }
 
 export interface HotOiCard {
