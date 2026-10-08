@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import math
 import statistics
 from collections import deque
 from datetime import date, datetime, timedelta, timezone
@@ -214,7 +215,7 @@ def past_episodes(hits: Sequence[int], last: int, gap: int) -> List[int]:
 
 def _positions(db, sectypes: Sequence[str]) -> Dict[str, List[tuple]]:
     """Дневные ряды физлиц (последний бар дня, будни) за всю историю — в формате _bulk_series скринера:
-    (tradedate, net, npart, oi, pos_long, pos_short)."""
+    (tradedate, net, npart, oi, pos_long, pos_short) + число людей в лонге и в шорте."""
     rows = db.execute(text("""
         SELECT sectype, tradedate, pos_long, pos_short, pos_long_num, pos_short_num, pos FROM (
           SELECT DISTINCT ON (sectype, tradedate) sectype, tradedate, pos_long, pos_short,
@@ -228,7 +229,7 @@ def _positions(db, sectypes: Sequence[str]) -> Dict[str, List[tuple]]:
     out: Dict[str, List[tuple]] = {}
     for s, d, L, S, nL, nS, oi in rows:
         L, S = float(L or 0), float(S or 0)
-        out.setdefault(s, []).append((d, L + S, int(nL or 0) + int(nS or 0), float(oi or 0), L, S))
+        out.setdefault(s, []).append((d, L + S, int(nL or 0) + int(nS or 0), float(oi or 0), L, S, int(nL or 0), int(nS or 0)))
     return out
 
 
@@ -295,21 +296,19 @@ def _price_on(px: Sequence[Tuple[date, float]], dates: Sequence[date]) -> List[O
     return out
 
 
-LEG_IX = {"long": 4, "short": 5}
-LEG_WORD = {"long": "Лонг", "short": "Шорт"}
+# Стороны позиций физлиц: объём лонгов и шортов и число людей в них (как у завода постов: LEGS в detect.py).
+LEG_IX = {"long": 4, "short": 5, "nl": 6, "ns": 7}
+LEG_WORD = {"long": "Лонг", "short": "Шорт", "nl": "Людей в лонге", "ns": "Людей в шорте"}
+MOVE_WINDOWS = ((14, "2 недели", "за 2 недели"), (21, "месяц", "за месяц"))   # сдвиг стороны против своей нормы
+MOVE_RATIO = 3.0
+EP_GAPS = {"record": 40, "streak": 10, "reversal": 10, "divergence": 10, "move": 14}
 
 
 def leg_verb(leg: str, up: bool) -> str:
-    """Слова скринера для одной ноги: рост лонга — «набрали», рост шорта — «нарастили»."""
-    if leg == "long":
+    """Слова скринера для стороны: рост лонга — «набрали», рост шорта — «нарастили»."""
+    if leg in ("long", "nl"):
         return "Физлица набрали лонг" if up else "Физлица сократили лонг"
     return "Физлица нарастили шорт" if up else "Физлица сократили шорт"
-
-
-def leg_pts(pts: Sequence[tuple], leg: str) -> List[tuple]:
-    """Ряд одной ноги в формате _bulk_series скринера: на месте net — объём лонгов или шортов (модуль)."""
-    ix = LEG_IX[leg]
-    return [(p[0], abs(p[ix]), p[2], p[3], p[4], p[5]) for p in pts]
 
 
 def thousands(v: float) -> str:
@@ -317,112 +316,229 @@ def thousands(v: float) -> str:
     return (f"{a:.0f}" if a >= 10 else f"{a:.1f}".replace(".", ",")) + " тыс"
 
 
+def since_years(vals: Sequence[float], dates: Sequence[date], i: int, higher: bool) -> Tuple[float, Optional[date]]:
+    """Сколько лет значение не было таким высоким (низким) — «максимум с …», как record() завода.
+    Возвращает (лет, дата прежнего такого значения или None — за всю историю)."""
+    v = vals[i]
+    for k in range(i - 1, -1, -1):
+        if (vals[k] >= v) if higher else (vals[k] <= v):
+            return (dates[i] - dates[k]).days / 365, dates[k]
+    return (dates[i] - dates[0]).days / 365, None
+
+
+def weekly_streak(vals: Sequence[float], dates: Sequence[date], i: int) -> int:
+    """Сколько закрытых недель подряд сторона росла (по пятничным закрытиям, незакрытая неделя не в счёт)."""
+    wk: Dict[Tuple[int, int], float] = {}
+    for k in range(max(0, i - 120), i + 1):
+        wk[dates[k].isocalendar()[:2]] = vals[k]
+    keys = sorted(wk)
+    if keys and dates[i].weekday() < 4:            # неделя сигнального дня ещё не закрыта
+        keys = keys[:-1]
+    n = 0
+    for a, b in zip(keys[::-1][1:], keys[::-1]):
+        if wk[b] > wk[a]:
+            n += 1
+        else:
+            break
+    return n
+
+
+def expiry_days(dates: Sequence[date], n: int) -> set:
+    """День экспирации квартальных фьючерсов (3-й четверг марта/июня/сентября/декабря) и n−1 дней после."""
+    marks, ds = set(), list(dates)
+    for y in range(ds[0].year, ds[-1].year + 1):
+        for m in (3, 6, 9, 12):
+            first = date(y, m, 1)
+            exp = first + timedelta(days=(3 - first.weekday()) % 7 + 14)
+            j = next((k for k, d in enumerate(ds) if d >= exp), None)
+            if j is not None:
+                marks.update(ds[j:j + n])
+    return marks
+
+
+class Asset:
+    """Ряды одного актива и детекторы завода на любой день i (для сегодня и для «Истории»)."""
+
+    def __init__(self, s: str, pts: List[tuple], px: Optional[List[Tuple[date, float]]]):
+        self.s, self.pts = s, pts
+        self.dates = [p[0] for p in pts]
+        self.legs = {leg: [abs(float(p[ix])) for p in pts] for leg, ix in LEG_IX.items()}
+        self.net = [p[1] for p in pts]
+        self.npart = [p[2] for p in pts]
+        self.price = dict(px) if px else {}
+        self.px = px
+        quarterly = not (len(s) >= 5 and s.endswith("F"))
+        self.exp12 = expiry_days(self.dates, 12) if quarterly else set()
+
+    def record(self, i: int) -> List[Dict[str, Any]]:
+        out = []
+        for leg in LEG_IX:
+            v = self.legs[leg]
+            if v[i] <= 0:
+                continue
+            for higher in (True, False):
+                if not higher and (leg not in ("long", "nl") or self.dates[i] in self.exp12):
+                    continue               # минимум — только у лонга и не в недели после экспирации (как у завода)
+                yrs, since = since_years(v, self.dates, i, higher)
+                if yrs < 1 or (self.dates[i] - self.dates[0]).days < 365:
+                    continue
+                when = "за всё время" if since is None else f"с {MON[since.month - 1]} {since.year}"
+                out.append({"type": "record", "leg": leg, "up": higher, "score": 4 + min(yrs, 10) * 0.6 + (1 if since is None else 0),
+                            "tag": f"{LEG_WORD[leg]}: {'максимум' if higher else 'минимум'} {when}",
+                            "zone_from": since or self.dates[0], "zone": "вся история" if since is None else when})
+        return out
+
+    def streak(self, i: int) -> List[Dict[str, Any]]:
+        out = []
+        for leg in ("long", "short"):
+            k = weekly_streak(self.legs[leg], self.dates, i)
+            if k >= 2:
+                out.append({"type": "streak", "leg": leg, "up": True, "score": min(2.5 + k * 0.8, 7),
+                            "tag": f"{LEG_WORD[leg]} растёт {k}-ю неделю подряд", "zone_from": self.dates[i] - timedelta(days=7 * k + 3),
+                            "zone": f"{k} нед подряд"})
+        return out
+
+    def _main_leg(self, i: int, j: int) -> Tuple[str, bool]:
+        """Сторона, которая сдвинулась сильнее за окно [j, i] (в долях своего уровня)."""
+        ch = {leg: (self.legs[leg][i] - self.legs[leg][j]) / max(self.legs[leg][j], 1) for leg in ("long", "short")}
+        leg = max(ch, key=lambda q: abs(ch[q]))
+        return leg, ch[leg] > 0
+
+    def reversal(self, i: int) -> List[Dict[str, Any]]:
+        if i < 255:
+            return []
+        v, v5 = self.net[i], self.net[i - 5]
+        med = statistics.median([abs(x) for x in self.net[i - 250:i]]) or 1
+        if (v > 0) == (v5 > 0) or v == 0 or v5 == 0 or min(abs(v), abs(v5)) < 0.2 * med:
+            return []
+        side = lambda z: "лонг" if z > 0 else "шорт"  # noqa: E731
+        leg, up = self._main_leg(i, i - 5)
+        return [{"type": "reversal", "leg": leg, "up": up, "score": 6.0, "signal": f"Физлица развернулись из {side(v5)}а в {side(v)}",
+                 "tag": "разворот за неделю", "zone_from": self.dates[i - 5], "zone": "неделя", "dir": "up" if v > 0 else "down"}]
+
+    def divergence(self, i: int) -> List[Dict[str, Any]]:
+        if i < 255 or not self.price:
+            return []
+        p, p5 = self.price.get(self.dates[i]), self.price.get(self.dates[i - 5])
+        if not p or not p5:
+            return []
+        v, v5 = self.net[i], self.net[i - 5]
+        med = statistics.median([abs(x) for x in self.net[i - 250:i]]) or 1
+        rp, rx = p / p5 - 1, (v - v5) / max(abs(v5), med)
+        if not ((rp <= -0.02 and rx >= 0.05) or (rp >= 0.02 and rx <= -0.05)):
+            return []
+        what = "покупают на падении" if rp < 0 else "продают на росте"
+        leg, up = self._main_leg(i, i - 5)
+        return [{"type": "divergence", "leg": leg, "up": up, "score": 4.5 + min(abs(rp), 0.1) * 20, "signal": f"Физлица {what}",
+                 "tag": f"цена {'+' if rp > 0 else '−'}{abs(rp) * 100:.1f}% за неделю".replace(".", ","),
+                 "zone_from": self.dates[i - 5], "zone": "неделя", "dir": "up" if rp < 0 else "down"}]
+
+    def move(self, i: int) -> List[Dict[str, Any]]:
+        out = []
+        for leg in ("long", "short"):
+            v = self.legs[leg]
+            for n, zone, note in MOVE_WINDOWS:
+                if i < n + 60 or self.npart[i] < scr.ATR_MIN_PART:
+                    continue
+                mv = v[i] - v[i - n]
+                base = [abs(v[k] - v[k - 1]) for k in range(i - n - 59, i - n + 1)]
+                atr = statistics.fmean(base)
+                if atr <= 0 or atr < scr.ATR_FLOOR_REL * max(v[i], 1):
+                    continue
+                ratio = abs(mv) / (atr * math.sqrt(n))
+                if ratio >= MOVE_RATIO and abs(mv) / max(v[i], 1) >= scr.ATR_MIN_REL * math.sqrt(n):
+                    out.append({"type": "move", "leg": leg, "up": mv > 0, "score": 3 + min(ratio, 10) * 0.5, "n": n,
+                                "tag": f"×{ratio:.1f}".replace(".", ","), "note": note, "ratio": ratio,
+                                "zone_from": self.dates[i - n], "zone": zone, "start": self.dates[i - n]})
+        return out
+
+    def signals(self, i: int) -> List[Dict[str, Any]]:
+        if self.npart[i] < scr.ATR_MIN_PART:
+            return []
+        return self.record(i) + self.streak(i) + self.reversal(i) + self.divergence(i) + self.move(i)
+
+
+def _sig_key(g: Dict[str, Any]) -> Tuple:
+    """Что считать «таким же» случаем в Истории: тип, сторона, направление (и окно сдвига)."""
+    return g["type"], g["leg"], g["up"], g.get("n"), g.get("dir")
+
+
 def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    """Позиции физлиц — резкие сдвиги отдельно по лонгам и по шортам (Вадим 08.10): за день (×2+) и за 2 недели
-    (×3+), математика скринера на ряду ноги. Уровень объёма не сигнал — важна резкость изменения, а рекорды
-    объёма растут вместе с числом физлиц. На актив — одна карточка, по сильнейшей ноге."""
+    """Позиции физлиц — типы находок завода постов (signals/insights/detect.py) по лонгам, шортам и числу людей
+    в них: рекорд стороны (за год и больше), серия недель роста, разворот чистой позиции за неделю, расхождение
+    с ценой за неделю; плюс резкий сдвиг стороны за 2 недели и за месяц (×3 к своей норме). Дневных сдвигов
+    нет (Вадим 08.10: шум). На актив — одна карточка по сильнейшей находке, остальные — плашками."""
     short = scr.compute_screener(db, "FIZ", "short")
     rows = {r["sectype"]: r for r in short["rows"]
             if r["status"] != "illiquid" and r.get("group") in ALLOWED_GROUPS and r["sectype"] not in FOREIGN}
     series = _positions(db, list(rows))
+    px = _prices(db, list(rows))
     cands = []
     for s, r in rows.items():
         pts = series.get(s, [])
-        if len(pts) < 60 or pts[-1][2] < scr.ATR_MIN_PART:
+        if len(pts) < 300:
             continue
-        best = None
-        for leg in LEG_IX:
-            lp = leg_pts(pts, leg)
-            dates, vals = [q[0] for q in lp], [q[1] for q in lp]
-            a = scr._row_signal_short(lp[-60:], scr.ATR_MIN_PART)
-            m = scr._row_signal_medium(lp[-150:], scr.ATR_MIN_PART)
-            day = a["ratio"] if a["status"] == "sharp" else None
-            wk = m["ratio"] if m["status"] == "sharp" else None
-            if not (day or wk):
-                continue
-            # сила — относительно своего порога «резко»; сдвиг за 2 недели при равной силе выше дневного
-            strength = -max((day or 0) / 2, (wk or 0) / 3 + 1e-6)
-            if best is None or strength < best["strength"]:
-                best = {"s": s, "row": r, "leg": leg, "lp": lp, "dates": dates, "vals": vals,
-                        "day": day, "wk": wk, "dir_day": a["direction"], "dir_wk": m["direction"], "strength": strength}
-        if best:
-            cands.append(best)
+        a = Asset(s, pts, px.get(s))
+        sig = a.signals(len(pts) - 1)
+        if sig:
+            sig.sort(key=lambda g: -g["score"])
+            cands.append({"s": s, "row": r, "a": a, "sig": sig, "score": sig[0]["score"]})
     priced = lambda c: c["s"] in PRICE_INDEX or c["row"].get("group") == "Акции"  # noqa: E731
-    cands.sort(key=lambda c: (c["strength"], not priced(c)))
-    cands = cands[:MAX_OI_CARDS]
-    if not cands:
-        return [], short.get("signal_date")
-    px = _prices(db, [c["s"] for c in cands])
+    cands.sort(key=lambda c: (-c["score"], not priced(c)))
     cards = []
-    for c in cands:
-        s, r, leg = c["s"], c["row"], c["leg"]
-        lp, dates, vals = c["lp"], c["dates"], c["vals"]
-        pts = series[s]
-        last = len(vals) - 1
-        other = [abs(p[LEG_IX["short" if leg == "long" else "long"]]) for p in pts]
-        chart: Dict[str, Any] = {"type": "legs", "leg": leg}
+    for c in cands[:MAX_OI_CARDS]:
+        s, r, a = c["s"], c["row"], c["a"]
+        main = c["sig"][0]
+        last = len(a.dates) - 1
+        leg, vals, dates = main["leg"], a.legs[main["leg"]], a.dates
+        signal = main.get("signal") or leg_verb(leg, main["up"])
         tags: List[Dict[str, Any]] = []
-        k_lv = None
-        if c["wk"]:
-            k0 = max(0, last - scr.MED_WINDOW)
-            start = dates[last] - timedelta(days=122)
-            chart["zone"] = {"from": dates[k0].isoformat(), "label": "2 недели"}
-            direction_up = c["dir_wk"] == "up"
-        else:
-            k0 = max(0, last - 1)
-            start = dates[last] - timedelta(days=92)
-            chart["zone"] = {"from": dates[k0].isoformat(), "label": "день"}
-            direction_up = c["dir_day"] == "up"
-        chart["start"] = {"date": dates[k0].isoformat(), "value": _r(vals[k0], 0)}
-        # с чем сравнить: прежний максимум (минимум) ноги в видимом периоде до начала сдвига
-        before = [k for k in range(k0) if dates[k] >= start]
-        if before:
-            k_lv = (max if direction_up else min)(before, key=lambda q: vals[q])
-        past = None
-        if c["wk"]:
-            # прошлые резкие сдвиги этой ноги за 2 недели в ту же сторону
-            sig = {}
-            for k in range(scr.MED_WINDOW + scr.MED_MIN_BASE, len(lp)):
-                g = scr._row_signal_medium(lp[max(0, k - 150):k + 1], scr.ATR_MIN_PART)
-                if g["status"] == "sharp" and (g["direction"] == "up") == direction_up:
-                    sig[k] = g["ratio"]
-            verb = leg_verb(leg, direction_up).replace("Физлица ", "").capitalize()
-            past = {"title": "История",
-                    "horizons": [h for h, _ in OI_HORIZONS],
-                    "cases": [past_case(px.get(s), dates[k], f"{verb} ×{sig[k]:.1f}".replace(".", ","), OI_HORIZONS,
-                                        **{"from": dates[max(0, k - scr.MED_WINDOW)].isoformat(), "zone": "2 недели"})
-                              for k in past_episodes(sorted(sig), last, scr.MED_WINDOW)]}
-        signal = leg_verb(leg, direction_up)
-        if past:
-            # в списке — случаи за 3 года: каждый виден на графике и подсвечивается по наведению
-            far = dates[last] - timedelta(days=1095)
-            past["cases"] = [x for x in past["cases"] if x["date"] >= far.isoformat()][-PAST_MAX:]
-            if past["cases"]:
-                start = min(start, date.fromisoformat(past["cases"][0]["date"]) - timedelta(days=20))
-        if c["wk"]:
-            tags.append({"tone": "pill", "text": f"×{c['wk']:.1f}".replace(".", ","), "note": "за 2 недели"})
-        if c["day"] and (not c["wk"] or c["dir_day"] == c["dir_wk"]):   # дневной сдвиг против двухнедельного не показываем
-            tags.append({"tone": "pill", "text": f"×{c['day']:.1f}".replace(".", ","), "note": "за день"})
-        if k_lv is not None:
-            chart["level"] = {"value": _r(vals[k_lv], 0), "date": dates[k_lv].isoformat(),
-                              "label": "прежний " + ("максимум" if direction_up else "минимум")}
-        # с прошлыми случаями — каждый день (их зоны по 2 недели), иначе старая история по пятницам
-        keep = _thin(dates, start if past and past["cases"] else dates[last] - timedelta(days=760))
-        idx = [i for i in keep if dates[i] >= start]
-        if k_lv is not None and k_lv not in idx:     # прореженная история могла пропустить день рекорда
-            idx = sorted(idx + [k_lv])
+        seen = set()
+        for g in c["sig"]:                         # главная находка + до двух других того же дня
+            if len(tags) >= 3 or g["tag"] in seen:
+                continue
+            seen.add(g["tag"])
+            if g["type"] == "move":
+                tags.append({"tone": "pill", "text": g["tag"], "note": g["note"]})
+            else:
+                tags.append({"tone": "fill" if g["type"] == "record" and g["zone"] == "вся история" else "accent", "text": g["tag"]})
+        # История: такие же находки этой стороны за 3 года, по одной на эпизод, нынешний не в счёт
+        key, far = _sig_key(main), max(300, last - 750)
+        hits, info = [], {}
+        detector = getattr(a, main["type"])
+        for i in range(far, last + 1):
+            for g in detector(i):
+                if _sig_key(g) == key:
+                    hits.append(i)
+                    info[i] = g
+                    break
+        past = {"title": "История", "horizons": [h for h, _ in OI_HORIZONS],
+                "cases": [past_case(a.px, dates[k], info[k]["tag"] if main["type"] != "move" else
+                                    leg_verb(leg, main["up"]).replace("Физлица ", "").capitalize() + " " + info[k]["tag"],
+                                    OI_HORIZONS, **{"from": max(info[k]["zone_from"], dates[0]).isoformat(),
+                                                    "zone": info[k]["zone"]})
+                          for k in past_episodes(hits, last, EP_GAPS[main["type"]])][::-1][:PAST_MAX]}
+        # окно графика: зона находки с запасом; у рекорда — от прежнего такого значения; плюс прошлые случаи
+        zf = main["zone_from"]
+        span = max((dates[last] - zf).days, 30)
+        start = zf - timedelta(days=max(span // 3, 90 if main["type"] != "record" else 120))
+        if past["cases"]:
+            start = min(start, date.fromisoformat(past["cases"][-1]["date"]) - timedelta(days=20))
+        start = max(start, dates[0])
+        chart: Dict[str, Any] = {"type": "legs", "leg": leg,
+                                 "zone": {"from": max(zf, dates[0]).isoformat(), "label": main["zone"]}}
+        if main.get("start"):
+            chart["start"] = {"date": main["start"].isoformat(), "value": round(vals[dates.index(main["start"])])}
+        daily_from = start if past["cases"] or (dates[last] - start).days <= 760 else dates[last] - timedelta(days=760)
+        idx = [i for i in _thin(dates, daily_from) if dates[i] >= start]
         sel = [dates[i] for i in idx]
-        lo_leg, sh_leg = (vals, other) if leg == "long" else (other, vals)
-        chart["series"] = [[dates[i].isoformat(), round(lo_leg[i]), round(sh_leg[i])] for i in idx]
+        chart["series"] = [[dates[i].isoformat(), round(vals[i])] for i in idx]
         if s in px:
             chart["price"] = [_r(v, 4) for v in _price_on(px[s], sel)]
-        chart["now"] = {"date": dates[last].isoformat(), "long": round(lo_leg[last]), "short": round(sh_leg[last])}
+        chart["now"] = {"date": dates[last].isoformat(), "value": round(vals[last])}
         card = {"kind": "oi", "id": f"oi:{s}", "sectype": s, "name": r["name"], "signal": signal, "tags": tags,
-                "date": dates[last].isoformat(), "chart": chart}
-        if past is not None:
-            past["cases"] = past["cases"][::-1][:PAST_MAX]
-            past["base_up"] = base_up(px.get(s), date(2022, 3, 1), OI_HORIZONS[-1][1])
-            card["past"] = past
+                "date": dates[last].isoformat(), "chart": chart, "past": past}
+        past["base_up"] = base_up(a.px, date(2022, 3, 1), OI_HORIZONS[-1][1])
         cards.append(card)
     return cards, short.get("signal_date")
 

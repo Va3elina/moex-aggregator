@@ -3580,13 +3580,12 @@ export const getBrainPath = (a: string, b: string) => brainFetch<BrainPath>('pat
 
 export interface HotLegsChart {
   type: 'legs';
-  leg: 'long' | 'short';                 // нога события
-  series: [string, number, number][];    // дата, лонги, шорты
+  leg: 'long' | 'short' | 'nl' | 'ns';   // сторона находки: объём лонгов/шортов или число людей в них
+  series: [string, number][];            // дата, значение стороны
   price?: (number | null)[];
   zone?: { from: string; label: string };
-  level?: { value: number | null; label: string; date?: string | null };
   start?: { date: string; value: number };
-  now: { date: string; long: number; short: number };
+  now: { date: string; value: number };
 }
 export interface HotBarsChart {
   type: 'bars';
