@@ -587,6 +587,21 @@ def detect_seasonality(out, idx, usd):
                             horizon=n, share=round(float(share), 2), median=round(med, 4))
 
 
+def detect_seasonality_all(out, assets=None):
+    """Сезонность по всем активам, правило витрины /hot (signals/insights/season.py): находка в день входа в условие,
+    не чаще раза в 30 дней на актив. Пауза считается с запасом до окна — находки до него тоже держат паузу.
+    Индекс Мосбиржи и доллар — у прежних детекторов (season.SKIP)."""
+    from signals.insights import season
+    for code, name, s in (assets if assets is not None else season.assets()):
+        if code in season.SKIP:
+            continue
+        for d, c in season.entries(s, out.since - pd.Timedelta(days=4 * season.COOLDOWN), out.until):
+            if d < out.since:
+                continue
+            out.add(d, "сезонность", code, "сезонность", season.score(c), season.title(code, name, c), leg="3m",
+                    share=round(float(c["share"]), 2), median=round(c["med"], 1), years=c["n"], name=name)
+
+
 def seasonal_curve(s: pd.Series, year: int):
     """Средний путь года без тренда по десяти прошлым годам: 366 значений, [0] — 1 января.
     Тренд снят у каждого года отдельно (год начинается и кончается в нуле), иначе
@@ -846,6 +861,7 @@ def main():
     detect_buffett(out)
     detect_seasonality(out, idx, usd)
     detect_seasonal_curve(out, idx, usd)
+    detect_seasonality_all(out)
     detect_fund_trades(out)
     detect_prices(out, idx, stk, perp, usd)
     items = rank(out.items)

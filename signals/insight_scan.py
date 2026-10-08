@@ -55,6 +55,10 @@ FUNDS_LAG_DAYS = 4        # потоки фондов приходят с опо
 # Теперь текст целиком (signals/channel_scan.py) и хэштег своей рубрики решает первым; слова — для постов без хэштега.
 TOPIC = {"positions": r"шорт|лонг|позици|фьючерс|контракт",
          "funds": r"фонд|приток|отток|БПИФ", "seasonality": r"сезонн"}
+# сезонность по индексам, валютам и золоту (правило /hot) — о каком ряде пост канала
+SEASON_RX = {"RTSI": r"индекс\w* РТС|RTSI", "RGBI": r"гособлигац|RGBI|ОФЗ", "CNYRUB_TOM": r"юан",
+             "EUR_RUB__TOM": r"евро", "GLDRUB_TOM": r"золот", "IMOEX": r"индекс\w* мосбирж|IMOEX",
+             "USD000UTSTOM": r"доллар"}
 FUND_INST = {"bonds": r"облигац|ОФЗ", "stocks": r"фонд\w* акци", "money_market": r"денежн\w* рынк|ликвидност",
              "gold": r"золот", "yuan": r"юан", "all": r"фонд"}
 
@@ -87,6 +91,7 @@ def detect_window(until: pd.Timestamp) -> list:
     det.detect_buffett(out)
     det.detect_seasonality(out, idx, usd)
     det.detect_seasonal_curve(out, idx, usd)
+    det.detect_seasonality_all(out)
     det.detect_fund_trades(out)
     det.detect_prices(out, idx, stk, perp, usd)
     return det.rank(out.items)
@@ -186,7 +191,8 @@ def pick(items: list, log=print, until=None) -> list:
         if kind == "funds":
             pool = [x for x in pool if (x.get("facts") or {}).get("cat")]
         if kind == "seasonality":
-            pool = [x for x in pool if x["instrument"] in ("Si", "MIX")]
+            # индекс и доллар — прежние детекторы; остальные активы — правило витрины /hot (leg «3m», season.py)
+            pool = [x for x in pool if x["instrument"] in ("Si", "MIX") or (x.get("facts") or {}).get("leg") == "3m"]
         if not pool:
             continue
         last = max(x["date"] for x in pool)
@@ -262,7 +268,12 @@ def _inst_rx(spec):
     if kind == "funds":
         return FUND_INST.get(spec["cat"], r"фонд"), False
     if kind == "seasonality":
-        return (r"доллар|валют" if spec["code"] == "Si" else r"индекс\w* мосбирж|IMOEX|акци"), False
+        if spec["code"] in ("Si", "MIX"):
+            return (r"доллар|валют" if spec["code"] == "Si" else r"индекс\w* мосбирж|IMOEX|акци"), False
+        if spec["code"] in SEASON_RX:
+            return SEASON_RX[spec["code"]], False
+        from signals.insights import season
+        return name_rx(season.series(spec["code"])[0] or "", spec["code"]), True
     code = det.CODE.get(spec["sec"])
     if code in ("MIX", "RI"):
         return r"индекс\w* мосбирж|IMOEX|индекс\w* РТС", False
