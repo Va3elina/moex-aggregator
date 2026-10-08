@@ -115,3 +115,58 @@ def read(name: str, parse_dates=None, **_kw) -> pd.DataFrame:
     for c in parse_dates or []:
         df[c] = pd.to_datetime(df[c])
     return df
+
+
+# ── цена фьючерса без базового актива ────────────────────────────────────────────
+# У нефти, газа, металлов (BR, NG, SV, PT…) нет акции, индекса или курса — цена на графике и в брифе пропадала
+# (#3961, рывок шорта по Brent 08.10: линии цены на графике нет). Склейка ближнего фьючерса — та же, что у витрины
+# /hot (api/services/hot.py: _prices + front_month); завод витрину не импортирует, правило повторено здесь.
+_FRONT_DAILY = """
+    SELECT CAST(c.begin_time AS date) AS d, c.close, f.lsttrade, f.is_perpetual
+      FROM candles c JOIN futures_contracts f ON f.secid = c.secid
+     WHERE f.sectype = :s AND c.interval = 24 AND c.type = 'futures' AND c.close > 0
+     ORDER BY 1"""
+_FRONT_LIVE = """
+    SELECT c.begin_time AS t, c.close
+      FROM candles c JOIN futures_contracts f ON f.secid = c.secid
+     WHERE f.sectype = :s AND c.interval = 5 AND c.type = 'futures' AND c.close > 0
+       AND c.begin_time >= :d AND c.begin_time <= :now
+       AND (f.is_perpetual OR f.lsttrade >= CAST(:d AS date))
+     ORDER BY coalesce(f.lsttrade, DATE '9999-01-01'), c.begin_time DESC
+     LIMIT 1"""
+
+
+def splice_front(rows) -> pd.Series:
+    """На каждый день — ближайший к экспирации контракт, который ещё торгуется; вечный — когда срочных нет.
+    rows: (день, close, lsttrade, вечный). Повтор api/services/hot.front_month."""
+    far = pd.Timestamp("2262-01-01").date()
+    best: dict = {}
+    for d, close, lst, perp in rows:
+        d = pd.Timestamp(d).date()
+        exp = far if perp or lst is None or pd.isna(lst) else pd.Timestamp(lst).date()
+        if exp < d:
+            continue
+        if d not in best or exp < best[d][0]:
+            best[d] = (exp, float(close))
+    days = sorted(best)
+    return pd.Series([best[d][1] for d in days], index=pd.DatetimeIndex(days), dtype=float)
+
+
+def _query(sql: str, params: dict) -> list:
+    db = SessionLocal()
+    try:
+        return db.execute(text(sql), params).fetchall()
+    finally:
+        db.close()
+
+
+@lru_cache(None)
+def front_month(sectype: str) -> pd.Series:
+    """Дневная цена фьючерса склейкой ближнего контракта (пустой ряд, если свечей нет)."""
+    return splice_front(_query(_FRONT_DAILY, {"s": sectype}))
+
+
+def front_live(sectype: str, day, now):
+    """Последняя 5-минутная цена ближнего контракта за день `day`, не позже now → (цена, время МСК) или None."""
+    rows = _query(_FRONT_LIVE, {"s": sectype, "d": pd.Timestamp(day).normalize(), "now": pd.Timestamp(now)})
+    return (float(rows[0][1]), pd.Timestamp(rows[0][0])) if rows else None

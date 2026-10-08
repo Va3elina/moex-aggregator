@@ -155,6 +155,9 @@ def px_ru(v, label) -> str:
         return f"{v:,.0f}".replace(",", " ")
     if label == "золото":
         return f"{v:,.0f}".replace(",", " ") + " ₽ за грамм"
+    if label in PX_UNIT:
+        s = (f"{v:,.0f}" if v >= 1000 else f"{v:,.2f}").replace(",", " ").replace(".", ",")
+        return f"${s}" if PX_UNIT[label] == "$" else f"{s} ₽" if PX_UNIT[label] == "₽" else s
     return (f"{v:,.0f}" if v >= 100 else f"{v:,.2f}").replace(",", " ").replace(".", ",") + " ₽"
 
 
@@ -250,7 +253,24 @@ def price_for(sec):
     t = to_stock.get(sec)
     if t in stk.columns:
         return f"акции «{str(names.get(sec)).replace(' (вечн)', '')}»", stk[t].dropna()
+    # нефть, газ, металлы: базового ряда нет — склейка ближнего фьючерса, как у витрины /hot (#3961, Brent)
+    try:
+        fm = dbdata.front_month(sec)
+    except Exception:  # noqa: BLE001 — без базы (тест) или без свечей: цены нет, как раньше
+        fm = None
+    if fm is not None and len(fm) > 25:
+        label = human_name(sec)[0]
+        PX_UNIT[label] = FUT_UNIT.get(sec, "")
+        return label, fm
     return None, None
+
+
+# Единица цены фьючерса-склейки: нефть и металлы на Мосбирже — в долларах, «руб/г» и биржевые товары РФ — в рублях.
+# Без своей единицы цена идёт числом: «₽» у Brent — ошибка в посте.
+FUT_UNIT = {**{s: "$" for s in ("BR", "BM", "WT", "NG", "NR", "GD", "GN", "SV", "S1", "PT", "LT", "PD", "LD", "CE",
+                                "AN", "NC", "ZC", "CC", "KC", "OJ", "SA")},
+            **{s: "₽" for s in ("GL", "S2", "SLVRUBF", "92", "95", "DL", "W4", "Su")}}
+PX_UNIT: dict = {}      # подпись цены → единица (заполняет price_for для склейки)
 
 
 def fwd(pser, date, k):
@@ -730,6 +750,13 @@ def surge_angle(sec, leg, lab, dat, plabel, arr, dates, pser, t, col) -> dict | 
     except Exception:  # noqa: BLE001 — нет справочника (тест без базы): без живой цены
         stock = None
     live = live_price(stock, t) if stock else None
+    if live is None and plabel in PX_UNIT:
+        # цена — склейка ближнего фьючерса (нефть, металлы): живая цена — 5-минутка того же контракта
+        try:
+            now = pd.Timestamp(NOW) if NOW is not None else pd.Timestamp.now(tz="Europe/Moscow").tz_localize(None)
+            live = dbdata.front_live(sec, iday, now)
+        except Exception:  # noqa: BLE001 — без живой цены рывок тот же
+            live = None
     if live and pser is not None and len(pser):
         line += f"; {plabel} к {live[1]:%H:%M} {p_ru(live[0] / float(pser.iloc[-1]) - 1)} к закрытию"
     line += (f"; день не закончен: пиши «к {hm}», а не «за день» и не «на закрытие»; причина - только из КОНТЕКСТА, "
@@ -754,6 +781,9 @@ ANGLE_NOTE = {
 }
 
 
+SURGE_WINDOW_DAYS = 92     # окно графика рывка по ходу дня
+
+
 def angle_card(card: dict, angle: str) -> dict:
     """Карточка поста нового типа из карточки позиций: своё ГЛАВНОЕ (поворот, находка, итог толпы, цена) и пометка типа
     для писателя. Цифры те же — карточка тренда остаётся нетронутой."""
@@ -768,9 +798,17 @@ def angle_card(card: dict, angle: str) -> dict:
     chart, note = card.get("chart"), list(card.get("chart_note") or [])
     if angle == "рывок" and a.get("point") and chart and chart.get("type") == "line2":
         # последняя точка графика — срез по ходу дня, иначе рывок на картинке не виден
+        # окно — три месяца, а не три года карточки тренда: иначе скачок последнего дня сливается с линией (#3961, Brent)
         d1, v1, hm = a["point"]
-        chart = {**chart, "x": pd.DatetimeIndex(chart["x"]).append(pd.DatetimeIndex([d1])),
-                 "y": np.append(np.asarray(chart["y"], dtype=float), v1), "marks": list(chart.get("marks") or []) + [(d1, v1)]}
+        x, y = pd.DatetimeIndex(chart["x"]), np.asarray(chart["y"], dtype=float)
+        x0 = pd.Timestamp(d1) - pd.Timedelta(days=SURGE_WINDOW_DAYS)
+        keep = x >= x0
+        chart = {**chart, "x": x[keep].append(pd.DatetimeIndex([d1])), "y": np.append(y[keep], v1),
+                 "marks": [m for m in chart.get("marks") or [] if pd.Timestamp(m[0]) >= x0] + [(d1, v1)]}
+        if chart.get("x2") is not None:
+            x2 = pd.DatetimeIndex(chart["x2"])
+            chart.update({"x2": x2[x2 >= x0], "y2": np.asarray(chart["y2"], dtype=float)[x2 >= x0]})
+        note = [n.replace("за три года", "за три месяца") for n in note]
         note.append(f"последняя точка - срез {d_ru(d1, card['as_of'])} к {hm} МСК")
         limits = [x for x in limits if not x.startswith("данные дневные")] + \
             [f"дневные данные - на закрытие {d_ru(card['as_of'], card['as_of'])}; последняя точка - 5-минутный срез "
@@ -948,8 +986,8 @@ def positions_card(sec, leg, as_of) -> dict:
             "facts": [f for f in facts if f], "trend": trend, "after": after, "analogy": analogy, "price": price,
             "intraday_change": intraday_chg, "angles": angles,
             "context": context, "limits": limits, "chart": chart,
-            "chart_note": [f"на графике - {lab} по {dat} за три года (оранжевая линия) и {plabel} "
-                           f"(серая); {marks_note}"],
+            "chart_note": [f"на графике - {lab} по {dat} за три года (оранжевая линия)"
+                           + (f" и {plabel} (серая)" if plabel else "") + f"; {marks_note}"],
             "hashtag": HASHTAG["positions"]}
 
 
@@ -1069,12 +1107,15 @@ def positions_low_card(sec, base, as_of) -> dict:
             "facts": facts, "trend": trend, "after": after, "analogy": [], "price": price_lines(pser, t, plabel),
             "intraday_change": intraday_chg, "context": other_legs(P, sec, base, t), "limits": limits,
             "chart": chart,
-            "chart_note": [f"на графике - {lab} по {dat} за три года (оранжевая линия) и {plabel} (серая); точками "
-                           f"отмечены прошлые минимумы и текущее значение"] if plabel else [],
+            "chart_note": [f"на графике - {lab} по {dat} за три года (оранжевая линия)"
+                           + (f" и {plabel} (серая)" if plabel else "")
+                           + "; точками отмечены прошлые минимумы и текущее значение"],
             "hashtag": HASHTAG["positions"]}
 
 
-def funds_card(cat, as_of) -> dict:
+def funds_card(cat, as_of, leg=None) -> dict:
+    """leg — окно находки детектора («1d», «5d», «20d»): у находки «приток за 5 дней — рекорд» график — пятидневная
+    сумма по дням, а не помесячные столбцы (#3927: картинка не совпадала с находкой)."""
     P, names, groups, to_stock, idx, stk, perp, usd = data()
     daily, nav = funds_data()
     d = upto(daily[cat], as_of)
@@ -1102,7 +1143,7 @@ def funds_card(cat, as_of) -> dict:
         reversal = (f"{word(dv[-1])} {('первый', 'второй', 'третий')[run - 1]} день подряд после {opp} "
                     f"{plural(opp, ('торгового дня', 'торговых дней', 'торговых дней'))} {word(-dv[-1])}а")
         facts.append(reversal)
-    rec = None
+    rec, roll = None, {}
     for n in (5, 20):
         s = d.rolling(n).sum().dropna()
         a, ds = s.values, s.index
@@ -1110,6 +1151,7 @@ def funds_card(cat, as_of) -> dict:
         uu, yy = since(a, ds, len(a) - 1, hi)
         stx = status_ru(uu, yy, ds, hi, t, word="рекорд")
         line_n = f"{word(a[-1])} за {n} торговых дней - {n_ru(abs(a[-1]))} ₽" + (f", {stx}" if stx else "")
+        roll[n] = (s, uu, stx, line_n)
         facts.append(line_n)
         if stx and (uu is None or yy >= 1) and rec is None:
             rec = line_n
@@ -1121,6 +1163,17 @@ def funds_card(cat, as_of) -> dict:
     facts.append(line)
     day_line = f"{word(dv[-1])} за один день - {n_ru(abs(dv[-1]))} ₽, рекорд за всё время наших данных"
     head = f"{nom.capitalize()}: " + (day_line if day_rec else line if mtd_rec else (reversal or rec or line))
+    # находка детектора о сумме за n дней (#3927, «приток за 5 дней — рекорд с 15.06»): пост и картинка — о ней же,
+    # а не о «с начала месяца» (Вадим 08.10); месяц остаётся фоном в фактах
+    n_leg = {"5d": 5, "20d": 20}.get(str(leg or ""))
+    if n_leg and roll.get(n_leg) and roll[n_leg][2]:
+        sn, un = roll[n_leg][0], roll[n_leg][1]
+        most = f"больше всего с {d_ru(un, t)}" if un is not None else "больше всего за всё время наших данных"
+        head = f"{nom.capitalize()}: {word(sn.iloc[-1])} за {n_leg} торговых дней - {n_ru(abs(sn.iloc[-1]))} ₽, {most}"
+        facts.remove(roll[n_leg][3])
+        facts.insert(0, roll[n_leg][3])
+    else:
+        n_leg = None
     signs = np.sign(past.values)
     k = 0
     for sg in signs[::-1]:
@@ -1223,15 +1276,34 @@ def funds_card(cat, as_of) -> dict:
     if 0 < len(stalls) < 4:
         limits.append(f"похожих эпизодов всего {len(stalls)}: можно сказать, что было в тех случаях, но прямо "
                       f"назови, что их {len(stalls)} - это сопутствующий сигнал, а не закономерность")
-    months = mo[mo.index >= t - pd.Timedelta(days=30 * 30)]
-    chart = {"type": "bars", "title": f"{nom.capitalize()}: приток и отток по месяцам, млрд ₽",
-             "x": months.index, "y": months.values / 1e9, "current": True}
+    bn = lambda v: (f"{v / 1e9:+.0f}" if abs(v) >= 1e10 else f"{v / 1e9:+.1f}").replace(".", ",").replace("-", "−")  # noqa: E731
+    if n_leg:
+        # находка о сумме за n дней: ряд этой суммы по дням; окно — чтобы прошлый такой уровень был виден
+        s, uu, stx, _ = roll[n_leg]
+        start = t - pd.Timedelta(days=365)
+        if uu is not None:
+            start = min(start, pd.Timestamp(uu) - pd.Timedelta(days=45))
+        s = s[s.index >= max(start, t - pd.Timedelta(days=3 * 365))]
+        w = "приток" if s.iloc[-1] > 0 else "отток"
+        most = f"больше всего с {d_ru(uu, t)}" if uu is not None else "больше всего за всё время данных"
+        chart = {"type": "flow", "x": s.index, "y": s.values / 1e9, "since": uu,
+                 "title": f"{nom.capitalize()}: {w} за {n_leg} торговых дней, млрд ₽ — сейчас {bn(s.iloc[-1])}, {most}"}
+        note = (f"на графике - сумма притока и оттока в {prep} за {n_leg} торговых дней, по дням (серая линия); "
+                f"последняя точка выделена оранжевым - {most}")
+    else:
+        # столбец — на своём месяце: индекс resample("ME") — последний день месяца, и столбец уезжал на соседний
+        months = mo[mo.index >= t - pd.Timedelta(days=30 * 30)]
+        chart = {"type": "bars", "x": months.index.to_period("M").to_timestamp(), "y": months.values / 1e9,
+                 "current": True, "as_of": t,
+                 "title": f"{nom.capitalize()}: приток и отток по месяцам, млрд ₽ — {det.MONTHS[t.month - 1]} "
+                          f"(неполный: к {d_ru(t, t)}) {bn(mtd)}"}
+        note = (f"на графике - приток и отток в {prep} по месяцам за два с половиной года (серые столбцы); последний "
+                f"столбец, оранжевый и бледный - неполный текущий месяц на {d_ru(t, t)}")
     return {"kind": "funds", "spec": {"cat": cat}, "as_of": t,
             "headline": head,
             "facts": facts, "history": history, "after": after, "analogy": analogy, "price": price,
             "context": [], "limits": limits, "chart": chart,
-            "chart_note": [f"на графике - приток и отток в {prep} по месяцам за два с половиной года; "
-                           f"последний столбец - текущий месяц на {d_ru(t, t)}"],
+            "chart_note": [note],
             "hashtag": HASHTAG["funds"]}
 
 
@@ -1398,6 +1470,21 @@ def fund_trades_card(as_of, month=None) -> dict:
     # «КЦ ИКС 5», «Татнфт 3ао» — биржевые сокращения; в пост — имя компании из мозга, у привилегированных — «-п»
     nm = lambda h: (company.get(isin_of(h), h["asset_name"]) +  # noqa: E731
                     ("-п" if company.get(isin_of(h)) and re.search(r"\bап\b|-п\b|прив", h["asset_name"]) else ""))
+    # на графике — короткое имя компании: display_name по тикеру (ticker_futures_map, как у сайта), иначе имя из мозга,
+    # иначе биржевое («Транснф ап» — не имя: у Транснефти нет связи в мозге, а в карте тикеров есть)
+    disp = {}
+    if isins:
+        dm = _sql("""SELECT DISTINCT ON (sr.isin) sr.isin, m.display_name FROM securities_ref sr
+                       JOIN ticker_futures_map m ON m.stock_ticker = sr.secid
+                      WHERE sr.isin = ANY(CAST(:isins AS text[]))""", {"isins": isins})
+        if {"isin", "display_name"} <= set(dm.columns):
+            disp = {k: v for k, v in zip(dm["isin"], dm["display_name"]) if v}
+    chart_name = lambda h: disp.get(isin_of(h)) or nm(h)  # noqa: E731
+    movers = mv["top_accumulated"][:5] + mv["top_reduced"][:5]
+    vals = [round(i["total_delta_amount"] / 1e9, 2) for i in movers]
+    sold = mv["top_reduced"][:1]
+    sold_v = round(sold[0]["total_delta_amount"] / 1e9, 2) if sold else 0.0
+    bfmt = lambda v: (f"{v:+.1f}").replace(".", ",").replace("-", "−")  # noqa: E731
     total = pf.get("total_value_rub") or sum(h.get("value_rub") or 0 for h in now)
     buys = [f"{nm(i)}: купили на {rub_ru(i['total_delta_amount'])} (покупали {i['funds_buying']} фондов, "
             f"продавали {i['funds_selling']})" for i in mv["top_accumulated"][:5]]
@@ -1461,11 +1548,12 @@ def fund_trades_card(as_of, month=None) -> dict:
                        f"отчёты выходят с задержкой: это данные на конец {GEN[m0.month - 1]} - пиши "
                        f"«в {MONTHS_IN[m0.month - 1]}», не «сейчас»", "мотив фондов не утверждать: «фиксируют убыток», «ставят на нефть» - только "
                        "«похоже»; цены покупки фондов у нас нет", NO_FORECAST],
-            "chart": {"type": "hbars", "title": f"Сделки фондов акций за {mname}, млрд ₽",
-                      "labels": [nm(i) for i in mv["top_accumulated"][:5] + mv["top_reduced"][:5]],
-                      "values": [round(i["total_delta_amount"] / 1e9, 2)
-                                 for i in mv["top_accumulated"][:5] + mv["top_reduced"][:5]]},
-            "chart_note": [f"на графике - пять самых крупных покупок и продаж фондов акций за {mname}, млрд ₽"],
+            "chart": {"type": "hbars", "labels": [chart_name(i) for i in movers], "values": vals,
+                      "title": f"Фонды акций за {mname}: крупнейшие покупки и продажи, млрд ₽ — купили "
+                               f"{chart_name(movers[0])} {bfmt(vals[0])}" + (f", продали {chart_name(sold[0])} "
+                                                                             f"{bfmt(sold_v)}" if sold else "")},
+            "chart_note": [f"на графике - пять самых крупных покупок и продаж фондов акций за {mname}, млрд ₽; "
+                           f"крупнейшая покупка и продажа выделены оранжевым"],
             "hashtag": HASHTAG["fund_trades"]}
 
 
@@ -1542,8 +1630,9 @@ def macro_card(event, headline, theme, as_of) -> dict:
         if k and sid == "IMOEXF":
             ratios.append(k)
             day = df[(df.t >= e - pd.Timedelta(hours=3)) & (df.t <= w["td"])]
-            chart = {"type": "intraday", "title": f"Фьючерс на индекс Мосбиржи и позиции физлиц, {d_ru(e, t)}",
-                     "x": day.t.values, "y": day.close.values, "y_label": "фьючерс на индекс", "event": e}
+            chart = {"type": "intraday", "x": day.t.values, "y": day.close.values, "y_label": "фьючерс на индекс",
+                     "event": e, "title": f"Вечный фьючерс на индекс Мосбиржи по 5 минутам, {d_ru(e, t)} — за два часа "
+                                          f"после новости в {e:%H:%M} {p_ru(r2)}"}
         line = (f"{name}: за два часа после новости {p_ru(r2)} (к {w['t2']:%H:%M}), {_end_label(w, t)} "
                 f"{p_ru(rd)}" + (f"; обычный двухчасовой ход - {p_ru(typ, False)}, сейчас в "
                                  f"{f'{k:.1f}'.replace('.', ',')} раза больше" if k and k >= 1.5 else ""))
@@ -1601,8 +1690,8 @@ def macro_card(event, headline, theme, as_of) -> dict:
                        "позиции физлиц - 5-минутные снимки биржи по группе «физлица»; это не число людей и не деньги",
                        "пост - о реакции наших данных, а не пересказ новости: саму новость - одной фразой", NO_FORECAST],
             "chart": chart, "strength": max(ratios) if ratios else 0.0,
-            "chart_note": ["на графике - фьючерс на индекс Мосбиржи (оранжевая линия) и чистая позиция физлиц (серая) по "
-                           "5 минутам; вертикальная черта - время новости"] if chart else [],
+            "chart_note": ["на графике - вечный фьючерс на индекс Мосбиржи по 5 минутам (серая линия); оранжевая "
+                           "вертикальная черта - время новости"] if chart else [],
             "hashtag": HASHTAG["macro"]}
 
 
@@ -1614,7 +1703,7 @@ def build_card(spec: dict, as_of) -> dict:
         card = positions_card(spec["sec"], spec["leg"], as_of)
         return angle_card(card, spec["angle"]) if spec.get("angle") else card
     if kind == "funds":
-        return funds_card(spec["cat"], as_of)
+        return funds_card(spec["cat"], as_of, spec.get("leg"))
     if kind == "fund_trades":
         return fund_trades_card(as_of, spec.get("month"))
     if kind == "macro":
@@ -1801,6 +1890,12 @@ def brief_text(card: dict, focus: bool = False, context: dict | None = None) -> 
 
 
 def draw_chart(card: dict, path: str):
+    """Картинка к черновику. Фонды, сделки фондов и макро — простые технические графики (signals/insights/charts.py,
+    Вадим 08.10); позиции и сезонность — прежний вид, ниже."""
+    if card["chart"]["type"] in ("bars", "flow", "hbars", "intraday"):
+        from signals.insights import charts
+        charts.draw(card, path)
+        return
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.dates as mdates
