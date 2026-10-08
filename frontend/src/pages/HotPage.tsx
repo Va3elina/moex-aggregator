@@ -212,18 +212,49 @@ export function HotCardView({ card }: { card: HotCard }) {
   );
 }
 
+// Каркас карточки, пока витрина грузится: та же рамка и порядок блоков, что у настоящей.
+function CardSkeleton() {
+  return (
+    <div style={CARD}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Skeleton width={34} height={34} />
+        <Skeleton width="45%" height={20} />
+      </div>
+      <Skeleton width="70%" height={16} />
+      <Skeleton width="40%" height={12} />
+      <Skeleton width="100%" height={200} />
+      <Skeleton width="100%" height={20} />
+    </div>
+  );
+}
+
+const LAST_KEY = 'hot:last';   // последняя витрина в браузере — показываем сразу, свежую подменяем
+
+function readLast(): HotResponse | null {
+  try {
+    const raw = localStorage.getItem(LAST_KEY);
+    return raw ? (JSON.parse(raw) as HotResponse) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function HotPage() {
   const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const [resp, setResp] = useState<HotResponse | null>(null);
+  const [resp, setResp] = useState<HotResponse | null>(readLast);
   const [error, setError] = useState<string | null>(null);
   const [section, setSection] = useState<Section>('all');
 
   useEffect(() => {
     if (!isAdmin) return;
     let off = false;
-    getHot().then(r => { if (!off) setResp(r); })
+    getHot().then(r => {
+      if (off) return;
+      setResp(r);
+      try { localStorage.setItem(LAST_KEY, JSON.stringify(r)); } catch { /* нет места или запрещено — не страшно */ }
+    })
       .catch(e => { if (!off) setError(e instanceof Error ? e.message : String(e)); });
     return () => { off = true; };
   }, [isAdmin]);
@@ -239,8 +270,8 @@ export default function HotPage() {
     .map(([key, label]) => ({ key, label: resp ? `${label} ${count(key)}` : label }));
   const asOf = resp ? `${Number(resp.as_of.slice(8, 10))} ${monthGenitive(Number(resp.as_of.slice(5, 7)) - 1)}` : '';
 
-  if (authLoading) return null;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  // пока проверяется вход — уже рисуем шапку и каркасы, а не чёрный экран
+  if (!authLoading && !isAdmin) return <Navigate to="/" replace />;
 
   return (
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8">
@@ -253,7 +284,7 @@ export default function HotPage() {
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 400px), 1fr))', gap: 24 }}>
         {resp
           ? shown.map(c => <HotCardView key={c.id} card={c} />)
-          : !error && Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={330} />)}
+          : !error && Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
       </div>
       {resp?.errors?.length ? (
         <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
