@@ -135,9 +135,11 @@ def test_past_episodes_drop_the_current_one():
 def test_past_case_and_base_up():
     px = [(d, 100 + k) for k, d in enumerate(_days(120))]
     c = H.past_case(px, date(2024, 1, 1), "x")
-    assert c["m1"] == round((122 / 101 - 1) * 100, 1) and c["m3"] is not None
+    assert c["r"][0] == round((122 / 101 - 1) * 100, 1) and c["r"][1] is not None
+    oi = H.past_case(px, date(2024, 1, 1), "x", H.OI_HORIZONS, zone="2 недели")
+    assert oi["r"][0] == round((102 / 101 - 1) * 100, 1) and oi["zone"] == "2 недели"
     assert H.base_up(px, date(2024, 1, 1)) == 100
-    assert H.past_case(None, date(2024, 1, 1), "x")["m1"] is None
+    assert H.past_case(None, date(2024, 1, 1), "x")["r"] == [None, None]
 
 
 def test_fund_past_finds_earlier_streak_not_current():

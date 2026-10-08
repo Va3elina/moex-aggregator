@@ -26,7 +26,7 @@ import { BarsChartCard, LegsChartCard, SeasonChartCard } from '../components/hot
 import { useAuth } from '../contexts/AuthContext';
 import { monthGenitive } from '../i18n';
 import { getHot } from '../services/api';
-import type { HotCard, HotFlowsCard, HotPast, HotResponse, HotTag } from '../services/api';
+import type { HotCard, HotFlowsCard, HotPast, HotPastCase, HotResponse, HotTag } from '../services/api';
 
 type Section = 'all' | 'oi' | 'flows' | 'trades' | 'season';
 
@@ -102,18 +102,20 @@ const pctCell = (v: number | null) => (v == null ? '—' : `${sgn(v, 1)}%`);
 const tone = (v: number | null) => (v == null ? 'var(--text-muted)' : v > 0 ? UP : DN);
 const shortDate = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}`;
 
-// Прошлые похожие случаи под графиком: по умолчанию одна строка (точки-исходы цены через месяц + счёт),
+// Прошлые похожие случаи под графиком: по умолчанию одна строка (точки-исходы цены за последний период + счёт),
 // по нажатию — список. Средних «+x% в среднем» нет: на истории это монетка, показываем сами случаи.
-function PastCases({ past, onPick }: { past: HotPast; onPick?: (date: string | null) => void }) {
+function PastCases({ past, onPick }: { past: HotPast; onPick?: (c: HotPastCase | null) => void }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [on, setOn] = useState<number | null>(null);
-  const pick = (i: number | null) => { setOn(i); onPick?.(i == null ? null : past.cases[i].date); };
+  const pick = (i: number | null) => { setOn(i); onPick?.(i == null ? null : past.cases[i]); };
   const toggle = () => { if (open) pick(null); setOpen(o => !o); };
-  const known = past.cases.filter(c => c.m1 != null);
-  const up = known.filter(c => (c.m1 ?? 0) > 0).length;
+  const last = past.horizons.length - 1;                // исход — по последнему периоду (2 недели у позиций)
+  const out = (c: HotPastCase) => c.r[last] ?? null;
+  const known = past.cases.filter(c => out(c) != null);
+  const up = known.filter(c => (out(c) ?? 0) > 0).length;
   const head: CSSProperties = { flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' };
-  const grid: CSSProperties = { display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 52px 52px', gap: 8, alignItems: 'center' };
+  const grid: CSSProperties = { display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 64px 64px', gap: 8, alignItems: 'center' };
   const num: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 700, textAlign: 'right' };
   const wrap: CSSProperties = { borderTop: '1px solid var(--chart-grid)', paddingTop: 8 };
   if (!past.cases.length) {
@@ -130,7 +132,7 @@ function PastCases({ past, onPick }: { past: HotPast; onPick?: (date: string | n
         style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, minHeight: 28, width: '100%', boxSizing: 'border-box' }}>
         <span style={head}>{t(past.title)}</span>
         <span style={{ display: 'flex', gap: 4 }}>
-          {past.cases.map((c, i) => <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: tone(c.m1) }} />)}
+          {past.cases.map((c, i) => <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: tone(out(c)) }} />)}
         </span>
         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text-primary)' }}>
           {up}↑ {known.length - up}↓
@@ -141,7 +143,7 @@ function PastCases({ past, onPick }: { past: HotPast; onPick?: (date: string | n
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 6 }}>
           <div style={{ ...grid, fontSize: 10, color: 'var(--text-muted)', paddingBottom: 4 }}>
             <span>{t('дата')}</span><span>{t('что было')}</span>
-            <span style={{ textAlign: 'right' }}>{t('месяц')}</span><span style={{ textAlign: 'right' }}>{t('3 мес')}</span>
+            {past.horizons.map(hz => <span key={hz} style={{ textAlign: 'right' }}>{t(hz)}</span>)}
           </div>
           {past.cases.map((c, i) => (
             <div key={i} tabIndex={onPick ? 0 : undefined}
@@ -153,13 +155,12 @@ function PastCases({ past, onPick }: { past: HotPast; onPick?: (date: string | n
               }}>
               <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{shortDate(c.date)}</span>
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)' }}>{t(c.label)}</span>
-              <span style={{ ...num, color: tone(c.m1) }}>{pctCell(c.m1)}</span>
-              <span style={{ ...num, color: tone(c.m3) }}>{pctCell(c.m3)}</span>
+              {c.r.map((v, j) => <span key={j} style={{ ...num, color: tone(v) }}>{pctCell(v)}</span>)}
             </div>
           ))}
           {past.base_up != null && (
             <div style={{ fontSize: 11, color: 'var(--text-muted)', paddingTop: 6 }}>
-              {t('В обычный день цена через месяц росла в {{p}}% случаев', { p: past.base_up })}
+              {t('В обычный день цена {{h}} росла в {{p}}% случаев', { h: t(past.horizons[last]), p: past.base_up })}
             </div>
           )}
         </div>
@@ -170,7 +171,7 @@ function PastCases({ past, onPick }: { past: HotPast; onPick?: (date: string | n
 
 export function HotCardView({ card }: { card: HotCard }) {
   const { t } = useTranslation();
-  const [picked, setPicked] = useState<string | null>(null);   // прошлый случай под курсором в списке
+  const [picked, setPicked] = useState<HotPastCase | null>(null);   // прошлый случай под курсором в списке
   const icon = card.kind === 'flows' ? <CategoryIcon category={card.category} />
     : card.kind === 'trades' ? (card.secid ? <TickerLogo ticker={card.secid} size={34} rounded="md" /> : null)
     : <InstrumentIcon sectype={card.sectype} size={34} rounded="md" />;

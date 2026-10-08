@@ -184,11 +184,16 @@ def price_after(px: Sequence[Tuple[date, float]], day: date, n: int = 21) -> Opt
 PAST_MAX = 10                        # строк в списке прошлых случаев
 
 
-def past_case(px: Optional[Sequence[Tuple[date, float]]], d: date, label: str) -> Dict[str, Any]:
-    """Прошлый случай для списка под графиком: дата, что было, цена через месяц и 3 месяца (%)."""
+OI_HORIZONS = (("через день", 1), ("через 2 нед", 14))      # периоды сигналов позиций: день и 14 торговых дней
+FUND_HORIZONS = (("через месяц", 21), ("через 3 мес", 63))
+
+
+def past_case(px: Optional[Sequence[Tuple[date, float]]], d: date, label: str,
+              horizons: Sequence[Tuple[str, int]] = FUND_HORIZONS, **extra: Any) -> Dict[str, Any]:
+    """Прошлый случай для списка под графиком: дата, что было, изменение цены через каждый период (%)."""
     nxt = d + timedelta(days=1)                  # сигнал известен после закрытия дня
     return {"date": d.isoformat(), "label": label,
-            "m1": price_after(px, nxt, 21) if px else None, "m3": price_after(px, nxt, 63) if px else None}
+            "r": [price_after(px, nxt, n) if px else None for _, n in horizons], **extra}
 
 
 def base_up(px: Optional[Sequence[Tuple[date, float]]], since: date, n: int = 21) -> Optional[int]:
@@ -383,7 +388,9 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
                     sig[k] = g["ratio"]
             verb = leg_verb(leg, direction_up).replace("Физлица ", "").capitalize()
             past = {"title": "Прошлые резкие сдвиги за 2 недели",
-                    "cases": [past_case(px.get(s), dates[k], f"{verb} ×{sig[k]:.1f}".replace(".", ","))
+                    "horizons": [h for h, _ in OI_HORIZONS],
+                    "cases": [past_case(px.get(s), dates[k], f"{verb} ×{sig[k]:.1f}".replace(".", ","), OI_HORIZONS,
+                                        **{"from": dates[max(0, k - scr.MED_WINDOW)].isoformat(), "zone": "2 недели"})
                               for k in past_episodes(sorted(sig), last, scr.MED_WINDOW)]}
         signal = leg_verb(leg, direction_up)
         if past:
@@ -399,7 +406,8 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         if k_lv is not None:
             chart["level"] = {"value": _r(vals[k_lv], 0), "date": dates[k_lv].isoformat(),
                               "label": "прежний " + ("максимум" if direction_up else "минимум")}
-        keep = _thin(dates, dates[last] - timedelta(days=760))
+        # с прошлыми случаями — каждый день (их зоны по 2 недели), иначе старая история по пятницам
+        keep = _thin(dates, start if past and past["cases"] else dates[last] - timedelta(days=760))
         idx = [i for i in keep if dates[i] >= start]
         if k_lv is not None and k_lv not in idx:     # прореженная история могла пропустить день рекорда
             idx = sorted(idx + [k_lv])
@@ -413,7 +421,7 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
                 "date": dates[last].isoformat(), "chart": chart}
         if past is not None:
             past["cases"] = past["cases"][::-1][:PAST_MAX]
-            past["base_up"] = base_up(px.get(s), date(2022, 3, 1))
+            past["base_up"] = base_up(px.get(s), date(2022, 3, 1), OI_HORIZONS[-1][1])
             card["past"] = past
         cards.append(card)
     return cards, short.get("signal_date")
@@ -555,6 +563,7 @@ def scan_funds(user, today: date, db=None) -> List[Dict[str, Any]]:
                     "SELECT trade_date, close FROM index_data WHERE secid = :x AND close > 0 ORDER BY 1"), {"x": secid}).fetchall()]
                 rows = [past_case(px, t - timedelta(days=1), c["signal"]) for t, c in fund_past(months, weeks, today, case, px)]
                 card["past"] = {"title": f"Прошлые такие же случаи · {what} после", "cases": rows[::-1][:PAST_MAX],
+                                "horizons": [h for h, _ in FUND_HORIZONS],
                                 "base_up": base_up(px, date(2022, 3, 1))}
             cards.append(card)
     order = {"week_record": 0, "month_record": 1, "reversal": 2, "streak": 3}
