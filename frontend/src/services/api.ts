@@ -3578,15 +3578,15 @@ export const getBrainPath = (a: string, b: string) => brainFetch<BrainPath>('pat
 // Витрина находок: отбор, подписи и ряды для компактных графиков карточек —
 // api/services/hot.py. Графики рисует components/hot/HotCharts.tsx.
 
-export interface HotLineChart {
-  type: 'line';
-  series: [string, number][];
+export interface HotLegsChart {
+  type: 'legs';
+  leg: 'long' | 'short';                 // нога события
+  series: [string, number, number][];    // дата, лонги, шорты
   price?: (number | null)[];
   zone?: { from: string; label: string };
   level?: { value: number | null; label: string; date?: string | null };
   start?: { date: string; value: number };
-  peaks?: [string, number][];
-  now: { date: string; value: number };
+  now: { date: string; long: number; short: number };
 }
 export interface HotBarsChart {
   type: 'bars';
@@ -3611,7 +3611,7 @@ export interface HotTag { tone: 'fill' | 'accent' | 'pill'; text: string; note?:
 
 export interface HotOiCard {
   kind: 'oi'; id: string; sectype: string; name: string; signal: string; tags: HotTag[]; date: string;
-  chart: HotLineChart; past?: HotPast;
+  chart: HotLegsChart; past?: HotPast;
 }
 export interface HotFlowsCard {
   kind: 'flows'; id: string; category: FundCategory; name: string; case: string; signal: string; amount: number;

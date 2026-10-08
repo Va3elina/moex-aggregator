@@ -148,3 +148,11 @@ def test_fund_past_finds_earlier_streak_not_current():
     assert cur["case"] == "streak"
     past = H.fund_past(months, [], today, cur, None, start=date(2023, 1, 2))
     assert len(past) == 1 and past[0][1]["chart"]["run"]["from"] == "2023-07"
+
+
+def test_legs_words_and_series():
+    assert H.leg_verb("long", True) == "Физлица набрали лонг" and H.leg_verb("long", False) == "Физлица сократили лонг"
+    assert H.leg_verb("short", True) == "Физлица нарастили шорт" and H.leg_verb("short", False) == "Физлица сократили шорт"
+    pts = [(date(2024, 1, 1), -50.0, 60, 0.0, 100.0, -150.0)]
+    assert H.leg_pts(pts, "long")[0][1] == 100.0 and H.leg_pts(pts, "short")[0][1] == 150.0
+    assert H.thousands(32231) == "32 тыс" and H.thousands(2733) == "2,7 тыс"

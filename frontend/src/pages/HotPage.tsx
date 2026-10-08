@@ -22,7 +22,7 @@ import SegmentedControl from '../components/SegmentedControl';
 import Skeleton from '../components/Skeleton';
 import InstrumentIcon from '../components/InstrumentIcon';
 import TickerLogo from '../components/TickerLogo';
-import { BarsChartCard, LineChartCard, SeasonChartCard } from '../components/hot/HotCharts';
+import { BarsChartCard, LegsChartCard, SeasonChartCard } from '../components/hot/HotCharts';
 import { useAuth } from '../contexts/AuthContext';
 import { monthGenitive } from '../i18n';
 import { getHot } from '../services/api';
@@ -169,7 +169,7 @@ export function HotCardView({ card }: { card: HotCard }) {
   let chart: ReactNode;
   if (card.kind === 'oi') {
     plaques = <OiTags tags={card.tags} />;
-    chart = <LineChartCard chart={card.chart} priceLabel={card.name} />;
+    chart = <LegsChartCard chart={card.chart} priceLabel={card.name} />;
   } else if (card.kind === 'flows') {
     plaques = <>
       <Plaque tone="strong">{t('{{v}} млрд ₽', { v: sgn(card.amount, Math.abs(card.amount) >= 10 ? 0 : 2) })}</Plaque>
