@@ -117,3 +117,11 @@ def test_season_years_window_per_year():
         closes.append((date(y, 12, 31), 110.0 if y % 2 else 95.0))
     yrs = H.season_years(closes, date(2026, 10, 3), 2010)
     assert len(yrs) == 16 and yrs[0] == (2010, -5.0) and yrs[1] == (2011, 10.0)
+
+
+def test_front_month_takes_nearest_live_contract():
+    d1, d2 = date(2026, 9, 17), date(2026, 9, 21)
+    rows = [(d1, 100.0, date(2026, 9, 18), False), (d1, 102.0, date(2026, 12, 18), False),
+            (d2, 103.0, date(2026, 12, 18), False), (d2, 99.0, None, True)]
+    assert H.front_month(rows) == [(d1, 100.0), (d2, 103.0)]
+    assert H.front_month([(d1, 50.0, None, True)]) == [(d1, 50.0)]

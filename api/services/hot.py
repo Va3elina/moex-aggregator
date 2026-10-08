@@ -194,7 +194,8 @@ def _positions(db, sectypes: Sequence[str]) -> Dict[str, List[tuple]]:
 
 
 def _prices(db, sectypes: Sequence[str]) -> Dict[str, List[Tuple[date, float]]]:
-    """Цена базового актива: акция, индекс или курс. Нет — ряда нет (линии цены на графике не будет)."""
+    """Цена базового актива: акция, индекс или курс; у металлов и нефти — склейка ближнего фьючерса (front_month).
+    Нет и её — ряда нет (линии цены на графике не будет)."""
     codes = dict(db.execute(text(
         "SELECT sectype, max(assetcode) FROM futures_contracts WHERE sectype = ANY(:s) GROUP BY sectype"),
         {"s": list(sectypes)}).fetchall())
@@ -215,9 +216,29 @@ def _prices(db, sectypes: Sequence[str]) -> Dict[str, List[Tuple[date, float]]]:
                     {"x": secid}).fetchall()
                 if rows:
                     break
+        if not rows:
+            rows = front_month(db.execute(text("""
+                SELECT c.begin_time::date, c.close, f.lsttrade, f.is_perpetual
+                  FROM candles c JOIN futures_contracts f ON f.secid = c.secid
+                 WHERE f.sectype = :s AND c.interval = 24 AND c.type = 'futures' AND c.close > 0
+                 ORDER BY 1"""), {"s": s}).fetchall())
         if rows:
             out[s] = [(r[0], float(r[1])) for r in rows]
     return out
+
+
+def front_month(rows: Sequence[tuple]) -> List[Tuple[date, float]]:
+    """Склейка цены фьючерса без базового актива (металлы, нефть): на каждый день — ближайший к экспирации
+    контракт, который ещё торгуется; вечный фьючерс — когда срочных нет. rows: (день, close, lsttrade, вечный)."""
+    best: Dict[date, Tuple[date, float]] = {}
+    far = date(9999, 1, 1)
+    for d, close, lst, perp in rows:
+        exp = far if perp or lst is None else lst
+        if exp < d:
+            continue
+        if d not in best or exp < best[d][0]:
+            best[d] = (exp, float(close))
+    return [(d, best[d][1]) for d in sorted(best)]
 
 
 def _thin(dates: Sequence[date], keep_daily_from: date) -> List[int]:
