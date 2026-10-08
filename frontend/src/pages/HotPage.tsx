@@ -102,7 +102,7 @@ const pctCell = (v: number | null) => (v == null ? '—' : `${sgn(v, 1)}%`);
 const tone = (v: number | null) => (v == null ? 'var(--text-muted)' : v > 0 ? UP : DN);
 const shortDate = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}`;
 
-// Прошлые похожие случаи под графиком: по умолчанию одна строка (точки-исходы цены за последний период + счёт),
+// «История» под графиком — прошлые похожие случаи: по умолчанию одна строка с их числом,
 // по нажатию — список. Средних «+x% в среднем» нет: на истории это монетка, показываем сами случаи.
 function PastCases({ past, onPick }: { past: HotPast; onPick?: (c: HotPastCase | null) => void }) {
   const { t } = useTranslation();
@@ -110,12 +110,9 @@ function PastCases({ past, onPick }: { past: HotPast; onPick?: (c: HotPastCase |
   const [on, setOn] = useState<number | null>(null);
   const pick = (i: number | null) => { setOn(i); onPick?.(i == null ? null : past.cases[i]); };
   const toggle = () => { if (open) pick(null); setOpen(o => !o); };
-  const last = past.horizons.length - 1;                // исход — по последнему периоду (2 недели у позиций)
-  const out = (c: HotPastCase) => c.r[last] ?? null;
-  const known = past.cases.filter(c => out(c) != null);
-  const up = known.filter(c => (out(c) ?? 0) > 0).length;
+  const last = past.horizons.length - 1;
   const head: CSSProperties = { flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' };
-  const grid: CSSProperties = { display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 64px 64px', gap: 8, alignItems: 'center' };
+  const grid: CSSProperties = { display: 'grid', gridTemplateColumns: `64px minmax(0, 1fr) ${past.horizons.map(() => '72px').join(' ')}`, gap: 8, alignItems: 'center' };
   const num: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 700, textAlign: 'right' };
   const wrap: CSSProperties = { borderTop: '1px solid var(--chart-grid)', paddingTop: 8 };
   if (!past.cases.length) {
@@ -131,12 +128,7 @@ function PastCases({ past, onPick }: { past: HotPast; onPick?: (c: HotPastCase |
       <button type="button" onClick={toggle} aria-expanded={open}
         style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, minHeight: 28, width: '100%', boxSizing: 'border-box' }}>
         <span style={head}>{t(past.title)}</span>
-        <span style={{ display: 'flex', gap: 4 }}>
-          {past.cases.map((c, i) => <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: tone(out(c)) }} />)}
-        </span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text-primary)' }}>
-          {up}↑ {known.length - up}↓
-        </span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text-muted)' }}>{past.cases.length}</span>
         <ChevronDown size={14} strokeWidth={2.4} style={{ color: 'var(--text-muted)', transition: 'transform .2s', transform: open ? 'rotate(180deg)' : 'none' }} />
       </button>
       {open && (
@@ -187,7 +179,7 @@ export function HotCardView({ card }: { card: HotCard }) {
       {card.note && <Plaque tone="accent">{t(card.note)}</Plaque>}
       <Plaque tone="muted">{card.date_label}</Plaque>
     </>;
-    chart = <BarsChartCard chart={card.chart} />;
+    chart = <BarsChartCard chart={card.chart} highlight={picked} />;
   } else if (card.kind === 'trades') {
     plaques = <>
       <Plaque tone="strong">{card.funds}</Plaque>
@@ -199,7 +191,7 @@ export function HotCardView({ card }: { card: HotCard }) {
       <Plaque tone="strong">{card.hits}</Plaque>
       <Plaque tone="muted">{card.date_label}</Plaque>
     </>;
-    chart = <SeasonChartCard chart={card.chart} label={t('Этот год')} />;
+    chart = <SeasonChartCard chart={card.chart} label={t('Этот год')} highlight={picked} />;
   }
 
   return (
@@ -216,8 +208,7 @@ export function HotCardView({ card }: { card: HotCard }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minHeight: 22 }}>{plaques}</div>
       </div>
       <div style={{ minWidth: 0, marginTop: 2 }}>{chart}</div>
-      {card.kind === 'oi' && card.past && <PastCases past={card.past} onPick={setPicked} />}
-      {card.kind === 'flows' && card.past && <PastCases past={card.past} />}
+      {(card.kind === 'oi' || card.kind === 'flows' || card.kind === 'season') && card.past && <PastCases past={card.past} onPick={setPicked} />}
     </article>
   );
 }

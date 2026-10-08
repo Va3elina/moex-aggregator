@@ -153,7 +153,19 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
   const [ref, w] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
   const m = LINE_M;
-  const data = chart.series;
+  // прошлый случай под курсором в списке — вместо нынешнего, и график увеличен на него:
+  // от 6 недель до начала сдвига до 3 недель после сигнала
+  const past = highlight && highlight.date >= (chart.series[0]?.[0] ?? '') ? highlight : null;
+  let i0 = 0, i1 = chart.series.length - 1;
+  if (past) {
+    const lo = new Date(ts(past.from ?? past.date) - 42 * 864e5).toISOString().slice(0, 10);
+    const hi = new Date(ts(past.date) + 21 * 864e5).toISOString().slice(0, 10);
+    i0 = Math.max(0, chart.series.findIndex(d => d[0] >= lo));
+    const j = chart.series.findIndex(d => d[0] > hi);
+    i1 = j < 0 ? chart.series.length - 1 : Math.max(i0 + 1, j - 1);
+  }
+  const data = useMemo(() => chart.series.slice(i0, i1 + 1), [chart.series, i0, i1]);
+  const price = useMemo(() => chart.price?.slice(i0, i1 + 1), [chart.price, i0, i1]);
   const n = data.length;
   const ev = chart.leg === 'long' ? 1 : 2;              // колонка ноги сигнала в series
   const xr = w - m.r;
@@ -166,16 +178,14 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
     const pad = (hi - lo) * 0.12 || 1;
     lo = Math.max(0, lo - pad); hi += pad;
     const Y = (v: number) => H - m.b - ((v - lo) / (hi - lo)) * (H - m.t - m.b);
-    const pr = (chart.price ?? []).filter((v): v is number => v != null);
+    const pr = (price ?? []).filter((v): v is number => v != null);
     let plo = Math.min(...pr), phi = Math.max(...pr);
     const ppad = (phi - plo) * 0.1 || 1;
     plo -= ppad; phi += ppad;
     const P = (v: number) => H - m.b - ((v - plo) / (phi - plo)) * (H - m.t - m.b);
     return { X, Y, P, lo, hi, plo, phi, x0, x1, hasPrice: pr.length > 1 };
-  }, [w, data, n, chart.price, m, ev]);
+  }, [w, data, n, price, m, ev]);
 
-  // прошлый случай под курсором — вместо нынешнего: его окно (from → date) в том же оформлении
-  const past = highlight && highlight.date >= (data[0]?.[0] ?? '') ? highlight : null;
   const iEnd = past ? data.findIndex(d => d[0] >= past.date) : n - 1;
   const startDate = past ? past.from ?? past.date : chart.start?.date;
   const iStart = startDate ? data.findIndex(d => d[0] >= startDate) : -1;
@@ -216,7 +226,8 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
   const zx = zoneFrom ? Math.min(X(ts(zoneFrom)), xr - 8) : null;
   const zEnd = past && iEnd >= 0 ? Math.min(pts[iEnd][0] + 3, xr) : xr;
   const nowV = chart.leg === 'long' ? chart.now.long : chart.now.short;
-  const nowY = Y(nowV);
+  const shownV = past && iEnd >= 0 ? data[iEnd][ev] : nowV;      // при показе прошлого — его значение
+  const nowY = Y(shownV);
   const pillY = Math.min(Math.max(nowY, m.t), H - m.b);
   const head = headRow(
     [{ color, text: chart.leg === 'long' ? 'лонги' : 'шорты' }, ...(geo.hasPrice ? [{ color: PRICE, text: 'цена' }] : [])],
@@ -243,7 +254,7 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
           <text key={`x${t.label}${t.x}`} x={t.x} y={H - 6} fontSize={10} fontFamily={FONT} fill={MUTED} textAnchor="middle">{t.label}</text>
         ))}
         {geo.hasPrice && (
-          <path d={path((chart.price ?? []).map((v, i) => v == null ? null : [X(ts(data[i][0])), P(v)] as [number, number]).filter((p): p is [number, number] => !!p))}
+          <path d={path((price ?? []).map((v, i) => v == null ? null : [X(ts(data[i][0])), P(v)] as [number, number]).filter((p): p is [number, number] => !!p))}
             fill="none" stroke={PRICE} strokeWidth={1.2} opacity={0.45} />
         )}
         <path d={path(pts)} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
@@ -251,7 +262,7 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
         {iStart >= 0 && <circle cx={pts[iStart][0]} cy={pts[iStart][1]} r={4} fill={PANEL} stroke={color} strokeWidth={2} />}
         {iEnd >= 0 && <circle cx={pts[iEnd][0]} cy={pts[iEnd][1]} r={5.5} fill={color} stroke={INK} strokeWidth={1.6} />}
         <rect x={xr + 4} y={pillY - 9} width={46} height={18} rx={4} fill={color} />
-        <text x={xr + 27} y={pillY} fontSize={10} fontFamily={FONT} fontWeight={800} fill="var(--text-inverse)" textAnchor="middle" dominantBaseline="central">{kfmt(nowV)}</text>
+        <text x={xr + 27} y={pillY} fontSize={10} fontFamily={FONT} fontWeight={800} fill="var(--text-inverse)" textAnchor="middle" dominantBaseline="central">{kfmt(shownV)}</text>
         {hv && <line x1={X(ts(hv[0]))} x2={X(ts(hv[0]))} y1={m.t} y2={H - m.b} stroke={MUTED} strokeDasharray="2 3" />}
         <rect x={m.l} y={0} width={Math.max(0, xr - m.l)} height={H - m.b} fill="transparent" onMouseMove={onMove} />
       </svg>
@@ -259,7 +270,7 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
         <Tip x={X(ts(hv[0]))} y={Y(hv[ev])} w={w} rows={[
           <span style={{ color: MUTED }}>{dayMon(hv[0])}</span>,
           <span><span style={{ color, fontWeight: 700 }}>●</span> {chart.leg === 'long' ? 'Лонги' : 'Шорты'} {kfmt(hv[ev])}</span>,
-          ...(chart.price?.[hover] != null ? [<span><span style={{ color: PRICE, fontWeight: 700 }}>●</span> {priceLabel} {fmtPrice(chart.price[hover]!)}</span>] : []),
+          ...(price?.[hover] != null ? [<span><span style={{ color: PRICE, fontWeight: 700 }}>●</span> {priceLabel} {fmtPrice(price[hover]!)}</span>] : []),
         ]} />
       )}
     </div>
@@ -268,7 +279,11 @@ export function LegsChartCard({ chart, priceLabel, highlight }: { chart: HotLegs
 
 /** Столбики потоков: событие оранжевым с цифрой, прежний рекорд обведён и отмечен точкой с пунктиром
  *  вправо, серия — зоной со скобкой и подписью над графиком. */
-export function BarsChartCard({ chart }: { chart: HotBarsChart }) {
+export function BarsChartCard({ chart: base, highlight }: { chart: HotBarsChart; highlight?: HotPastCase | null }) {
+  // прошлый случай из «Истории»: его столбик и серия вместо нынешних (если столбик есть на графике)
+  const key0 = (b: [string, number]) => (base.weekly ? b[0] : b[0].slice(0, 7));
+  const hp = highlight?.hl && base.bars.some(b => key0(b) === highlight.hl) ? highlight : null;
+  const chart: HotBarsChart = hp ? { ...base, hl: hp.hl!, run: hp.run ?? undefined, prev: undefined, level: undefined } : base;
   const [ref, w] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
   const m = { l: 8, r: 8, t: 26, b: 22 };
@@ -340,11 +355,13 @@ export function BarsChartCard({ chart }: { chart: HotBarsChart }) {
 }
 
 /** Сезонность года: средняя кривая, текущий год, «сегодня» и зона следующих трёх месяцев. */
-export function SeasonChartCard({ chart, label }: { chart: HotSeasonChart; label: string }) {
+export function SeasonChartCard({ chart, label: curLabel, highlight }: { chart: HotSeasonChart; label: string; highlight?: HotPastCase | null }) {
+  // год из «Истории» — его путь вместо текущего года
   const [ref, w] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
   const m = { l: 8, r: 42, t: 26, b: 22 };
-  const avg = chart.avg, cur = chart.cur;
+  const avg = chart.avg, cur = highlight?.curve ?? chart.cur;
+  const label = highlight?.curve ? highlight.label : curLabel;
   if (!w || !avg.length) return <div ref={ref} style={{ height: H }} />;
   const tdMax = avg[avg.length - 1][0];
   const X = (td: number) => m.l + (td / Math.max(tdMax, 1)) * (w - m.l - m.r);
@@ -356,7 +373,9 @@ export function SeasonChartCard({ chart, label }: { chart: HotSeasonChart; label
   // месяцы — по первой точке каждого, не ближе 30 px
   const months = spaced(avg.filter((a, i) => i === 0 || a[2] !== avg[i - 1][2]).map(a => ({ x: X(a[0]), label: monthShort(a[2] - 1) })), 30);
   const yt = niceTicks(lo, hi, 3);
-  const nowCur = cur[cur.length - 1];
+  const nowCur = highlight?.curve
+    ? cur.reduce((b, p) => (Math.abs(p[0] - chart.today) < Math.abs(b[0] - chart.today) ? p : b), cur[0])
+    : cur[cur.length - 1];
   const za = X(chart.today), zb = Math.max(za + 3, X(chart.zone_to));
   const zoneText = '3 месяца';
   const head = headRow([{ color: MUTED, text: 'в среднем' }, { color: ACC, text: label.toLowerCase() }],
