@@ -3605,15 +3605,17 @@ export interface HotSeasonChart {
   today: number;
   zone_to: number;
 }
+export interface HotPastCase { date: string; label: string; m1: number | null; m3: number | null }
+export interface HotPast { title: string; cases: HotPastCase[]; base_up: number | null }
 export interface HotTag { tone: 'fill' | 'accent' | 'pill'; text: string; note?: string }
 
 export interface HotOiCard {
   kind: 'oi'; id: string; sectype: string; name: string; signal: string; tags: HotTag[]; date: string;
-  chart: HotLineChart;
+  chart: HotLineChart; past?: HotPast;
 }
 export interface HotFlowsCard {
   kind: 'flows'; id: string; category: FundCategory; name: string; case: string; signal: string; amount: number;
-  date_label: string; note?: string | null; chart: HotBarsChart;
+  date_label: string; note?: string | null; chart: HotBarsChart; past?: HotPast;
 }
 export interface HotTradesCard {
   kind: 'trades'; id: string; isin: string; name: string; secid: string | null; signal: string; funds: string;
