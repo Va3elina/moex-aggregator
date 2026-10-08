@@ -125,3 +125,26 @@ def test_front_month_takes_nearest_live_contract():
             (d2, 103.0, date(2026, 12, 18), False), (d2, 99.0, None, True)]
     assert H.front_month(rows) == [(d1, 100.0), (d2, 103.0)]
     assert H.front_month([(d1, 50.0, None, True)]) == [(d1, 50.0)]
+
+
+def test_past_episodes_drop_the_current_one():
+    assert H.past_episodes([3, 4, 5, 40, 41, 98, 99, 100], 100, 10) == [3, 40]
+    assert H.past_episodes([3, 4, 40], 100, 10) == [3, 40]       # сегодня не сигнал — все эпизоды прошлые
+
+
+def test_past_case_and_base_up():
+    px = [(d, 100 + k) for k, d in enumerate(_days(120))]
+    c = H.past_case(px, date(2024, 1, 1), "x")
+    assert c["m1"] == round((122 / 101 - 1) * 100, 1) and c["m3"] is not None
+    assert H.base_up(px, date(2024, 1, 1)) == 100
+    assert H.past_case(None, date(2024, 1, 1), "x")["m1"] is None
+
+
+def test_fund_past_finds_earlier_streak_not_current():
+    vals = [1] * 6 + [-1] * 5 + [1] * 3 + [-1] * 5          # две серии оттока по 5 мес
+    months = _months(vals, start=(2023, 1))
+    today = date(2024, 8, 3)
+    cur = H.fund_case(months, [], today)
+    assert cur["case"] == "streak"
+    past = H.fund_past(months, [], today, cur, None, start=date(2023, 1, 2))
+    assert len(past) == 1 and past[0][1]["chart"]["run"]["from"] == "2023-07"

@@ -62,6 +62,10 @@ def _day(d: date) -> str:
     return f"{d.day} {MON[d.month - 1]}"
 
 
+def _pct(v: float) -> str:
+    return f"{'+' if v > 0 else '−' if v < 0 else ''}{abs(v):.0f}%"
+
+
 def _r(v: Optional[float], n: int = 1) -> Optional[float]:
     return None if v is None else round(v, n)
 
@@ -136,6 +140,10 @@ def record_verb(kind: str, net: float) -> str:
     return "Физлица набрали лонг" if net >= 0 else "Физлица сократили шорт"
 
 
+def word_of(kind: str, period: str) -> str:
+    return ("Макс " if kind == "high" else "Мин ") + PERIOD_WORD[period]
+
+
 def cluster_firsts(idx: Sequence[int], gap: int) -> List[int]:
     """Первые дни эпизодов: срабатывания ближе gap торговых дней — один эпизод."""
     out: List[int] = []
@@ -171,6 +179,32 @@ def price_after(px: Sequence[Tuple[date, float]], day: date, n: int = 21) -> Opt
     if lo + n >= len(px) or px[lo][1] <= 0:
         return None
     return round((px[lo + n][1] / px[lo][1] - 1) * 100, 1)
+
+
+PAST_MAX = 10                        # строк в списке прошлых случаев
+
+
+def past_case(px: Optional[Sequence[Tuple[date, float]]], d: date, label: str) -> Dict[str, Any]:
+    """Прошлый случай для списка под графиком: дата, что было, цена через месяц и 3 месяца (%)."""
+    nxt = d + timedelta(days=1)                  # сигнал известен после закрытия дня
+    return {"date": d.isoformat(), "label": label,
+            "m1": price_after(px, nxt, 21) if px else None, "m3": price_after(px, nxt, 63) if px else None}
+
+
+def base_up(px: Optional[Sequence[Tuple[date, float]]], since: date, n: int = 21) -> Optional[int]:
+    """Сравнение «в обычный день»: доля дней с ростом цены через n торговых дней, %."""
+    if not px:
+        return None
+    ch = [px[i + n][1] / px[i][1] - 1 for i in range(len(px) - n) if px[i][0] >= since and px[i][1] > 0]
+    return round(sum(c > 0 for c in ch) / len(ch) * 100) if len(ch) >= 50 else None
+
+
+def past_episodes(hits: Sequence[int], last: int, gap: int) -> List[int]:
+    """Первые дни прошлых эпизодов; нынешний эпизод (тот, что тянется до сегодня) — не прошлый случай."""
+    firsts = cluster_firsts(hits, gap)
+    if hits and firsts and last - hits[-1] <= gap:
+        firsts = firsts[:-1]
+    return firsts
 
 
 def _positions(db, sectypes: Sequence[str]) -> Dict[str, List[tuple]]:
@@ -309,13 +343,27 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
                     and ((ext[k][1] is not None and vals[k] > ext[k][1]) if kind == "high"
                          else (ext[k][0] is not None and vals[k] < ext[k][0]))]
             peaks = [k for k in peak_of(vals, hits, kind, EP_GAP) if (dates[last] - dates[k]).days > SAME_CASE_DAYS]
+            # похожие прошлые случаи: рекорд той же стороны за год и больше (или за окно карточки, если оно короче)
+            floor = min(days or 10 ** 6, 365)
+            ext_all = {p: (ext if p == period else prior_extremes(dates, vals, d)) for p, d in REC_WINDOWS if (d or 10 ** 6) >= floor}
+            sim: Dict[int, str] = {}
+            for k in range(len(vals)):
+                if pts[k][2] < scr.ATR_MIN_PART:
+                    continue
+                rec_k = record_at(vals[k], {p: e[k] for p, e in ext_all.items()
+                                            if (dates[k] - dates[0]).days >= (dict(REC_WINDOWS)[p] or 365)})
+                if rec_k and rec_k[0] == kind:
+                    sim[k] = rec_k[1]
+            past = {"title": "Прошлые " + ("максимумы" if kind == "high" else "минимумы") + " позиции",
+                    "cases": [past_case(px.get(s), dates[k], word_of(kind, sim[k]) + " · " + _pct(vals[k]))
+                              for k in past_episodes(sorted(sim), last, EP_GAP)]}
             span = max(days or 0, 365) * 2 if days else None
             start = dates[last] - timedelta(days=span) if span else dates[0]
             chart.update(zone={"from": (dates[last] - timedelta(days=days)).isoformat() if days else dates[0].isoformat(),
                                "label": ZONE_WORD[period]},
                          level={"value": _r(level), "date": dates[k_lv].isoformat() if k_lv is not None else None,
                                 "label": "прежний " + ("максимум" if kind == "high" else "минимум")})
-            word = ("Макс " if kind == "high" else "Мин ") + PERIOD_WORD[period]
+            word = word_of(kind, period)
             tags.append({"tone": "fill" if period == "all" else "accent", "text": word})
             signal = screener_verb(r["net"], r["direction"]) if (c["day"] or c["wk"]) and r.get("direction") \
                 else record_verb(kind, r["net"])
@@ -335,6 +383,19 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
                              start={"date": dates[k0].isoformat(), "value": _r(vals[k0])})
                 direction = r.get("direction") or ("up" if vals[last] >= vals[k0] else "down")
             signal = screener_verb(r["net"], direction)
+            past = None
+            if c["wk"]:
+                # прошлые резкие сдвиги за 2 недели в ту же сторону (тот же глагол скринера)
+                hits = []
+                for k in range(scr.MED_WINDOW + scr.MED_MIN_BASE, len(pts)):
+                    sg = scr._row_signal_medium(pts[max(0, k - 150):k + 1], scr.ATR_MIN_PART)
+                    if sg["status"] == "sharp" and screener_verb(pts[k][1], sg["direction"]) == signal:
+                        hits.append(k)
+                ratios = {k: scr._row_signal_medium(pts[max(0, k - 150):k + 1], scr.ATR_MIN_PART)["ratio"]
+                          for k in past_episodes(hits, last, scr.MED_WINDOW)}
+                past = {"title": "Прошлые резкие сдвиги за 2 недели",
+                        "cases": [past_case(px.get(s), dates[k], signal.replace("Физлица ", "").capitalize()
+                                            + f" ×{ratios[k]:.1f}".replace(".", ",")) for k in ratios]}
         if c["wk"]:
             tags.append({"tone": "pill", "text": f"×{c['wk']:.1f}".replace(".", ","), "note": "за 2 недели"})
         if c["day"]:
@@ -358,10 +419,13 @@ def scan_positions(db) -> Tuple[List[Dict[str, Any]], Optional[str]]:
             chart["price"] = [_r(v, 4) for v in _price_on(px[s], sel_dates)]
         chart["peaks"] = [[dates[k].isoformat(), _r(vals[k])] for k in peaks if dates[k] >= start]
         chart["now"] = {"date": dates[last].isoformat(), "value": _r(vals[last])}
-        cards.append({
-            "kind": "oi", "id": f"oi:{s}", "sectype": s, "name": r["name"], "signal": signal, "tags": tags,
-            "date": dates[last].isoformat(), "chart": chart,
-        })
+        card = {"kind": "oi", "id": f"oi:{s}", "sectype": s, "name": r["name"], "signal": signal, "tags": tags,
+                "date": dates[last].isoformat(), "chart": chart}
+        if past is not None:
+            past["cases"] = past["cases"][::-1][:PAST_MAX]
+            past["base_up"] = base_up(px.get(s), date(2022, 3, 1))
+            card["past"] = past
+        cards.append(card)
     return cards, short.get("signal_date")
 
 
@@ -453,7 +517,34 @@ def fund_case(months: List[Tuple[str, float]], weeks: List[Tuple[str, str, float
     return None
 
 
-def scan_funds(user, today: date) -> List[Dict[str, Any]]:
+FUND_ASSET = {"stocks": ("IMOEX", "индекс"), "money_market": ("IMOEX", "индекс"), "bonds": ("RGBI", "индекс ОФЗ"),
+              "gold": ("GLDRUB_TOM", "золото"), "yuan": ("CNYRUB_TOM", "юань")}
+
+
+def _case_key(c: Dict[str, Any]) -> Tuple[str, str, bool]:
+    """Один случай — одна строка: серия считается по её началу, остальное — по подсвеченному столбику."""
+    ch = c["chart"]
+    anchor = (ch.get("run") or {}).get("from") if c["case"] == "streak" else ch.get("hl")
+    return c["case"], anchor or "", c["amount"] > 0
+
+
+def fund_past(months, weeks, today: date, cur: Dict[str, Any], px, start: date = date(2022, 3, 7)) -> List[Tuple[date, Dict[str, Any]]]:
+    """Прошлые такие же случаи категории: тот же тип и та же сторона (приток/отток). Перематываем по неделям,
+    день случая — когда он впервые показался бы на витрине; нынешний случай не в счёт."""
+    seen, out = set(), []
+    t = start
+    while t < today:
+        c = fund_case(months, weeks, t)
+        if c and c["case"] == cur["case"] and (c["amount"] > 0) == (cur["amount"] > 0):
+            k = _case_key(c)
+            if k not in seen and k != _case_key(cur):
+                seen.add(k)
+                out.append((t, c))
+        t += timedelta(days=7)
+    return out
+
+
+def scan_funds(user, today: date, db=None) -> List[Dict[str, Any]]:
     from api.routers import funds as F   # роут-функции сайта: тот же расчёт потоков, что на странице
     cards = []
     for cat, name in FUND_CATS:
@@ -467,7 +558,15 @@ def scan_funds(user, today: date) -> List[Dict[str, Any]]:
         weeks = [(r["period_start"], r["period_end"], float(r["flow"])) for r in wk.get("flows", [])]
         case = fund_case(months, weeks, today)
         if case:
-            cards.append({"kind": "flows", "id": f"flows:{cat}", "category": cat, "name": name, **case})
+            card = {"kind": "flows", "id": f"flows:{cat}", "category": cat, "name": name, **case}
+            if db is not None:
+                secid, what = FUND_ASSET[cat]
+                px = [(r[0], float(r[1])) for r in db.execute(text(
+                    "SELECT trade_date, close FROM index_data WHERE secid = :x AND close > 0 ORDER BY 1"), {"x": secid}).fetchall()]
+                rows = [past_case(px, t - timedelta(days=1), c["signal"]) for t, c in fund_past(months, weeks, today, case, px)]
+                card["past"] = {"title": f"Прошлые такие же случаи · {what} после", "cases": rows[::-1][:PAST_MAX],
+                                "base_up": base_up(px, date(2022, 3, 1))}
+            cards.append(card)
     order = {"week_record": 0, "month_record": 1, "reversal": 2, "streak": 3}
     return sorted(cards, key=lambda c: order[c["case"]])
 
@@ -577,7 +676,7 @@ def compute_hot(db, user, today: Optional[date] = None) -> Dict[str, Any]:
             if name == "positions":
                 cards, as_of = scan_positions(db)
             elif name == "funds":
-                cards = scan_funds(user, today)
+                cards = scan_funds(user, today, db)
             elif name == "trades":
                 cards = scan_trades(db, user)
             else:

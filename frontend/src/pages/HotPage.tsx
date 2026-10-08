@@ -9,13 +9,14 @@
  * Карточка — сверху вниз от крупного к мелкому: актив → сигнал словами
  * скринера → плашки → график. Текста минимум: что произошло, видно на
  * графике (components/hot/HotCharts.tsx — компактный движок под карточку в
- * оформлении графиков сайта; общие графики сайта не трогаем).
+ * оформлении графиков сайта; общие графики сайта не трогаем). Под графиком —
+ * свёрнутый список прошлых похожих случаев этого актива (past с бэкенда).
  */
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Banknote, DollarSign, Flame, JapaneseYen, TrendingUp } from 'lucide-react';
+import { Banknote, ChevronDown, DollarSign, Flame, JapaneseYen, TrendingUp } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
 import Skeleton from '../components/Skeleton';
@@ -25,7 +26,7 @@ import { BarsChartCard, LineChartCard, SeasonChartCard } from '../components/hot
 import { useAuth } from '../contexts/AuthContext';
 import { monthGenitive } from '../i18n';
 import { getHot } from '../services/api';
-import type { HotCard, HotFlowsCard, HotResponse, HotTag } from '../services/api';
+import type { HotCard, HotFlowsCard, HotPast, HotResponse, HotTag } from '../services/api';
 
 type Section = 'all' | 'oi' | 'flows' | 'trades' | 'season';
 
@@ -95,6 +96,69 @@ function OiTags({ tags }: { tags: HotTag[] }) {
   );
 }
 
+const UP = 'var(--funds-flow-positive)';
+const DN = 'var(--funds-flow-negative)';
+const pctCell = (v: number | null) => (v == null ? '—' : `${sgn(v, 1)}%`);
+const tone = (v: number | null) => (v == null ? 'var(--text-muted)' : v > 0 ? UP : DN);
+const shortDate = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}`;
+
+// Прошлые похожие случаи под графиком: по умолчанию одна строка (точки-исходы цены через месяц + счёт),
+// по нажатию — список. Средних «+x% в среднем» нет: на истории это монетка, показываем сами случаи.
+function PastCases({ past }: { past: HotPast }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const known = past.cases.filter(c => c.m1 != null);
+  const up = known.filter(c => (c.m1 ?? 0) > 0).length;
+  const head: CSSProperties = { flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' };
+  const grid: CSSProperties = { display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 52px 52px', gap: 8, alignItems: 'center' };
+  const num: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 700, textAlign: 'right' };
+  const wrap: CSSProperties = { borderTop: '1px solid var(--chart-grid)', paddingTop: 8 };
+  if (!past.cases.length) {
+    return (
+      <div style={{ ...wrap, display: 'flex', alignItems: 'center', gap: 10, minHeight: 28 }}>
+        <span style={head}>{t(past.title)}</span>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('раньше такого не было')}</span>
+      </div>
+    );
+  }
+  return (
+    <div style={wrap}>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, minHeight: 28, width: '100%', boxSizing: 'border-box' }}>
+        <span style={head}>{t(past.title)}</span>
+        <span style={{ display: 'flex', gap: 4 }}>
+          {past.cases.map((c, i) => <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: tone(c.m1) }} />)}
+        </span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text-primary)' }}>
+          {up}↑ {known.length - up}↓
+        </span>
+        <ChevronDown size={14} strokeWidth={2.4} style={{ color: 'var(--text-muted)', transition: 'transform .2s', transform: open ? 'rotate(180deg)' : 'none' }} />
+      </button>
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 6 }}>
+          <div style={{ ...grid, fontSize: 10, color: 'var(--text-muted)', paddingBottom: 4 }}>
+            <span>{t('дата')}</span><span>{t('что было')}</span>
+            <span style={{ textAlign: 'right' }}>{t('месяц')}</span><span style={{ textAlign: 'right' }}>{t('3 мес')}</span>
+          </div>
+          {past.cases.map((c, i) => (
+            <div key={i} style={{ ...grid, padding: '6px 0', borderTop: '1px solid var(--chart-grid)', fontSize: 12 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{shortDate(c.date)}</span>
+              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)' }}>{t(c.label)}</span>
+              <span style={{ ...num, color: tone(c.m1) }}>{pctCell(c.m1)}</span>
+              <span style={{ ...num, color: tone(c.m3) }}>{pctCell(c.m3)}</span>
+            </div>
+          ))}
+          {past.base_up != null && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', paddingTop: 6 }}>
+              {t('В обычный день цена через месяц росла в {{p}}% случаев', { p: past.base_up })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function HotCardView({ card }: { card: HotCard }) {
   const { t } = useTranslation();
   const icon = card.kind === 'flows' ? <CategoryIcon category={card.category} />
@@ -141,6 +205,7 @@ export function HotCardView({ card }: { card: HotCard }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minHeight: 22 }}>{plaques}</div>
       </div>
       <div style={{ minWidth: 0, marginTop: 2 }}>{chart}</div>
+      {(card.kind === 'oi' || card.kind === 'flows') && card.past && <PastCases past={card.past} />}
     </article>
   );
 }
