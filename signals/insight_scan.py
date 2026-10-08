@@ -206,7 +206,7 @@ def pick(items: list, log=print, until=None) -> list:
                 continue
             f = x.get("facts") or {}
             spec = {"positions": {"kind": "positions", "sec": f.get("sec"), "leg": f.get("leg")},
-                    "funds": {"kind": "funds", "cat": f.get("cat")},
+                    "funds": {"kind": "funds", "cat": f.get("cat"), "leg": f.get("leg")},
                     "seasonality": {"kind": "seasonality", "code": x["instrument"]}}[kind]
             if kind == "funds" and not all_time_record(x) and not fund_significant(spec["cat"], last):
                 log(f"пропуск, мало для читателя: {x['title'][:90]}")
