@@ -90,6 +90,23 @@ KNOWN_FUT_CORP_ACTIONS: dict[str, list[tuple[date, float]]] = {
     'TN': [(date(2024, 2, 21), 0.010833)],  # Транснефть: сплит акций 1:100, торги с 21.02.2024. Фронт TNH4 157849 (02.02) → TNM4 1710 (21.02), фьюч ~92×. Interfax 930673
     'GK': [(date(2024, 4, 9),  0.1219)],  # Норникель: сплит акций 1:100, конвертация 04.04.2024. GKH4 ~15k → GKZ4 ~1.8k (фьюч ~8×, лот тоже менялся). Interfax 951692
     'VB': [(date(2024, 7, 16), 4.5130)],  # ВТБ: обратный сплит (консолидация) 5000:1, торги с 15.07.2024. VBH4 ~2.2k → VBZ4 ~10.1k (фьюч ~4.5×). Interfax 965973
+    # Новатэк: история до мини — квартальный NK (100 акций), мини NV — 10 акций.
+    # Ratio по спецификации, а не эмпирический: на стыке NKZ5 120911 (18.12) →
+    # NVH6 12540 (19.12) лишние 3.7% — обычный гэп ролла дек→мар.
+    'NV': [(date(2025, 12, 19), 0.1)],
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Серии-предшественники: MOEX заменил фьючерс новым кодом, а ОИ продолжает
+# прежний ряд. NOTK (NK, 100 акций) экспирировался 18.12.2025, ему на смену
+# пришёл мини NOTKM (NV), чьи контракты торгуются только с 25.11.2025. ОИ по NV
+# в БД лежит с 2022, но график режет его по свечам — «Всё» начиналось с 2025.
+# Цену до запуска нового кода берём у предшественника; масштаб выравнивает
+# KNOWN_FUT_CORP_ACTIONS. Окна предшественника идут ПЕРВЫМИ: на перекрытии
+# (25.11–18.12.2025) фронт остаётся за старым контрактом до его экспирации.
+FUT_PREDECESSORS: dict[str, list[str]] = {
+    'NV': ['NK'],
 }
 
 
@@ -467,6 +484,8 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
         cal_ids = front_sec_ids(db, sectype)
         if cal_ids:
             sec_ids = list(dict.fromkeys(sec_ids + cal_ids))
+        for pred in FUT_PREDECESSORS.get(sectype, []):
+            sec_ids = list(dict.fromkeys(sec_ids + front_sec_ids(db, pred)))
     log.info(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
 
     # 2-4. Рабочий период
@@ -642,6 +661,9 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
     # дня. Календаря нет совсем → чистый объём (прежнее поведение). Единый
     # источник истины — api/services/contract_calendar.
     windows = front_windows(db, sectype)
+    if inst_type == 'futures':
+        for pred in FUT_PREDECESSORS.get(sectype, []):
+            windows = front_windows(db, pred) + windows
     sorted_days = sorted(daily_volume.keys())
     best_contract_by_day = {}
     prev_contract = None
