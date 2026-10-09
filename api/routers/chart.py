@@ -94,6 +94,9 @@ KNOWN_FUT_CORP_ACTIONS: dict[str, list[tuple[date, float]]] = {
     # Ratio по спецификации, а не эмпирический: на стыке NKZ5 120911 (18.12) →
     # NVH6 12540 (19.12) лишние 3.7% — обычный гэп ролла дек→мар.
     'NV': [(date(2025, 12, 19), 0.1)],
+    # Яндекс: YNDF (YN, 10 акций) до редомициляции, YDEX (YD, 1 акция) с
+    # 25.07.2024. Торги YNDF встали 23.05.2024 (YNM4 42600 → YDU4 4276).
+    'YD': [(date(2024, 7, 25), 0.1)],
 }
 
 
@@ -105,8 +108,11 @@ KNOWN_FUT_CORP_ACTIONS: dict[str, list[tuple[date, float]]] = {
 # Цену до запуска нового кода берём у предшественника; масштаб выравнивает
 # KNOWN_FUT_CORP_ACTIONS. Окна предшественника идут ПЕРВЫМИ: на перекрытии
 # (25.11–18.12.2025) фронт остаётся за старым контрактом до его экспирации.
+# ОИ предшественника подмешивается только на даты, где своего ряда нет
+# (Яндекс: ОИ по YD с 25.07.2024, история YNDF лежит под sectype YN).
 FUT_PREDECESSORS: dict[str, list[str]] = {
     'NV': ['NK'],
+    'YD': ['YN'],
 }
 
 
@@ -486,6 +492,8 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
             sec_ids = list(dict.fromkeys(sec_ids + cal_ids))
         for pred in FUT_PREDECESSORS.get(sectype, []):
             sec_ids = list(dict.fromkeys(sec_ids + front_sec_ids(db, pred)))
+    # Ряды ОИ: свой sectype первым — на общих датах он перекрывает предшественника.
+    oi_sectypes = [sectype] + (FUT_PREDECESSORS.get(sectype, []) if inst_type == 'futures' else [])
     log.info(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
 
     # 2-4. Рабочий период
@@ -546,8 +554,8 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
         t0 = time.time()
         oi_bounds = db.execute(text("""
             SELECT MIN(tradedate), MAX(tradedate) FROM open_interest
-            WHERE sectype = :sectype AND clgroup = :clgroup AND interval = :interval
-        """), {"sectype": sectype, "clgroup": clgroup, "interval": interval}).fetchone()
+            WHERE sectype = ANY(:sectypes) AND clgroup = :clgroup AND interval = :interval
+        """), {"sectypes": oi_sectypes, "clgroup": clgroup, "interval": interval}).fetchone()
         oi_start, oi_end = oi_bounds if oi_bounds else (None, None)
         log.info(f"[3] OI bounds: {(time.time()-t0)*1000:.0f} мс | {oi_start} - {oi_end}")
 
@@ -727,21 +735,26 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
                 pos_long, 
                 pos_short, 
                 pos_long_num, 
-                pos_short_num
+                pos_short_num,
+                sectype
             FROM open_interest
-            WHERE sectype = :sectype
+            WHERE sectype = ANY(:sectypes)
               AND clgroup = :clgroup
               AND interval = :interval
               AND tradedate >= :start_date
               AND tradedate <= :end_date
             ORDER BY tradedate, tradetime
         """), {
-            "sectype": sectype,
+            "sectypes": oi_sectypes,
             "clgroup": clgroup,
             "interval": interval,
             "start_date": actual_start,
             "end_date": actual_end
         }).fetchall()
+        if len(oi_sectypes) > 1:
+            # Дата, где есть свой ряд, целиком берётся из него (FUT_PREDECESSORS).
+            own_dates = {r[0] for r in oi_raw if r[7] == sectype}
+            oi_raw = [r for r in oi_raw if r[7] == sectype or r[0] not in own_dates]
         log.info(f"[7] OI query: {(time.time()-t0)*1000:.0f} мс | rows: {len(oi_raw)}")
 
     # 7.5 Back-adjustment непрерывного фьючерса по корпоративным событиям.
