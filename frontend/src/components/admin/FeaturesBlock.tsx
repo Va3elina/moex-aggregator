@@ -1,6 +1,7 @@
 /**
- * «Фонды и терминал» в /admin/stats: что делают внутри «Денег в фондах»,
- * «Сделок фондов» и терминала. Данные — GET /api/analytics/features.
+ * «Скринер, фонды и терминал» в /admin/stats: что делают внутри скринера
+ * сигналов, «Денег в фондах», «Сделок фондов» и терминала.
+ * Данные — GET /api/analytics/features.
  *
  * Все цифры в людях: настройки пишутся снимками, у одного человека их
  * десятки, и в штуках они мерили бы усидчивость, а не интерес. Снимки
@@ -36,6 +37,9 @@ export const TERMINAL_PANEL: Record<string, string> = {
   'fund-trades': 'Сделки фондов', 'fund-movers': 'Сделки фондов (старое окно)', 'cbr-flows': 'Поток капитала',
   heatmap: 'Карта рынка',
 };
+const SCREENER_CLGROUP: Record<string, string> = { FIZ: 'Физлица', YUR: 'Юрлица' };
+const SCREENER_HORIZON: Record<string, string> = { short: 'Дни', medium: 'Недели' };
+const SCREENER_GROUP: Record<string, string> = { all: 'Все категории' };
 const THEME: Record<string, string> = { dark: 'тёмная', light: 'светлая' };
 const SHEETS: Record<string, string> = { '1': '1 лист', '2': '2 листа', '3+': '3 и больше' };
 const WINDOW_ORDER = ['0', '1', '2–3', '4–6', '7+'];
@@ -53,6 +57,11 @@ const HINTS = {
     'Раскладка — по последнему состоянию терминала человека за период: сколько окон и листов у него в итоге осталось. '
     + '«Добавляли» — сами действия: какой индикатор выносили в новое окно.',
   terminal_assets: 'Активы, которые выбирали в окнах терминала.',
+  screener:
+    'Скринер — вкладка «Скринер сигналов» на «Открытых позициях». Адрес у неё тот же, что у графика, поэтому '
+    + 'считаем по своим событиям, они пишутся с 12.10.2026. «Упёрлись в пейволл» — гости и бесплатный тариф: '
+    + 'им вместо строк показан замок. Настройки — у тех, кто видел строки.',
+  screener_picks: 'Какие активы открывали кликом по строке скринера. Серая цифра — сколько раз.',
 };
 
 function named(rows: FeaturePick[], names: Record<string, string>) {
@@ -158,6 +167,7 @@ export default function FeaturesBlock({ data, loading, error }: {
       </Card>
     );
   }
+  const sc = data.screener;
   const fm = data.funds_money;
   const ft = data.fund_trades;
   const tm = data.terminal;
@@ -172,6 +182,47 @@ export default function FeaturesBlock({ data, loading, error }: {
         Все цифры — разные люди за период
         <HelpTooltip icon="help" title="Как считаем" content={HINTS.section} size={13} />
       </p>
+
+      {/* ── Скринер ── */}
+      {sc && (
+      <section>
+        <Head path="/oi/screener" title="Скринер сигналов" people={sc.people} prev={sc.prev_people}
+          tracked={sc.oi_people} trackedLabel="всего на «Открытых позициях»" />
+        <Card padding="md" className="md:p-5 mb-3 md:mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Stat label="Дошли до скринера"
+              value={sc.oi_people ? `${Math.round((sc.people / sc.oi_people) * 100)}%` : '—'}
+              sub={`${sc.people} из ${sc.oi_people} на ОИ`} />
+            <Stat label="Упёрлись в пейволл" value={sc.locked.toLocaleString('ru-RU')}
+              sub={sc.people ? `${Math.round((sc.locked / sc.people) * 100)}% открывших` : undefined} />
+            <Stat label="Открыли актив" value={sc.picked.toLocaleString('ru-RU')}
+              sub="кликнули по строке" />
+            <Stat label="Уведомления" value={sc.alerted.toLocaleString('ru-RU')}
+              sub={sc.faved ? `в избранное добавили ${sc.faved}` : 'из баннера скринера'} />
+          </div>
+          <div className="mt-4 pt-3" style={{ borderTop: '1px solid color-mix(in srgb, var(--text-muted) 25%, transparent)' }}>
+            <PickLine label="Чьи позиции" rows={sc.clgroups} names={SCREENER_CLGROUP} />
+            <PickLine label="Горизонт" rows={sc.horizons} names={SCREENER_HORIZON} />
+            <PickLine label="Категория" rows={sc.groups} names={SCREENER_GROUP} />
+            {sc.people > 0 && sc.clgroups.length === 0 && (
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Строки скринера за период никто не видел — только замок.</p>
+            )}
+            {sc.people === 0 && (
+              <p className="text-sm inline-flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                Данных пока нет: скринер пишет статистику с 12.10.2026.
+                <HelpTooltip icon="help" title="Скринер" content={HINTS.screener} size={13} />
+              </p>
+            )}
+          </div>
+        </Card>
+        <TopList title="Что открывают из скринера" hint={HINTS.screener_picks} columns={['людей', 'раз']}
+          items={sc.picks.map((p) => ({
+            label: p.name, note: p.name !== p.key ? p.key : undefined, value: p.people, value2: p.count,
+            icon: <InstrumentIcon sectype={p.key} size={20} />,
+          }))}
+          loading={false} emptyText="Из скринера активы не открывали" />
+      </section>
+      )}
 
       {/* ── Терминал ── */}
       <section>

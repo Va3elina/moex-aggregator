@@ -1565,6 +1565,18 @@ export interface FeatureFund { ticker: string; people: number; name?: string; uk
 export interface FeaturesReport {
   date_from: string;
   date_to: string;
+  /** Вкладка «Скринер сигналов» на /oi; события пишутся с 12.10.2026. */
+  screener: {
+    people: number; prev_people: number;
+    /** Всего людей на «Открытых позициях» — из них дошли до скринера people. */
+    oi_people: number;
+    /** Упёрлись в пейволл (гость / бесплатный тариф). */
+    locked: number;
+    only_fav: number;
+    clgroups: FeaturePick[]; horizons: FeaturePick[]; groups: FeaturePick[];
+    picked: number; faved: number; alerted: number; alerts: number;
+    picks: { key: string; name: string; people: number; count: number }[];
+  };
   funds_money: {
     people: number; prev_people: number; tracked: number;
     categories: FeaturePick[]; views: FeaturePick[]; periods: FeaturePick[]; timeframes: FeaturePick[];

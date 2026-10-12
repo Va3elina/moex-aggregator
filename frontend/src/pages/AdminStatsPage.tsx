@@ -275,7 +275,7 @@ const STATS_TABS: { key: StatsTab; label: string }[] = [
   { key: 'traffic', label: 'Откуда приходят' },
   { key: 'people', label: 'Пользователи и гости' },
   { key: 'content', label: 'Что смотрят' },
-  { key: 'features', label: 'Фонды и терминал' },
+  { key: 'features', label: 'Скринер, фонды и терминал' },
 ];
 
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];

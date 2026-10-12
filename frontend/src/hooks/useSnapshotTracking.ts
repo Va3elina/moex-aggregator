@@ -17,7 +17,7 @@ const SNAPSHOT_DEBOUNCE_MS = 1_500;
  * заботясь о стабильности ссылки.
  */
 export function useSnapshotTracking(
-  eventType: 'funds_view' | 'fund_trades_view' | 'terminal_layout',
+  eventType: 'funds_view' | 'fund_trades_view' | 'terminal_layout' | 'screener_view',
   payload: Record<string, unknown> | null,
 ) {
   const { track } = useAnalytics();
