@@ -1571,29 +1571,29 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
         t_size = q(f"""
             {last}
             SELECT COUNT(*),
-                   COUNT(*) FILTER (WHERE COALESCE((payload->>'total_panels')::int, 0) > 0),
-                   COALESCE(AVG((payload->>'total_panels')::numeric)
-                            FILTER (WHERE (payload->>'total_panels')::int > 0), 0),
-                   COALESCE(MAX((payload->>'total_panels')::int), 0)
+                   COUNT(*) FILTER (WHERE COALESCE((CASE WHEN payload->>'total_panels' ~ '^[0-9]+$' AND length(payload->>'total_panels') <= 6 THEN (payload->>'total_panels')::int END), 0) > 0),
+                   COALESCE(AVG((CASE WHEN payload->>'total_panels' ~ '^[0-9]+$' AND length(payload->>'total_panels') <= 6 THEN (payload->>'total_panels')::numeric END))
+                            FILTER (WHERE (CASE WHEN payload->>'total_panels' ~ '^[0-9]+$' AND length(payload->>'total_panels') <= 6 THEN (payload->>'total_panels')::int END) > 0), 0),
+                   COALESCE(MAX((CASE WHEN payload->>'total_panels' ~ '^[0-9]+$' AND length(payload->>'total_panels') <= 6 THEN (payload->>'total_panels')::int END)), 0)
             FROM last
         """)[0]
         t_windows = q(f"""
             {last}
             SELECT CASE WHEN n = 0 THEN '0' WHEN n = 1 THEN '1' WHEN n <= 3 THEN '2–3'
                         WHEN n <= 6 THEN '4–6' ELSE '7+' END, COUNT(*)
-            FROM (SELECT COALESCE((payload->>'total_panels')::int, 0) AS n FROM last) s
+            FROM (SELECT COALESCE((CASE WHEN payload->>'total_panels' ~ '^[0-9]+$' AND length(payload->>'total_panels') <= 6 THEN (payload->>'total_panels')::int END), 0) AS n FROM last) s
             GROUP BY 1
         """)
         t_sheets = q(f"""
             {last}
             SELECT CASE WHEN n <= 1 THEN '1' WHEN n = 2 THEN '2' ELSE '3+' END, COUNT(*)
-            FROM (SELECT COALESCE((payload->>'sheets')::int, 1) AS n FROM last
-                  WHERE COALESCE((payload->>'total_panels')::int, 0) > 0) s
+            FROM (SELECT COALESCE((CASE WHEN payload->>'sheets' ~ '^[0-9]+$' AND length(payload->>'sheets') <= 6 THEN (payload->>'sheets')::int END), 1) AS n FROM last
+                  WHERE COALESCE((CASE WHEN payload->>'total_panels' ~ '^[0-9]+$' AND length(payload->>'total_panels') <= 6 THEN (payload->>'total_panels')::int END), 0) > 0) s
             GROUP BY 1
         """)
         t_types = q(f"""
             {last}
-            SELECT t.key, COUNT(DISTINCT l.ident), SUM((t.value)::int)
+            SELECT t.key, COUNT(DISTINCT l.ident), SUM(CASE WHEN t.value ~ '^[0-9]+$' AND length(t.value) <= 6 THEN t.value::int END)
             FROM last l, LATERAL jsonb_each_text(
                 CASE WHEN jsonb_typeof(l.payload->'types') = 'object'
                      THEN l.payload->'types' ELSE '{{}}'::jsonb END) AS t(key, value)
@@ -1619,8 +1619,8 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
         # ── Скринер ────────────────────────────────────────────────────────
         sc_people, sc_locked, sc_fav_only = q("""
             SELECT COUNT(DISTINCT ident),
-                   COUNT(DISTINCT ident) FILTER (WHERE (payload->>'locked')::boolean),
-                   COUNT(DISTINCT ident) FILTER (WHERE (payload->>'only_fav')::boolean)
+                   COUNT(DISTINCT ident) FILTER (WHERE (payload->>'locked' = 'true')),
+                   COUNT(DISTINCT ident) FILTER (WHERE (payload->>'only_fav' = 'true'))
             FROM ev WHERE event_type = 'screener_view'
         """)[0]
         sc_prev = conn.execute(text(f"""
@@ -1631,7 +1631,7 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
         def sc_pick(field: str):
             return q(f"""
                 SELECT payload->>'{field}', COUNT(DISTINCT ident) FROM ev
-                WHERE event_type = 'screener_view' AND NOT COALESCE((payload->>'locked')::boolean, false)
+                WHERE event_type = 'screener_view' AND payload->>'locked' IS DISTINCT FROM 'true'
                   AND payload->>'{field}' IS NOT NULL
                 GROUP BY 1 ORDER BY 2 DESC
             """)
@@ -1644,7 +1644,7 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
         sc_actions = q("""
             SELECT COUNT(DISTINCT ident) FILTER (WHERE event_type = 'screener_pick'),
                    COUNT(DISTINCT ident) FILTER (WHERE event_type = 'screener_fav'
-                                                  AND (payload->>'on')::boolean),
+                                                  AND (payload->>'on' = 'true')),
                    COUNT(DISTINCT ident) FILTER (WHERE event_type = 'screener_alert'),
                    COUNT(*) FILTER (WHERE event_type = 'screener_alert')
             FROM ev
@@ -1870,7 +1870,7 @@ def _compute_indicator(path: str, rng: dict, segment: str, device: str) -> dict:
                     SELECT DISTINCT ON (ident) ident, payload FROM ev
                     WHERE event_type = 'terminal_layout' ORDER BY ident, server_ts DESC
                 )
-                SELECT t.key, COUNT(DISTINCT l.ident), SUM((t.value)::int)
+                SELECT t.key, COUNT(DISTINCT l.ident), SUM(CASE WHEN t.value ~ '^[0-9]+$' AND length(t.value) <= 6 THEN t.value::int END)
                 FROM last l, LATERAL jsonb_each_text(
                     CASE WHEN jsonb_typeof(l.payload->'types') = 'object'
                          THEN l.payload->'types' ELSE '{{}}'::jsonb END) AS t(key, value)
@@ -1882,9 +1882,9 @@ def _compute_indicator(path: str, rng: dict, segment: str, device: str) -> dict:
                     SELECT DISTINCT ON (ident) ident, payload FROM ev
                     WHERE event_type = 'terminal_layout' ORDER BY ident, server_ts DESC
                 )
-                SELECT COUNT(*), COALESCE(AVG((payload->>'total_panels')::numeric), 0),
-                       COALESCE(AVG((payload->>'sheets')::numeric), 0),
-                       COALESCE(MAX((payload->>'total_panels')::int), 0)
+                SELECT COUNT(*), COALESCE(AVG((CASE WHEN payload->>'total_panels' ~ '^[0-9]+$' AND length(payload->>'total_panels') <= 6 THEN (payload->>'total_panels')::numeric END)), 0),
+                       COALESCE(AVG((CASE WHEN payload->>'sheets' ~ '^[0-9]+$' AND length(payload->>'sheets') <= 6 THEN (payload->>'sheets')::numeric END)), 0),
+                       COALESCE(MAX((CASE WHEN payload->>'total_panels' ~ '^[0-9]+$' AND length(payload->>'total_panels') <= 6 THEN (payload->>'total_panels')::int END)), 0)
                 FROM last
             """), params).fetchone()
             inside = {
