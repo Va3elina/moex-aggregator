@@ -4,7 +4,7 @@
  */
 import {
   Layers, Grid3x3, Wallet, ArrowLeftRight, Activity, CalendarDays, Waves, Scale,
-  LayoutDashboard, Eye, type LucideIcon,
+  LayoutDashboard, Eye, ListFilter, type LucideIcon,
 } from 'lucide-react';
 
 export const INDICATOR_ICONS: Record<string, { Icon: LucideIcon; color: string }> = {
@@ -17,6 +17,8 @@ export const INDICATOR_ICONS: Record<string, { Icon: LucideIcon; color: string }
   '/cbr-flows': { Icon: Waves, color: 'var(--info)' },
   '/buffett': { Icon: Scale, color: 'var(--warning)' },
   '/sandbox': { Icon: LayoutDashboard, color: 'var(--accent)' },
+  // Не страница, а вкладка /oi?tab=screener — ключ только для иконки в статистике.
+  '/oi/screener': { Icon: ListFilter, color: 'var(--warning)' },
 };
 
 export function IndicatorGlyph({ path, size = 30 }: { path: string; size?: number }) {

@@ -97,6 +97,16 @@ ALLOWED_EVENT_TYPES = {
     "fund_open",
     "terminal_layout",
     "terminal_panel_add",
+    # Скринер сигналов — вкладка /oi?tab=screener. Адрес страницы тот же, что у
+    # графика ОИ, поэтому без своих событий скринер в статистике не виден:
+    #   screener_view  {clgroup, horizon, group, only_fav, sort, locked} — снимок
+    #   screener_pick  {secid, clgroup, horizon, rank} — открыли актив из строки
+    #   screener_fav   {secid, on} — избранное из скринера
+    #   screener_alert {secid, clgroup} — уведомление из баннера скринера
+    "screener_view",
+    "screener_pick",
+    "screener_fav",
+    "screener_alert",
         # Путь до уведомлений в мессенджере. Уведомления доступны с Basic, поэтому
     # клик по ЗАБЛОКИРОВАННОМУ колокольчику — не шум, а прямая мера спроса
     # среди тех, кто платить ещё не начал:
@@ -1419,7 +1429,7 @@ def get_features(
     device: str = Query("all"),
     user=Depends(require_admin),
 ):
-    """Что делают внутри «Денег в фондах», «Сделок фондов» и терминала.
+    """Что делают внутри скринера, «Денег в фондах», «Сделок фондов» и терминала.
 
     Настройки этих разделов пишутся снимками (funds_view, fund_trades_view,
     terminal_layout — с 21.09.2026), поэтому всё считается в людях: сколько
@@ -1429,13 +1439,13 @@ def get_features(
     это то, с чем он в итоге остался.
     """
     rng = _resolve_range(days, date_from, date_to)
-    key = f"admin:features:v1:{rng['d0']}:{rng['d1']}:{segment}:{device}"
+    key = f"admin:features:v2:{rng['d0']}:{rng['d1']}:{segment}:{device}"
     # 10 минут: настройки внутри разделов меняются медленно, а пересчёт —
     # самый тяжёлый запрос страницы.
     return get_or_compute(key, lambda: _compute_features(rng, segment, device), ttl=600)
 
 
-_FEATURE_PATHS = ("/funds-money", "/fund-trades", "/sandbox")
+_FEATURE_PATHS = ("/funds-money", "/fund-trades", "/sandbox", "/oi")
 
 
 def _compute_features(rng: dict, segment: str, device: str) -> dict:
@@ -1455,9 +1465,14 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
             CREATE TEMP TABLE fev ON COMMIT DROP AS
             {ev_cte}
             SELECT * FROM ev
-            WHERE event_path = ANY(:paths)
+            -- Со страниц — только просмотры (у /oi событий больше всего на сайте,
+            -- и целиком они тут не нужны), из терминала — ещё выбор активов.
+            WHERE (event_type = 'pageview' AND event_path = ANY(:paths))
+               OR (event_path = '/sandbox' AND event_type IN ('instrument_select', 'asset_view'))
                OR event_type IN ('funds_view', 'fund_trades_view', 'fund_open',
-                                 'terminal_layout', 'terminal_panel_add')
+                                 'terminal_layout', 'terminal_panel_add',
+                                 'screener_view', 'screener_pick', 'screener_fav',
+                                 'screener_alert')
         """), params)
 
         def q(sql: str):
@@ -1601,8 +1616,42 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
             GROUP BY 1 ORDER BY 2 DESC LIMIT 12
         """)
 
+        # ── Скринер ────────────────────────────────────────────────────────
+        sc_people, sc_locked, sc_fav_only = q("""
+            SELECT COUNT(DISTINCT ident),
+                   COUNT(DISTINCT ident) FILTER (WHERE (payload->>'locked')::boolean),
+                   COUNT(DISTINCT ident) FILTER (WHERE (payload->>'only_fav')::boolean)
+            FROM ev WHERE event_type = 'screener_view'
+        """)[0]
+        sc_prev = conn.execute(text(f"""
+            {prev_base}
+            SELECT COUNT(DISTINCT ident) FROM ev WHERE event_type = 'screener_view'
+        """), prev_params).fetchone()[0]
+
+        def sc_pick(field: str):
+            return q(f"""
+                SELECT payload->>'{field}', COUNT(DISTINCT ident) FROM ev
+                WHERE event_type = 'screener_view' AND NOT COALESCE((payload->>'locked')::boolean, false)
+                  AND payload->>'{field}' IS NOT NULL
+                GROUP BY 1 ORDER BY 2 DESC
+            """)
+        sc_clgroups, sc_horizons, sc_groups = sc_pick('clgroup'), sc_pick('horizon'), sc_pick('group')
+        sc_picks = q("""
+            SELECT payload->>'secid', COUNT(DISTINCT ident), COUNT(*) FROM ev
+            WHERE event_type = 'screener_pick' AND payload->>'secid' IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC, 3 DESC LIMIT 15
+        """)
+        sc_actions = q("""
+            SELECT COUNT(DISTINCT ident) FILTER (WHERE event_type = 'screener_pick'),
+                   COUNT(DISTINCT ident) FILTER (WHERE event_type = 'screener_fav'
+                                                  AND (payload->>'on')::boolean),
+                   COUNT(DISTINCT ident) FILTER (WHERE event_type = 'screener_alert'),
+                   COUNT(*) FILTER (WHERE event_type = 'screener_alert')
+            FROM ev
+        """)[0]
+
         fund_meta = _fund_meta(conn, [r[0] for r in fm_funds] + [r[0] for r in ft_opened])
-        asset_names = _asset_names(conn, [r[0] for r in t_assets])
+        asset_names = _asset_names(conn, [r[0] for r in t_assets] + [r[0] for r in sc_picks])
 
     def funds(rows) -> list[dict]:
         return [{"ticker": r[0], "people": int(r[1]), **fund_meta.get(r[0], {})} for r in rows]
@@ -1613,6 +1662,23 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
     return {
         "date_from": rng["d0"].isoformat(),
         "date_to": rng["d1"].isoformat(),
+        "screener": {
+            "people": int(sc_people or 0),
+            "prev_people": int(sc_prev or 0),
+            # Сколько вообще было на «Открытых позициях» — для доли «дошли до скринера».
+            "oi_people": reach.get("/oi", 0),
+            "locked": int(sc_locked or 0),
+            "only_fav": int(sc_fav_only or 0),
+            "clgroups": pairs(sc_clgroups),
+            "horizons": pairs(sc_horizons),
+            "groups": pairs(sc_groups),
+            "picked": int(sc_actions[0] or 0),
+            "faved": int(sc_actions[1] or 0),
+            "alerted": int(sc_actions[2] or 0),
+            "alerts": int(sc_actions[3] or 0),
+            "picks": [{"key": r[0], "name": asset_names.get(r[0], r[0]), "people": int(r[1]), "count": int(r[2])}
+                      for r in sc_picks],
+        },
         "funds_money": {
             **section("/funds-money"),
             "tracked": int(fm_people or 0),

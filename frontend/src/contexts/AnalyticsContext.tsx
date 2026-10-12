@@ -79,6 +79,10 @@ type EventType =
   | 'fund_open'
   | 'terminal_layout'
   | 'terminal_panel_add'
+  | 'screener_view'
+  | 'screener_pick'
+  | 'screener_fav'
+  | 'screener_alert'
   // Путь до уведомлений: спрос (в том числе упёршийся в тариф), привязка
   // мессенджера и само создание уведомления.
   | 'alert_bell_click'

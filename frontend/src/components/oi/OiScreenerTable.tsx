@@ -40,6 +40,8 @@ import PositionComet from './PositionComet';
 import OiScreenerLocked from './OiScreenerLocked';
 import { getOiScreener, type OiScreenerRow, type OiScreenerHorizon } from '../../services/api';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { useSnapshotTracking } from '../../hooks/useSnapshotTracking';
+import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 
 type Clgroup = 'FIZ' | 'YUR';
@@ -224,9 +226,28 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     return () => { cancelled = true; };
   }, [clgroup, horizon, refreshTick]);
 
+  // Аналитика: вкладка живёт на том же /oi, что и график, поэтому без своих
+  // событий скринер в статистике неотличим. Снимок настроек уходит при
+  // открытии вкладки и после каждой смены (с паузой); locked — упёрлись в
+  // пейволл. Клик по строке, избранное и уведомление — разовые действия.
+  const { track } = useAnalytics();
+  useSnapshotTracking('screener_view', rows === null && !locked ? null : {
+    clgroup, horizon, group,
+    only_fav: onlyFav || undefined,
+    sort: sortDir === 1 ? 'asc' : undefined,
+    locked: locked || undefined,
+  });
+
+  const pick = (sectype: string) => {
+    const rank = visible.findIndex((r) => r.sectype === sectype);
+    track('screener_pick', { secid: sectype, clgroup, horizon, rank: rank >= 0 ? rank + 1 : undefined });
+    onSelect(sectype, clgroup);
+  };
+
   const toggleFavorite = (sectype: string, e: MouseEvent) => {
     e.stopPropagation();
     const adding = !favorites.includes(sectype);
+    track('screener_fav', { secid: sectype, on: adding });
     setFavorites((prev) => {
       const next = prev.includes(sectype) ? prev.filter((s) => s !== sectype) : [...prev, sectype];
       localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
@@ -525,7 +546,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 background: 'var(--accent)', border: '2px solid var(--text-primary)',
                 color: 'var(--text-inverse)', cursor: 'pointer', whiteSpace: 'nowrap',
               }}
-              onClick={() => { onRequestAlert?.(alertPrompt.sectype, alertPrompt.name, clgroup); setAlertPrompt(null); }}
+              onClick={() => {
+                track('screener_alert', { secid: alertPrompt.sectype, clgroup });
+                onRequestAlert?.(alertPrompt.sectype, alertPrompt.name, clgroup);
+                setAlertPrompt(null);
+              }}
             >
               {t('Создать уведомление')}
             </button>
@@ -661,8 +686,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 key={r.sectype}
                 role="button"
                 tabIndex={0}
-                onClick={() => onSelect(r.sectype, clgroup)}
-                onKeyDown={(e) => { if (e.key === 'Enter') onSelect(r.sectype, clgroup); }}
+                onClick={() => pick(r.sectype)}
+                onKeyDown={(e) => { if (e.key === 'Enter') pick(r.sectype); }}
                 className="oi-screener-row"
                 style={{
                   display: 'grid', gridTemplateColumns: gridCols, gap: 16,
