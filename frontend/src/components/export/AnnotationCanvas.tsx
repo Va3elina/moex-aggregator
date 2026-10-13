@@ -263,6 +263,12 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 // Background fill important — иначе видно прозрачный fabric layer
                 // под background image (видно только при partial render glitches).
                 backgroundColor: 'transparent',
+                // Без этого выделенный объект перехватывает любой клик внутри
+                // своей рамки: текст внутри выделенного прямоугольника нельзя
+                // выбрать, пока не снимешь выделение кликом снаружи. С флагом
+                // клик получает верхний объект под курсором, а выделенный
+                // объект не всплывает поверх остальных при отрисовке.
+                preserveObjectStacking: true,
             });
             fabricRef.current = fc;
 
