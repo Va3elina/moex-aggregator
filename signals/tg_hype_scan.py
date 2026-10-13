@@ -60,6 +60,7 @@ if "@db:" in _db:
 import pipeline_heartbeat              # noqa: E402
 from api.database import SessionLocal  # noqa: E402
 from signals import config             # noqa: E402
+from signals.news_similarity import Idf, find_duplicate  # noqa: E402
 from signals.content_ai import (       # noqa: E402
     _fire, _step_a_payload, _known_tickers_line, TRIGGER_ID_STEP_A,
     _hype_accept, _brain_hint_for_step_a,
@@ -129,6 +130,29 @@ _RECENT_FWD_DECISION = text("""
     WHERE channel = :channel AND fwd_3 IS NOT NULL
     ORDER BY fwd_3_at DESC LIMIT :n
 """)
+
+_RECENT_PROMOTED = text("""
+    SELECT channel, message_id, msg_text FROM tg_channel_watch
+    WHERE promoted AND posted_at > :since AND msg_text <> ''
+""")
+_IDF_CORPUS = text("SELECT msg_text FROM tg_channel_watch WHERE posted_at > :since AND msg_text <> ''")
+_idf_cache = {}  # корпус IDF один на прогон, собирается при первом прошедшем порог посте
+
+
+def _find_promoted_duplicate(db, now: datetime, msg_text: str):
+    """Уже промоутнутый пост с той же новостью (любой канал) — (ключ, score) или None."""
+    if "idf" not in _idf_cache:
+        corpus = db.execute(_IDF_CORPUS, {
+            "since": now - timedelta(days=config.HYPE_DEDUP_IDF_DAYS)}).scalars().all()
+        _idf_cache["idf"] = Idf(corpus)
+    recent = db.execute(_RECENT_PROMOTED, {
+        "since": now - timedelta(hours=config.HYPE_DEDUP_WINDOW_HOURS)}).mappings().all()
+    return find_duplicate(
+        msg_text, ((f"{r['channel']}/{r['message_id']}", r["msg_text"]) for r in recent),
+        _idf_cache["idf"], config.HYPE_DEDUP_MIN_SCORE, config.HYPE_DEDUP_MIN_SHARED,
+        config.HYPE_DEDUP_MIN_NAMES_SHARE,
+    )
+
 
 _INSERT_CANDIDATE = text("""
     INSERT INTO content_candidates
@@ -232,6 +256,14 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
             # у markettwits выходила строка тегов («⚠️🇺🇸🇷🇺#санкции #россия»), и все
             # посты с теми же тегами молча отбрасывались. Повторной вставки одного
             # поста нет и без неё: решение принимается один раз (fwd_3 IS NULL).
+            # Дубль ищется по всему тексту, а не по заголовку (13.10.2026): та же
+            # новость из другого канала в канал не идёт, promoted не ставим.
+            dup = _find_promoted_duplicate(db, now, row["msg_text"])
+            if dup:
+                summary["dup_skipped"] += 1
+                print(f"[tg_hype_scan] {channel}/{row['message_id']}: дубль {dup[0]} "
+                      f"(score {dup[1]:.2f}, fwd_3 {fwd}), не публикуем")
+                continue
             headline = _headline_from_text(row["msg_text"])
 
             media_filename = None
@@ -301,8 +333,9 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
 def run_once() -> dict:
     summary = {"fetched": 0, "new_watched": 0,
                "checked_5": 0, "checked_6": 0, "checked_7": 0, "checked_8": 0, "checked_decision": 0,
-               "promoted": 0, "step_a_fired": 0, "step_a_fire_errors": 0,
+               "promoted": 0, "dup_skipped": 0, "step_a_fired": 0, "step_a_fire_errors": 0,
                "hype_filter_fired": 0, "hype_filter_fire_errors": 0, "errors": 0}
+    _idf_cache.clear()
 
     api_id = os.environ.get("MTP_API_ID", "")
     api_hash = os.environ.get("MTP_API_HASH", "")
