@@ -6,6 +6,7 @@
  */
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import { t } from '../../i18n';
+import { ChartActionsGlyph } from '../../components/ChartActionsMenu';
 
 export function getStrengthTourSteps(): TourStep[] {
   return [
@@ -35,7 +36,7 @@ export function getStrengthTourSteps(): TourStep[] {
           <li><strong>{t('Вселенная')}</strong> {t('— какие акции анализируем: «Индекс IMOEX» (основной индекс) или «100 акций» (широкий рынок).')}</li>
           <li><strong>{t('Период')}</strong> {t('— горизонт отображения данных на графике (1Г / 5Л / Всё).')}</li>
           <li><strong>{t('Валюта')}</strong> {t('— для пересчёта в рубли / валюту индекса (для индексов в USD).')}</li>
-          <li><strong>{t('Действия')}</strong> {t('— кнопка «⋮» в правом верхнем углу графика: слои (показать/скрыть линию индекса), скриншот.')}</li>
+          <li><strong>{t('Действия')}</strong> {t('— кнопка')} <ChartActionsGlyph /> {t('в правом верхнем углу графика: слои (показать/скрыть линию индекса), скриншот.')}</li>
         </ul>
       </>
     ),

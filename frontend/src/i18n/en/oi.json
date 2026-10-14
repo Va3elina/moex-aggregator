@@ -228,7 +228,7 @@
   "<strong>Покупки + Продажи</strong> — обе серии вместе для визуального сравнения": "<strong>Longs + Shorts</strong> — both series together for visual comparison",
   "<strong>Чистая позиция</strong> — разница «покупки минус продажи». Выше нуля = перевес покупателей, ниже = перевес продавцов.": "<strong>Net position</strong> — longs minus shorts. Above zero = buyers dominate, below = sellers dominate.",
   "Действия с графиком": "Chart actions",
-  "Кнопка <strong>«⋮»</strong> в правом верхнем углу графика собирает все действия над ним:": "The <strong>“⋮”</strong> button in the chart's top-right corner gathers all chart actions:",
+  "в правом верхнем углу графика собирает все действия над ним:": "button in the chart's top-right corner gathers all chart actions:",
   "<strong>Слои</strong> — показать/скрыть линию цены и метки экспираций (смена фьючерсного контракта; на CR контракты квартальные: H март, M июнь, U сентябрь, Z декабрь).": "<strong>Layers</strong> — show/hide the price line and expiration markers (futures contract rollover; CR contracts are quarterly: H March, M June, U September, Z December).",
   "<strong>Скриншот</strong> — сохранить график в PNG с подписями (инструмент, интервал, период, режим) и водяным знаком.": "<strong>Screenshot</strong> — save the chart as PNG with captions (instrument, interval, period, mode) and a watermark.",
   "<strong>Уведомление</strong> — сообщение в мессенджер при достижении заданного уровня по этому инструменту.": "<strong>Alert</strong> — a messenger notification when this instrument reaches a given level.",

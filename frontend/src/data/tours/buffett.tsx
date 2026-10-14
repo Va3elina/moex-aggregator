@@ -6,6 +6,7 @@
  */
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import { t } from '../../i18n';
+import { ChartActionsGlyph } from '../../components/ChartActionsMenu';
 
 export function getBuffettTourSteps(): TourStep[] {
   return [
@@ -95,7 +96,7 @@ export function getBuffettTourSteps(): TourStep[] {
     body: (
       <>
         <p style={{ marginBottom: 8 }}>
-          {t('Кнопка')} <strong>«⋮»</strong> {t('в правом верхнем углу графика собирает действия:')}
+          {t('Кнопка')} <ChartActionsGlyph /> {t('в правом верхнем углу графика собирает действия:')}
         </p>
         <p style={{ marginBottom: 8 }}>
           <strong>{t('Слои')}</strong>{' '}
