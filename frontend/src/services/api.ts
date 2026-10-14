@@ -1345,6 +1345,24 @@ export interface GrowthReport {
       pages: string[];
     }[];
   };
+  /** Через какой призыв пришли к оплате (subscriptions.source, с 14.10.2026). */
+  purchase_sources?: {
+    since: string;
+    paywall_shows: number;
+    paywall_people: number;
+    rows: {
+      source: string;
+      /** Начали оплату (людей), оплатили, выручка, пробные периоды. */
+      started: number;
+      paid: number;
+      revenue: number;
+      trials: number;
+      /** Клики по призыву и разные люди, кликнувшие его. */
+      clicks: number;
+      people: number;
+    }[];
+    features: { source: string; feature: string; paid: number }[];
+  };
   sources: {
     since: string;
     registered_total: number;

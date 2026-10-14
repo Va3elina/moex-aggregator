@@ -26,6 +26,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTbankIntegration } from '../../hooks/useTbankIntegration';
 import { apiFetch } from '../../services/api';
 import { signupUrlForIntent } from '../../utils/checkoutIntent';
+import { purchaseSourcePayload } from '../../utils/purchaseSource';
 import type { TBankPaymentsApi } from '../../types/tbank';
 
 interface Props {
@@ -87,6 +88,7 @@ export default function SpeedPayButtons({ terminalKey, planId, onStart }: Props)
             return_url: `${window.location.origin}/billing/success`,
             widget_mode: true,
             recurrent: true, // подписка ВСЕГДА с авто-продлением — паритет с картой
+            ...purchaseSourcePayload(),
           }),
         });
         if (!resp.ok) {

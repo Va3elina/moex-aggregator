@@ -14,6 +14,8 @@ import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../../config/features';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useTierPrices, fmtRubMonthly } from '../../hooks/useTierPrices';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
+import { pricingUrlFrom } from '../../utils/purchaseSource';
+import { useAnalytics } from '../../contexts/AnalyticsContext';
 import TrialOfferCard from './TrialOfferCard';
 import { useTranslation } from 'react-i18next';
 
@@ -97,9 +99,18 @@ export function useUpgradePrompt(): UpgradeContextValue {
 }
 
 
-function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { onClose: () => void }) {
+function UpgradeDialog({ tier, featureName, indicator, onClose }: UpgradePromptProps & { onClose: () => void }) {
     const label = TIER_LABELS[tier];
     const { t } = useTranslation();
+    const { track } = useAnalytics();
+    // Что именно упёрлось в замок: название функции понятнее ключа индикатора.
+    const feature = featureName || indicator || null;
+
+    // Показ окна — знаменатель конверсии «показали → перешли → купили».
+    useEffect(() => {
+        track('paywall_show', { tier, feature, indicator });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const prices = useTierPrices();
     const width = useViewportWidth();
     const isMobile = width < 768;
@@ -199,7 +210,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                 )}
 
                 {/* Trial-оффер: TrialOfferCard сам гейтит по trial_eligible. */}
-                <TrialOfferCard lockedTier={tier} />
+                <TrialOfferCard lockedTier={tier} feature={feature} />
 
                 <div
                     style={{
@@ -256,7 +267,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                         {t('Закрыть')}
                     </button>
                     <Link
-                        to="/pricing"
+                        to={pricingUrlFrom('paywall', feature)}
                         onClick={onClose}
                         className="editorial-press"
                         style={{

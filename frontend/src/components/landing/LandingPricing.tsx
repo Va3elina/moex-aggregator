@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import TierPlanCard, { TIER_META, type PlanVariant } from '../pricing/TierPlanCard';
 import { apiFetch } from '../../services/api';
 import { signupUrlForIntent, type CheckoutIntent } from '../../utils/checkoutIntent';
+import { rememberPurchaseSource } from '../../utils/purchaseSource';
 
 interface TierCard {
   tier: string;
@@ -65,7 +66,10 @@ export default function LandingPricing() {
   // (зеркало guest-ветки handleCheckout/handleTrialStart в PricingPage).
   // Выбранный тариф едет вместе с ним: на /pricing он сразу превращается в
   // окно согласий, а не в просьбу нажать ту же кнопку второй раз.
-  const startSignup = (intent: CheckoutIntent | null) => navigate(signupUrlForIntent(intent));
+  const startSignup = (intent: CheckoutIntent | null) => {
+    rememberPurchaseSource('landing');
+    navigate(signupUrlForIntent(intent));
+  };
 
   return (
     <>

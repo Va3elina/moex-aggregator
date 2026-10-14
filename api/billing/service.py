@@ -229,6 +229,7 @@ def create_checkout_for_user(
     widget_mode: bool = False,
     recurrent: bool = False,
     rail: str = "card",
+    source: dict | None = None,
 ) -> dict:
     """
     Создаёт subscription(pending) + платёж у провайдера.
@@ -294,6 +295,7 @@ def create_checkout_for_user(
         amount=checkout_amount,
         currency="RUB",
         status="pending",
+        **(source or {}),
     )
     db.add(sub)
     db.flush()  # нужен sub.id до commit'а
@@ -1239,7 +1241,8 @@ SBP_BINDING_TTL_MINUTES = 30
 
 
 def start_sbp_binding(
-    db: Session, user: User, plan_id: str, data_type: str = "PAYLOAD"
+    db: Session, user: User, plan_id: str, data_type: str = "PAYLOAD",
+    source: dict | None = None,
 ) -> dict:
     """
     Шаг 1: заявка на привязку счёта по СБП. Денег НЕ двигает.
@@ -1283,6 +1286,7 @@ def start_sbp_binding(
         currency="RUB",
         status="binding",
         yk_method="sbp",
+        **(source or {}),
     )
     db.add(sub)
     db.flush()

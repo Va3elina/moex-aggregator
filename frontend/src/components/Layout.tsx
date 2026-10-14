@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { pricingUrlFrom } from '../utils/purchaseSource';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
@@ -505,7 +506,7 @@ export default function Layout() {
                   (бессмысленно — у него full access). */}
               {user?.role !== 'admin' && (
                 <button
-                  onClick={() => navigate('/pricing')}
+                  onClick={() => navigate(pricingUrlFrom('header'))}
                   className={
                     isEditorial
                       ? 'editorial-press hidden xl:block px-4 py-2 text-sm font-bold'

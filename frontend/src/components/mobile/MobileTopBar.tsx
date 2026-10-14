@@ -12,6 +12,7 @@
  */
 import { Sun, Moon, ChevronLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { pricingUrlFrom } from '../../utils/purchaseSource';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import FrameLogo from '../FrameLogo';
@@ -59,7 +60,7 @@ export default function MobileTopBar({ onBack }: MobileTopBarProps) {
         >
           {isLight ? <Moon size={16} strokeWidth={2.2} /> : <Sun size={16} strokeWidth={2.2} />}
         </button>
-        <Link to="/pricing" className="fm-icon-btn fm-plus" style={{ textDecoration: 'none' }}>
+        <Link to={pricingUrlFrom('header')} className="fm-icon-btn fm-plus" style={{ textDecoration: 'none' }}>
           PLUS
         </Link>
         <Link to="/profile" className="fm-icon-btn fm-avatar" style={{ textDecoration: 'none' }}>

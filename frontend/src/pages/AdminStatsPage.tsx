@@ -98,6 +98,10 @@ const METRIC_HINTS = {
     + 'Посетители — разные люди по Яндекс Метрике. Зарегистрировались — новые аккаунты за период. '
     + 'Вернулись — были на сайте позже первых суток после регистрации; процент считаем только от тех, у кого сутки уже прошли. '
     + 'Оплатили — из зарегистрированных за период хоть раз оплатили подписку; подарочный Pro и триал не в счёт.',
+  purchase_sources:
+    'Откуда человек перешёл к оплате. Окно замка — «Доступно на тарифе» при клике по закрытой функции. Плашка задержки — «Данные с задержкой» над индикатором. '
+    + 'Прямой заход — открыл тарифы сам, без призыва. Метка живёт сутки: закрыл окно и вернулся на тарифы позже — всё равно засчитано окну. '
+    + 'Начали — нажали оплату, оплатили — без триала и подарочного Pro, считаем людей. Клики — по самому призыву. Пишем с 14.10.2026, без админов.',
   cohorts:
     'Все, кто зарегистрировался в этом месяце, и что с ними сейчас. Вернулись — были на сайте позже первых суток после регистрации. '
     + 'Заходили — последний раз были на сайте за последние 30 или 7 дней. Оплатили — хоть раз, без подарочного Pro и триала. Без админов.',
@@ -658,6 +662,13 @@ export default function AdminStatsPage() {
             </div>
           </Section>
 
+          {/* ═══ Путь к оплате ═══ */}
+          <Section title="Путь к оплате" hint={METRIC_HINTS.purchase_sources}>
+            <div style={dimStyle(growthDim)}>
+              <PurchaseSourcesBlock growth={growth} loading={growthLoading} />
+            </div>
+          </Section>
+
           {/* ═══ Трафик из Яндекс Метрики ═══ */}
           <Section title="Трафик · Яндекс Метрика" hint={METRIC_HINTS.metrica_section}>
             <div style={dimStyle(metricaDim)}>
@@ -1061,6 +1072,81 @@ function FunnelBlock({ growth, loading }: { growth: GrowthReport | null; loading
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
           Ещё {f.invite} из зарегистрированных за период получили Pro по инвайту — в «Оплатили» они не входят.
         </p>
+      )}
+    </div>
+  );
+}
+
+const PURCHASE_SOURCE_LABELS: Record<string, string> = {
+  paywall: 'Окно «Доступно на тарифе»',
+  delay_banner: 'Плашка «Данные с задержкой»',
+  header: 'Кнопка Plus в шапке',
+  landing: 'Главная страница',
+  profile: 'Профиль',
+  pricing: 'Прямой заход на тарифы',
+};
+
+/** Путь к оплате: призыв, с которого перешли к тарифам, и чем кончилось. */
+function PurchaseSourcesBlock({ growth, loading }: { growth: GrowthReport | null; loading: boolean }) {
+  if (loading && !growth) return <Skeleton height={200} rounded="lg" />;
+  const ps = growth?.purchase_sources;
+  if (!ps || ps.rows.length === 0) {
+    return (
+      <Card padding="md">
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+          За период нет ни кликов по призывам, ни оплат. Пишем с 14.10.2026.
+        </p>
+      </Card>
+    );
+  }
+  const paidTotal = ps.rows.reduce((a, r) => a + r.paid, 0);
+  const viaCta = ps.rows.filter((r) => r.source !== 'pricing').reduce((a, r) => a + r.paid, 0);
+  const td: React.CSSProperties = { padding: '9px 8px', textAlign: 'right', fontFamily: NUM_FONT, whiteSpace: 'nowrap' };
+  const heads = ['Откуда', 'Клики', 'Начали оплату', 'Оплатили', 'Выручка'];
+  return (
+    <div className="space-y-3" style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+        Оплатили {paidTotal}, из них через призывы {viaCta}{paidTotal > 0 ? ` (${shareText(viaCta, paidTotal)})` : ''}.
+        Окно замка показали {fmtInt(ps.paywall_shows)} раз {fmtInt(ps.paywall_people)} людям.
+      </p>
+      <Card padding="md" className="md:p-5">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{ borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 560 }}>
+            <thead>
+              <tr>
+                {heads.map((h, i) => (
+                  <th
+                    key={h}
+                    className="text-xs uppercase"
+                    style={{
+                      color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.06em',
+                      textAlign: i ? 'right' : 'left', padding: '0 8px 8px', verticalAlign: 'bottom',
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ps.rows.map((r) => (
+                <tr key={r.source} style={{ borderTop: '1px solid color-mix(in srgb, var(--text-muted) 25%, transparent)' }}>
+                  <td style={{ padding: '9px 8px', color: 'var(--text-primary)' }}>{PURCHASE_SOURCE_LABELS[r.source] || r.source}</td>
+                  <td style={td}>{r.source === 'pricing' ? '—' : `${fmtInt(r.clicks)} · ${fmtInt(r.people)} чел.`}</td>
+                  <td style={td}>{r.started}</td>
+                  <td style={{ ...td, color: 'var(--text-primary)', fontWeight: 600 }}>{r.paid}</td>
+                  <td style={td}>{r.revenue > 0 ? `${fmtInt(r.revenue)} ₽` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      {ps.features.length > 0 && (
+        <TopList
+          title="Какие замки привели к оплате" columns={['оплатили']}
+          items={ps.features.map((f) => ({ label: f.feature, value: f.paid }))} loading={false} emptyText="—"
+        />
       )}
     </div>
   );
