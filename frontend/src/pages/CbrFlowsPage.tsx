@@ -440,7 +440,8 @@ export default function CbrFlowsPage() {
 
           {/* Действия (Скриншот/CSV) свёрнуты в kebab «⋮» в углу графика (паттерн OI).
               Через portal монтируется в обёртку графика (containerRef=chartAnchorRef). */}
-          <ChartActionsMenu containerRef={chartAnchorRef} tourId="cbr-export">
+          {/* size 32: стандартные 40 наезжали на подпись правой шкалы. */}
+          <ChartActionsMenu containerRef={chartAnchorRef} tourId="cbr-export" size={32}>
           <CsvExportButton
             indicator="cbr_flows"
             config={() => buildCbrFlowsExportConfig({
