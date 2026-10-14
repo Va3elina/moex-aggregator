@@ -27,6 +27,10 @@ _MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _URL_RE = re.compile(r"(?:https?://|t\.me/|www\.)\S+", re.IGNORECASE)
 _HASHTAG_RE = re.compile(r"#\w+")
 _READ_MORE_RE = re.compile(r"читать\s+далее", re.IGNORECASE)
+# Сводки дня (newssmartlab «⚡️Итоги дня», markettwits «КАЛЕНДАРЬ НА СЕГОДНЯ»)
+# пересказывают десяток новостей сразу и «содержат» любую короткую новость дня.
+# Это отдельный жанр, не повтор: их не отсекаем и с ними не сравниваем.
+_DIGEST_RE = re.compile(r"итоги\s+дня|календарь\s+на\s+сегодня", re.IGNORECASE)
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9]+")
 
 # Служебные слова и штампы лент, которые не несут сути новости.
@@ -76,11 +80,16 @@ def names(text: str) -> set:
     return {s for s, is_name in _terms(text) if is_name}
 
 
-def names_match(a: set, b: set, min_share: float) -> bool:
-    """Имена не противоречат: у кого-то их нет или общих ≥ min_share от меньшего."""
-    if not a or not b:
+def names_match(a_names: set, a_stems: set, b_names: set, b_stems: set,
+                min_share: float) -> bool:
+    """Имена не противоречат: у кого-то их нет или ≥ min_share имён одного поста
+    встречаются среди ВСЕХ слов другого. Имя ищется без учёта регистра (14.10.2026:
+    markettwits написал «в саратовской и рязанской областях» со строчной, smartlab
+    с заглавной, и дубль про НПЗ прошёл: общим именем остался только «Новак»)."""
+    if not a_names or not b_names:
         return True
-    return len(a & b) / min(len(a), len(b)) >= min_share
+    return max(len(a_names & b_stems) / len(a_names),
+               len(b_names & a_stems) / len(b_names)) >= min_share
 
 
 class Idf:
@@ -113,13 +122,17 @@ def find_duplicate(text: str, others, idf, min_score: float, min_shared: int,
                    min_names_share: float):
     """Самый похожий из others (итерируемое (key, text)) при score ≥ min_score,
     не меньше min_shared общих основ и совпадающих именах. (key, score) или None."""
+    if _DIGEST_RE.search(text or ""):
+        return None
     a, a_names = stems(text), names(text)
     best = None
     for key, other_text in others:
+        if _DIGEST_RE.search(other_text or ""):
+            continue
         b = stems(other_text)
         if len(a & b) < min_shared:
             continue
-        if not names_match(a_names, names(other_text), min_names_share):
+        if not names_match(a_names, a, names(other_text), b, min_names_share):
             continue
         score = similarity(a, b, idf)
         if score >= min_score and (best is None or score > best[1]):

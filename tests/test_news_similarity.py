@@ -43,6 +43,23 @@ def test_same_quote_from_two_channels_is_duplicate():
     assert _dup(SMARTLAB, MARKETTWITS)
 
 
+def test_name_written_lowercase_in_other_channel_is_duplicate():
+    """14.10.2026: регионы со строчной в markettwits не должны ломать сверку имён."""
+    assert _dup("⚠️🛢🇺🇦#украина #геополитика #топливо\nНовак сообщил, что Киев сегодня "
+                "атаковал два НПЗ - в саратовской и рязанской областях",
+                "Украинские беспилотники сегодня атаковали два нефтеперерабатывающих завода — "
+                "в Саратовской и Рязанской областях — Новак\n\nЧитать далее\n"
+                "👉 https://smartlab.news/i/207413")
+
+
+def test_daily_digest_never_duplicate():
+    news = "Правительство РФ утвердило изменение семейной ипотеки с дифференциацией условий"
+    digest = ("**Новые налоги**⚡️**Итоги дня** 📉ГМК Норникель -5.7% Правительство утвердило "
+              "изменение семейной ипотеки с дифференциацией условий по числу детей и региону")
+    assert not _dup(digest, news)
+    assert not _dup(news, digest)
+
+
 def test_links_tags_and_read_more_ignored():
     s = stems(SMARTLAB + "\n#геополитика [мы в max](https://max.ru/x)")
     assert not any(x.startswith(("http", "smart", "читат", "далее", "геопо")) for x in s)
