@@ -1,6 +1,7 @@
 /**
- * «Подписчики Telegram-канала» в /admin/stats: вступления по дням столбиками,
- * раскрашенными по инвайт-ссылке, и отписки вниз от нуля. Легенда включает и
+ * «Подписчики Telegram-канала» в /admin/stats: вступления по инвайт-ссылкам
+ * по дням столбиками, раскрашенными по ссылке. Вступления без ссылки и отписки
+ * здесь не показываем: они есть в карточках над графиком. Легенда включает и
  * выключает ссылки и показывает итог за период: вступило и сколько из них
  * ещё в канале.
  *
@@ -18,6 +19,9 @@ const AXIS_H = 26;
 const PAD_TOP = 10;
 const PAD_LEFT = 44;
 const PAD_RIGHT = 12;
+
+/** Источники из _TG_SRC_SQL в api/routers/analytics.py, которые не инвайт-ссылки. */
+const NOT_A_LINK = new Set(['без ссылки', 'папка']);
 
 function linkColor(i: number): string {
   const slot = (i % 8) + 1;
@@ -54,18 +58,15 @@ export default function TgJoinsChart({ data }: { data: TgJoinsReport }) {
 
   const n = data.dates.length;
   const series = useMemo(
-    () => data.series.map((s, i) => ({ ...s, color: linkColor(i) })),
+    () => data.series.filter((s) => !NOT_A_LINK.has(s.name)).map((s, i) => ({ ...s, color: linkColor(i) })),
     [data.series],
   );
   const shown = series.filter((s) => !hidden.has(s.name));
-  // Столбик дня — сумма показанных ссылок; отписки от ссылки не зависят.
+  // Столбик дня — сумма показанных ссылок.
   const dayJoins = data.dates.map((_, i) => shown.reduce((acc, s) => acc + (s.values[i] ?? 0), 0));
   const topTicks = axisTicks(Math.max(0, ...dayJoins));
-  const botTicks = axisTicks(Math.max(0, ...data.leaves), 2);
   const top = topTicks[topTicks.length - 1];
-  const bot = botTicks[botTicks.length - 1];
-  // Ноль делит плот пропорционально размаху вверх и вниз; без отписок вся высота вверх.
-  const unit = PLOT_H / Math.max(1, top + bot);
+  const unit = PLOT_H / Math.max(1, top);
   const y0 = PAD_TOP + top * unit;
 
   const plotW = Math.max(0, width - PAD_LEFT - PAD_RIGHT);
@@ -99,20 +100,25 @@ export default function TgJoinsChart({ data }: { data: TgJoinsReport }) {
 
   return (
     <div ref={rootRef}>
+      {series.length === 0 && (
+        <p className="text-sm py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+          За период по инвайт-ссылкам никто не вступил.
+        </p>
+      )}
       <div
         className="relative"
         tabIndex={0}
         onKeyDown={onKey}
         onFocus={() => setHover((v) => v ?? n - 1)}
         onBlur={() => setHover(null)}
-        aria-label="Вступления и отписки по дням. Стрелки влево и вправо показывают значения по датам."
+        aria-label="Вступления по ссылкам по дням. Стрелки влево и вправо показывают значения по датам."
       >
-        {width > 0 && (
+        {width > 0 && series.length > 0 && (
           <svg
             width={width}
             height={PAD_TOP + PLOT_H + AXIS_H}
             role="img"
-            aria-label={`За период вступило ${data.totals.joins}, отписалось ${data.totals.leaves}`}
+            aria-label={`За период по ссылкам вступило ${series.reduce((acc, s) => acc + s.period, 0)}`}
             style={{ display: 'block', fontVariantNumeric: 'tabular-nums' }}
           >
             {weekends.map((i) => (
@@ -122,12 +128,6 @@ export default function TgJoinsChart({ data }: { data: TgJoinsReport }) {
               <g key={`t${t}`}>
                 <line x1={PAD_LEFT} x2={PAD_LEFT + plotW} y1={y0 - t * unit} y2={y0 - t * unit} stroke="var(--chart-grid)" strokeWidth={1} shapeRendering="crispEdges" />
                 <text x={PAD_LEFT - 8} y={y0 - t * unit} dy="0.32em" textAnchor="end" fontSize={11} fill="var(--text-muted)">{t}</text>
-              </g>
-            ))}
-            {botTicks.filter((t) => t > 0).map((t) => (
-              <g key={`b${t}`}>
-                <line x1={PAD_LEFT} x2={PAD_LEFT + plotW} y1={y0 + t * unit} y2={y0 + t * unit} stroke="var(--chart-grid)" strokeWidth={1} shapeRendering="crispEdges" />
-                <text x={PAD_LEFT - 8} y={y0 + t * unit} dy="0.32em" textAnchor="end" fontSize={11} fill="var(--text-muted)">−{t}</text>
               </g>
             ))}
             <line x1={PAD_LEFT} x2={PAD_LEFT + plotW} y1={y0} y2={y0} stroke="var(--text-muted)" strokeOpacity={0.5} strokeWidth={1} shapeRendering="crispEdges" />
@@ -148,9 +148,6 @@ export default function TgJoinsChart({ data }: { data: TgJoinsReport }) {
                     acc += v;
                     return <rect key={s.name} x={xc(i) - barW / 2} y={yTop} width={barW} height={v * unit} fill={s.color} rx={1} />;
                   })}
-                  {(data.leaves[i] ?? 0) > 0 && (
-                    <rect x={xc(i) - barW / 2} y={y0} width={barW} height={(data.leaves[i] ?? 0) * unit} fill="var(--danger)" opacity={0.75} rx={1} />
-                  )}
                 </g>
               );
             })}
@@ -179,7 +176,7 @@ export default function TgJoinsChart({ data }: { data: TgJoinsReport }) {
             <div className="mb-1" style={{ color: 'var(--text-muted)' }}>{fmtDayLong(data.dates[h])}</div>
             <div className="flex items-center gap-2" style={{ lineHeight: 1.6 }}>
               <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>+{dayJoins[h]}</span>
-              <span style={{ color: 'var(--text-secondary)' }}>вступило</span>
+              <span style={{ color: 'var(--text-secondary)' }}>вступило по ссылкам</span>
             </div>
             {hoverRows.map((s) => (
               <div key={s.name} className="flex items-center gap-2" style={{ lineHeight: 1.6, paddingLeft: 8 }}>
@@ -188,16 +185,6 @@ export default function TgJoinsChart({ data }: { data: TgJoinsReport }) {
                 <span style={{ color: 'var(--text-secondary)' }}>{s.name}</span>
               </div>
             ))}
-            <div className="flex items-center gap-2" style={{ lineHeight: 1.6 }}>
-              <span style={{ color: 'var(--danger)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>−{data.leaves[h] ?? 0}</span>
-              <span style={{ color: 'var(--text-secondary)' }}>отписалось</span>
-            </div>
-            {data.members[h] !== null && (
-              <div className="flex items-center gap-2" style={{ lineHeight: 1.6 }}>
-                <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{data.members[h]!.toLocaleString('ru-RU')}</span>
-                <span style={{ color: 'var(--text-secondary)' }}>подписчиков</span>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -229,14 +216,6 @@ export default function TgJoinsChart({ data }: { data: TgJoinsReport }) {
             </button>
           );
         })}
-        <span
-          className="inline-flex items-center text-xs"
-          style={{ padding: 'var(--sp-1) var(--sp-3)', gap: 8, color: 'var(--text-secondary)' }}
-        >
-          <span aria-hidden style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--danger)', opacity: 0.75 }} />
-          отписки
-          <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{data.totals.leaves}</span>
-        </span>
       </div>
     </div>
   );
