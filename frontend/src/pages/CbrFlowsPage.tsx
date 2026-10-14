@@ -495,7 +495,12 @@ export default function CbrFlowsPage() {
             // axis labels ОТКЛ paper-card edges (через CSS-var paddings), не
             // достают углов.
             padding: '0 0 12px 0',
-          }}
+            // Легенда и весь график ниже на ~16px: иначе верхняя подпись правой
+            // шкалы попадала под кнопку-шестерёнку меню действий (40px в углу).
+            // Только CSS-переменная легенды: --chart-pad-top гистограмма читает
+            // из documentElement, локальный override рассинхронил бы тултип.
+            '--chart-legend-top-gap': '24px',
+          } as React.CSSProperties}
         >
           {error ? (
             <div
