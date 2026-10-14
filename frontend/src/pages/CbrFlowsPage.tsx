@@ -67,6 +67,11 @@ const PERIOD_OPTIONS: { key: PeriodFilter; label: string; months: number | null 
   { key: 'all', label: 'Всё', months: null },
 ];
 
+/** Сдвиг плота и Y-шкалы влево (px): подписи вида «210 млрд» иначе доходят до
+ *  края карточки и уходят под кнопку-шестерёнку (40px + отступ 8px), как в ОИ —
+ *  шкала кончается левее кнопки. Навигатор сдвигается на столько же. */
+const CBR_AXIS_RIGHT_RESERVE = 48;
+
 export default function CbrFlowsPage() {
   const { t, i18n } = useTranslation();
   const { theme } = useTheme();
@@ -495,12 +500,7 @@ export default function CbrFlowsPage() {
             // axis labels ОТКЛ paper-card edges (через CSS-var paddings), не
             // достают углов.
             padding: '0 0 12px 0',
-            // Легенда и весь график ниже на ~16px: иначе верхняя подпись правой
-            // шкалы попадала под кнопку-шестерёнку меню действий (40px в углу).
-            // Только CSS-переменная легенды: --chart-pad-top гистограмма читает
-            // из documentElement, локальный override рассинхронил бы тултип.
-            '--chart-legend-top-gap': '24px',
-          } as React.CSSProperties}
+          }}
         >
           {error ? (
             <div
@@ -527,6 +527,7 @@ export default function CbrFlowsPage() {
               height={chartHeight}
               loading={loading}
               animTrigger={`${type}|${period}`}
+              axisRightReserve={CBR_AXIS_RIGHT_RESERVE}
             />
           )}
 
@@ -540,7 +541,7 @@ export default function CbrFlowsPage() {
                 previewMode="line"
                 onChange={(s, e) => setNavRange([s, e])}
                 insetLeft="var(--chart-pad-left)"
-                insetRight="var(--chart-pad-right-single)"
+                insetRight={`calc(var(--chart-pad-right-single) + ${CBR_AXIS_RIGHT_RESERVE}px)`}
               />
             </div>
           )}

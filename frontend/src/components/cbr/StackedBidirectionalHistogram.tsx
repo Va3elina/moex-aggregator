@@ -103,6 +103,9 @@ interface Props {
    *  наблюдений в срезе: без выборки «+3,2%» ничего не говорит).
    *  ⚠️ Ссылка должна быть стабильной (useCallback). */
   tooltipNote?: (periodIdx: number) => string | null;
+  /** Доп. отступ справа (px), на который сдвигаются плот и подписи Y-шкалы,
+   *  чтобы они кончались левее кнопки меню действий в углу (как в ОИ). */
+  axisRightReserve?: number;
 }
 
 /**
@@ -149,6 +152,7 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   legendOverride,
   overlays,
   tooltipNote,
+  axisRightReserve = 0,
 }, ref) {
   const { theme } = useTheme();
   const { t } = useTranslation();
@@ -187,7 +191,8 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
   // CSS-переменные завязаны на media queries по viewport и не ужимаются →
   // широкий gutter/крупный шрифт наезжают на бары. pad/font ниже подменяют
   // CSS-var значения на всех местах их использования в этом компоненте.
-  const pad = axisPadding(containerW || vw);
+  const basePad = axisPadding(containerW || vw);
+  const pad = { ...basePad, right: basePad.right + axisRightReserve };
   const axisFontPx = fontScale.axis;
 
   // Entrance animation: grow-from-zero wave.
