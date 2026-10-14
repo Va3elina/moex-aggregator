@@ -1004,6 +1004,21 @@
   box-shadow: 1px 1px 0 var(--text-primary) !important;
 }
 
+/* Кружки-действия в выпадашке ChartActionsMenu — того же размера, что кнопка-
+   шестерёнка (--chart-actions-size задаёт сам компонент). Дети (CSV, Скриншот,
+   Настройки, Слои…) задают свои 44px инлайном, отсюда !important. Иконка —
+   только прямой svg-потомок: замок-бейдж CSV лежит глубже и не задевается. */
+.chart-actions-pop > button.rounded-full,
+.chart-actions-pop > * > button.rounded-full {
+  width: var(--chart-actions-size) !important;
+  height: var(--chart-actions-size) !important;
+}
+.chart-actions-pop > button.rounded-full > svg,
+.chart-actions-pop > * > button.rounded-full > svg {
+  width: calc(var(--chart-actions-size) / 2);
+  height: calc(var(--chart-actions-size) / 2);
+}
+
 /* Dropdown items: press-эффект на ВСЕХ опциях (translate + 4×4 hard shadow)
    плюс accent-tinted bg на inactive, accent fill на active.
    Match триггеру и chip-системе — единый paradigm для всех editorial-кнопок. */

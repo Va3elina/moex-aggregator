@@ -42,9 +42,12 @@ interface ChartActionsMenuProps {
   containerRef: React.RefObject<HTMLElement | null>;
   /** data-tour id на контейнере (для онбординг-тура) */
   tourId?: string;
+  /** Диаметр кнопки и кружков-действий в выпадашке, px. Меньше — где кнопка
+   *  наезжает на подписи графика (Поток капитала). */
+  size?: number;
 }
 
-export default function ChartActionsMenu({ children, containerRef, tourId }: ChartActionsMenuProps) {
+export default function ChartActionsMenu({ children, containerRef, tourId, size = 40 }: ChartActionsMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -87,7 +90,10 @@ export default function ChartActionsMenu({ children, containerRef, tourId }: Cha
       // crosshair. Outside-click это не ломает: клики ВНЕ меню до document доходят.
       onMouseDown={(e) => e.stopPropagation()}
       onMouseMove={(e) => e.stopPropagation()}
-      style={{ position: 'absolute', top: 'var(--sp-2)', right: 'var(--sp-2)', zIndex: 20 }}
+      style={{
+        position: 'absolute', top: 'var(--sp-2)', right: 'var(--sp-2)', zIndex: 20,
+        '--chart-actions-size': `${size}px`,
+      } as React.CSSProperties}
     >
       <button
         type="button"
@@ -101,15 +107,16 @@ export default function ChartActionsMenu({ children, containerRef, tourId }: Cha
           backgroundColor: 'var(--bg-secondary)',
           border: '2px solid var(--text-primary)',
           color: 'var(--text-primary)',
-          width: 40,
-          height: 40,
+          width: size,
+          height: size,
         }}
       >
-        <Settings size={20} />
+        <Settings size={size / 2} />
       </button>
       <div
         data-export-ignore="true"
         role="menu"
+        className="chart-actions-pop"
         style={{
           display: open ? 'flex' : 'none',
           flexDirection: 'column',
@@ -122,7 +129,6 @@ export default function ChartActionsMenu({ children, containerRef, tourId }: Cha
           backgroundColor: 'var(--bg-primary)',
           border: '2px solid var(--text-primary)',
           borderRadius: 16,
-          boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
         }}
       >
         {children}
