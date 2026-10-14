@@ -1082,6 +1082,22 @@ class MainOrchestrator:
         except Exception as e:
             log.error("billing.send_trial_reminders failed: %s", e, exc_info=True)
 
+        # Письмо за 3 дня до конца подписки, которая сама не продлится (нет
+        # привязки или автопродление выключено). Идемпотентно через
+        # expiry_reminder_sent.
+        def _do_expiry_reminders():
+            from api.billing.service import send_expiry_reminders
+            db = SessionLocal()
+            try:
+                return send_expiry_reminders(db)
+            finally:
+                db.close()
+        try:
+            er = await asyncio.to_thread(_do_expiry_reminders)
+            result["expiry_reminders_sent"] = er.get("sent", 0)
+        except Exception as e:
+            log.error("billing.send_expiry_reminders failed: %s", e, exc_info=True)
+
         log.info("  💳 Billing hourly result: %s", result)
         return result
 

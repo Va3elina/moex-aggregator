@@ -29,6 +29,7 @@ from api.billing.factory import (
 )
 from api.billing.plans import TIER_LEVELS, get_plan, monthly_fallback
 from api.billing.provider import WebhookEvent
+from api.billing.renewal_rules import renewal_start, will_auto_renew
 from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
 from api.models.user import User
@@ -214,7 +215,12 @@ def assert_can_purchase(db: Session, user: User, plan) -> None:
                     f"У вас уже активен более высокий тариф ({active_plan.tier}). "
                     "Понижение тарифа возможно после окончания текущего периода."
                 )
-            if card_level == active_level and active_sub.plan_id == plan.plan_id:
+            # Тот же план блокируем, только если подписка продлится сама. Без
+            # привязки (СБП на форме банка, SberPay) юзер продлевает вручную, и
+            # делать это можно досрочно: новый период встанет в хвост текущему
+            # (renewal_start в activate_from_webhook).
+            if (card_level == active_level and active_sub.plan_id == plan.plan_id
+                    and will_auto_renew(active_sub)):
                 raise ValueError(
                     "Этот план уже активен. Сменить период — после окончания текущего."
                 )
@@ -480,9 +486,21 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
     # Активируем
     plan = get_plan(sub.plan_id)
     now = datetime.now(timezone.utc)
+    # Досрочное ручное продление того же tier: период считаем с конца текущей
+    # подписки без автопродления, чтобы оплаченные дни не сгорели. Продления по
+    # крону и апгрейды начинаются с now, как и раньше.
+    period_start = renewal_start(
+        now,
+        db.query(Subscription).filter(
+            Subscription.user_id == sub.user_id,
+            Subscription.status == "active",
+        ).all(),
+        sub.tier,
+        exclude_id=sub.id,
+    )
     sub.status = "active"
     sub.started_at = now
-    sub.expires_at = now + timedelta(days=plan.duration_days) if plan else None
+    sub.expires_at = period_start + timedelta(days=plan.duration_days) if plan else None
     sub.yk_method = event.payment_method
 
     # Если webhook принёс RebillId (карта) ИЛИ AccountToken (СБП) — это был
@@ -635,6 +653,97 @@ def expire_overdue(db: Session) -> int:
     log.info("expire_overdue: %d subscriptions expired, %d users updated",
              len(overdue), len(affected_users))
     return len(overdue)
+
+
+def send_expiry_reminders(db: Session, within_days: int = 3, dry_run: bool = False) -> dict:
+    """
+    Письмо «подписка заканчивается» тем, у кого она сама не продлится.
+
+    Кандидаты: платная (не триал, не инвайт) active-подписка, истекающая в
+    ближайшие within_days, без привязки или с выключенным автопродлением, письмо
+    ещё не отправлено. Если у юзера уже есть активная подписка, которая кончается
+    позже (продлил досрочно), письмо не шлём, но флаг ставим.
+
+    Без этого письма подписка без привязки просто гасла: напоминание было только
+    у триала, и юзер мог не заметить, что доступ кончился.
+
+    dry_run=True — ничего не шлёт и не пишет, возвращает список кандидатов.
+    Запускать раз в час из оркестратора.
+    """
+    from api.services.email import send_subscription_ending_email
+
+    now = datetime.now(timezone.utc)
+    cutoff = now + timedelta(days=within_days)
+    subs = db.query(Subscription).filter(
+        Subscription.status == "active",
+        Subscription.is_trial.is_(False),
+        ~Subscription.plan_id.like("invite%"),
+        Subscription.expiry_reminder_sent.is_(False),
+        Subscription.expires_at > now,
+        Subscription.expires_at <= cutoff,
+        sa_or_(
+            Subscription.payment_method_id.is_(None),
+            Subscription.cancelled_at.isnot(None),
+        ),
+    ).all()
+
+    summary = {"checked": len(subs), "sent": 0, "skipped": 0, "candidates": []}
+    for sub in subs:
+        user = db.query(User).filter(User.id == sub.user_id).first()
+        later = db.query(Subscription).filter(
+            Subscription.user_id == sub.user_id,
+            Subscription.id != sub.id,
+            Subscription.status == "active",
+            Subscription.expires_at > sub.expires_at,
+        ).first()
+        email = (getattr(user, "email", "") or "") if user else ""
+        if later or not user or user.role == "admin" or not email or email.endswith("@oauth.local"):
+            summary["skipped"] += 1
+            if not dry_run:
+                sub.expiry_reminder_sent = True
+            continue
+
+        reason = "autorenew_off" if sub.cancelled_at is not None else "no_payment_method"
+        summary["candidates"].append({
+            "subscription_id": sub.id, "user_id": sub.user_id, "plan_id": sub.plan_id,
+            "expires_at": sub.expires_at.isoformat(), "reason": reason,
+        })
+        if dry_run:
+            continue
+        # Флаг ставим только при успешной отправке: если SMTP лёг, крон
+        # попробует снова через час, окно в 3 дня это позволяет.
+        ok = send_subscription_ending_email(
+            email,
+            "Pro" if sub.tier == "pro" else "Basic",
+            _ru_date(sub.expires_at),
+            reason,
+            display_name=getattr(user, "display_name", None),
+        )
+        if ok:
+            sub.expiry_reminder_sent = True
+            summary["sent"] += 1
+            log.info("EXPIRY REMINDER: user=%s sub=%s expires=%s reason=%s",
+                     sub.user_id, sub.id, sub.expires_at, reason)
+
+    if not dry_run:
+        db.commit()
+    if summary["sent"]:
+        log.info("send_expiry_reminders: sent=%s skipped=%s", summary["sent"], summary["skipped"])
+    return summary
+
+
+_RU_MONTHS = (
+    "", "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
+
+
+def _ru_date(dt) -> str:
+    """'6 октября' по московскому времени (для письма). Пусто если dt=None."""
+    if not dt:
+        return ""
+    msk = dt.astimezone(timezone(timedelta(hours=3)))
+    return f"{msk.day} {_RU_MONTHS[msk.month]}"
 
 
 def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:

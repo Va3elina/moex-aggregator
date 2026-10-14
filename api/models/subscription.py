@@ -96,6 +96,10 @@ class Subscription(Base):
     # trial_consent_at/version: зафиксированный акцепт автосписания (ГК 438/ЗоЗПП 10).
     is_trial = Column(Boolean, nullable=False, default=False, server_default="false")
     trial_reminder_sent = Column(Boolean, nullable=False, default=False, server_default="false")
+    # expiry_reminder_sent: письмо «подписка заканчивается» тем, у кого она сама
+    # не продлится (нет привязки или автопродление выключено). Анти-дубль, см.
+    # service.send_expiry_reminders и миграцию 107.
+    expiry_reminder_sent = Column(Boolean, nullable=False, default=False, server_default="false")
     trial_consent_at = Column(DateTime(timezone=True), nullable=True)
     trial_consent_version = Column(String(16), nullable=True)
     # trial_request_key — T-Bank AddCard RequestKey для завершения привязки.
