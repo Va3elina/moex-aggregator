@@ -29,6 +29,7 @@ import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySe
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useAssetViewTracking } from '../hooks/useAssetViewTracking';
+import { useSeasonalityDeepLink } from '../hooks/useSeasonalityDeepLink';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { getSeasonalityTourSteps } from '../data/tours/seasonality';
 import { FUND_PALETTE } from '../config/chartTheme';
@@ -118,6 +119,11 @@ export default function SeasonalityPage() {
   const tourSteps = useMemo(() => getSeasonalityTourSteps(), [i18n.language]);
   const [chartType, setChartType] = usePersistedState<ChartType>('frame:seasonality:chartType', 'histogram');
   const [priceDays, setPriceDays] = usePersistedState('frame:seasonality:priceDays', 365);
+  useSeasonalityDeepLink((ticker, name, chart) => {
+    setSelectedStock(ticker);
+    setSelectedName(name);
+    if (chart) setChartType(chart);
+  });
 
   // NB: раньше здесь был smart default «на Free histogram недоступен →
   // переключаем на yearly». С 2026-08 сезонность бесплатна целиком (features.py:

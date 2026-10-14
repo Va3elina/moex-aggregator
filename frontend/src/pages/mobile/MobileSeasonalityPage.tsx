@@ -35,6 +35,7 @@ import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useAssetViewTracking } from '../../hooks/useAssetViewTracking';
+import { useSeasonalityDeepLink } from '../../hooks/useSeasonalityDeepLink';
 import { useLivePricesState } from '../../hooks/useLivePrices';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import {
@@ -94,6 +95,11 @@ export default function MobileSeasonalityPage() {
   const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
   const hasDividends = !NON_DIVIDEND_TICKERS.has(selectedStock);
   const [mode, setMode] = usePersistedState<MobileMode>('frame:seasonality:mobileMode', 'monthly');
+  useSeasonalityDeepLink((ticker, name, chart) => {
+    setSelectedStock(ticker);
+    setSelectedName(name);
+    if (chart) setMode(chart);
+  });
   // «Часы» (intraday) в мобильном списке не предлагаются, но режим мог
   // остаться в сохранённых настройках. Он строится по внутридневным ценам —
   // только в незамедленной версии (админ), у остальных бэкенд ответит отказом.

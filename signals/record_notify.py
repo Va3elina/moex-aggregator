@@ -2,17 +2,21 @@
 
 Ряды те же, что у движка находок завода постов (signals/insights/detect.load_positions): дневные позиции физлиц
 по фьючерсам. Четыре показателя — объём лонга, объём шорта, число физлиц в лонге, число физлиц в шорте. Рекорд —
-максимум показателя, какого не было 3 месяца, год или за всё время (та же since_date, что у record в detect.py;
-у завода нижний порог ~4 месяца, поэтому окна считаются здесь). Вселенная и фильтры как у завода: группы
-Акции/Валюта/Индексы/Сырьё, медиана участников за год ≥ MIN_PART, история от года, без малоактивных контрактов
-скринера и без дней экспирации ±1. В сообщении — только актив, показатель и окно рекорда, без цифр
-(Вадим 13.10: «цифры не нужны»).
+максимум показателя, какого не было 3 месяца, год или за всё время (у завода нижний порог ~4 месяца, поэтому окна
+считаются здесь). Вселенная и фильтры как у завода: группы Акции/Валюта/Индексы/Сырьё, медиана участников за год
+≥ MIN_PART, история от года, без малоактивных контрактов скринера и без дней экспирации ±1. В сообщении — только
+актив, показатель, окно рекорда и ссылка на график, без цифр (Вадим 13.10: «цифры не нужны»).
 
-Крон каждый час, как insight_scan (`45 7-17 * * *`); сканер ждёт дневные позиции за последний торговый день
-(signals/insights/fresh.py). Отправленное помнит файл в STATE_DIR: рекорд уходит один раз.
+Два режима, общее состояние отправленного (STATE_DIR/record_notify.sent.json: день|актив|показатель → окно):
+  • --live (крон каждые 5 минут, 9:00–23:55 МСК) — последний 5-минутный срез дня против истории дневных значений:
+    рекорд уходит в момент пробоя (Вадим 14.10: «почему не онлайн, а пачкой в 10:45»). Повторно — только если
+    за день окно выросло (3 месяца → год → всё время);
+  • по закрытию (крон каждый час, `45 7-17 * * *`, ждёт дневные позиции, signals/insights/fresh.py) — догон того,
+    что срезы не поймали; в сообщении пометка «по закрытию».
 
-    python3 -m signals.record_notify --dry-run    # показать сообщения, ничего не слать
-    python3 -m signals.record_notify --force      # прогнать сейчас, не дожидаясь свежего дня
+    python3 -m signals.record_notify --live --dry-run   # онлайн: показать, ничего не слать
+    python3 -m signals.record_notify --dry-run          # по закрытию: показать, ничего не слать
+    python3 -m signals.record_notify --force            # по закрытию сейчас, не дожидаясь свежего дня
 """
 import os
 
@@ -27,26 +31,24 @@ import time  # noqa: E402
 import urllib.parse  # noqa: E402
 from datetime import timedelta  # noqa: E402
 
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-import requests  # noqa: E402
-from dotenv import load_dotenv  # noqa: E402
 
 from api.database import SessionLocal  # noqa: E402
+from signals.framesignal import SITE, send  # noqa: E402
+from signals.insights import data, fresh  # noqa: E402
 from signals.insights import detect as det  # noqa: E402
-from signals.insights import fresh  # noqa: E402
 from signals.insights.expiry import near_expiry  # noqa: E402
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv(os.path.join(_ROOT, ".env"))
-
 NAME = "record_notify"
-SITE = "https://framedata.ru"
 SENT_FILE = os.path.join(fresh.STATE_DIR, f"{NAME}.sent.json")
 GROUPS = ("Акции", "Валюта", "Индексы", "Сырьё")
 MIN_HISTORY = 260                     # торговых дней: на короткой истории «за всё время» ничего не значит
 # показатель → подпись; цифр в сообщении нет (Вадим 13.10: «цифры не нужны»)
 LEGS = {"long": "Объём лонга физлиц", "short": "Объём шорта физлиц",
         "nl": "Число физлиц в лонге", "ns": "Число физлиц в шорте"}
+# поле среза open_interest для показателя; шорт хранится со знаком минус
+SNAP = {"long": ("pos_long", 1), "short": ("pos_short", -1), "nl": ("pos_long_num", 1), "ns": ("pos_short_num", 1)}
 # окно рекорда: сколько дней не было такого значения → подпись; «всё время» — значение выше всей истории
 WINDOWS = ((365, "за год"), (91, "за 3 месяца"))
 RANK = {"за всё время": 0, "за год": 1, "за 3 месяца": 2}
@@ -65,48 +67,68 @@ def _low_activity() -> set:
         return set()
 
 
-def records() -> tuple[pd.Timestamp, list]:
-    """Рекорды на последний день данных: [{sec, name, leg, window, value}]."""
+def window(hist: np.ndarray, dates, v: float, t) -> str | None:
+    """Окно рекорда значения v на день t против истории строго до t; None — не рекорд."""
+    if v <= 0:
+        return None
+    idx = np.flatnonzero(hist >= v)
+    if not len(idx):
+        return "за всё время"
+    gap = (pd.Timestamp(t) - dates[idx[-1]]).days
+    return next((w for d, w in WINDOWS if gap >= d), None)
+
+
+def _universe(P: dict, groups: dict, low: set, last: pd.Timestamp) -> list:
+    part = P["npart"]
+    year = part.loc[part.index >= last - pd.Timedelta(days=365)]
+    return [s for s in part.columns
+            if groups.get(s) in GROUPS and s not in low and year[s].median() >= det.MIN_PART]
+
+
+def records_close() -> tuple[pd.Timestamp, list]:
+    """Рекорды по закрытию последнего дня дневных данных."""
     P = det.load_positions()
     names, groups, _ = det.instruments()
     until = P["npart"].index.max()
     if near_expiry(until):
         return until, []
-    low = _low_activity()
-    part = P["npart"]
-    year = part.loc[part.index >= until - pd.Timedelta(days=365)]
     out = []
-    for s in part.columns:
-        if groups.get(s) not in GROUPS or s in low or not (year[s].median() >= det.MIN_PART):
-            continue
+    for s in _universe(P, groups, _low_activity(), until):
         for leg in LEGS:
             ser = P[leg][s].dropna()
-            if len(ser) < MIN_HISTORY or ser.index[-1] != until:
+            if len(ser) < MIN_HISTORY + 1 or ser.index[-1] != until:
                 continue
-            arr, dates = ser.values.astype(float), ser.index
-            i = len(arr) - 1
-            if arr[i] <= 0:
-                continue
-            u = det.since_date(arr, dates, i, True)
-            if u is None:
-                window = "за всё время"
-            else:
-                gap = (until - u).days
-                window = next((w for d, w in WINDOWS if gap >= d), None)
-            if window:
-                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": window,
-                            "value": float(arr[i])})
-    out.sort(key=lambda x: (RANK[x["window"]], x["name"], list(LEGS).index(x["leg"])))
+            w = window(ser.values[:-1].astype(float), ser.index[:-1], float(ser.values[-1]), until)
+            if w:
+                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w})
     return until, out
 
 
-def _key(until, x: dict) -> str:
-    return f"{until.date()}|{x['sec']}|{x['leg']}"
-
-
-def message(x: dict) -> str:
-    return (f"🔺 <b>{html.escape(x['name'])}</b>\n{LEGS[x['leg']]}\nРекорд {x['window']}\n"
-            f'<a href="{html.escape(chart_url(x))}">График →</a>')
+def records_live() -> tuple[pd.Timestamp | None, list]:
+    """Рекорды последнего 5-минутного среза дня против дневной истории до него."""
+    snap = data.read("oi_intraday_last", parse_dates=["tradedate"])
+    if not len(snap):
+        return None, []
+    day = snap.tradedate.max()
+    P = det.load_positions()
+    last = P["npart"].index.max()
+    if day <= last or near_expiry(day):       # срез за день, по которому уже есть закрытие, или экспирация
+        return day, []
+    names, groups, _ = det.instruments()
+    snap = snap[snap.tradedate == day].set_index("sectype")
+    out = []
+    for s in _universe(P, groups, _low_activity(), last):
+        if s not in snap.index:
+            continue
+        for leg, (col, sign) in SNAP.items():
+            ser = P[leg][s].dropna()
+            v = snap.at[s, col]
+            if len(ser) < MIN_HISTORY or ser.index[-1] != last or pd.isna(v):
+                continue
+            w = window(ser.values.astype(float), ser.index, sign * float(v), day)
+            if w:
+                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w})
+    return day, out
 
 
 def chart_url(x: dict) -> str:
@@ -121,72 +143,70 @@ def chart_url(x: dict) -> str:
     return f"{SITE}/oi?" + urllib.parse.urlencode(p)
 
 
-def _load_sent() -> set:
+def message(x: dict, close_day=None) -> str:
+    tail = f" · по закрытию {pd.Timestamp(close_day):%d.%m}" if close_day is not None else ""
+    return (f"🔺 <b>{html.escape(x['name'])}</b>\n{LEGS[x['leg']]}\nРекорд {x['window']}{tail}\n"
+            f'<a href="{html.escape(chart_url(x))}">График →</a>')
+
+
+def _key(day, x: dict) -> str:
+    return f"{pd.Timestamp(day).date()}|{x['sec']}|{x['leg']}"
+
+
+def _load_sent() -> dict:
+    """день|актив|показатель → ранг отправленного окна (0 — за всё время)."""
     try:
         with open(SENT_FILE, encoding="utf-8") as fh:
-            return set(json.load(fh))
+            raw = json.load(fh)
     except FileNotFoundError:
-        return set()
+        return {}
+    return {k: 0 for k in raw} if isinstance(raw, list) else raw    # список — прежний формат, без окна
 
 
-def _save_sent(keys: set, since: str) -> None:
+def _save_sent(sent: dict, since: str) -> None:
     os.makedirs(fresh.STATE_DIR, exist_ok=True)
     with open(SENT_FILE, "w", encoding="utf-8") as fh:
-        json.dump(sorted(k for k in keys if k[:10] >= since), fh, ensure_ascii=False)
+        json.dump({k: v for k, v in sorted(sent.items()) if k[:10] >= since}, fh, ensure_ascii=False)
 
 
-def send(text: str) -> bool:
-    tok = os.environ.get("ALERT_BOT_TOKEN")
-    chats = [c.strip() for c in os.environ.get("ADMIN_CHAT_ID", "").split(",") if c.strip()]
-    if not tok or not chats:
-        print(f"[{NAME}] нет ALERT_BOT_TOKEN или ADMIN_CHAT_ID — не отправлено")
-        return False
-    root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/")
-    ok = False
-    for chat in chats:
-        try:
-            r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data={
-                "chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True})
-            if r.json().get("ok"):
-                ok = True
-            else:
-                print(f"[{NAME}] чат {chat}: не принято: {r.text[:200].replace(tok, '<REDACTED>')}")
-        except requests.RequestException as e:
-            print(f"[{NAME}] чат {chat}: {str(e).replace(tok, '<REDACTED>')}")
-    return ok
-
-
-def run_once(dry_run: bool = False) -> dict:
-    until, recs = records()
+def run_once(live: bool, dry_run: bool = False) -> dict:
+    day, recs = records_live() if live else records_close()
+    summary = {"mode": "live" if live else "close", "day": str(day.date()) if day is not None else None,
+               "records": len(recs), "new": 0, "sent": 0, "failed": 0}
+    if day is None:
+        return summary
     sent = _load_sent()
-    new = [x for x in recs if _key(until, x) not in sent]
-    summary = {"data_until": str(until.date()), "records": len(recs), "new": len(new), "sent": 0, "failed": 0}
+    new = [x for x in recs if RANK[x["window"]] < sent.get(_key(day, x), 99)]
+    new.sort(key=lambda x: (RANK[x["window"]], x["name"], list(LEGS).index(x["leg"])))
+    summary["new"] = len(new)
     for x in new:
-        msg = message(x)
+        msg = message(x, None if live else day)
         if dry_run:
             print(msg + "\n")
             continue
-        if send(msg):
+        if send(msg, NAME):
             summary["sent"] += 1
-            sent.add(_key(until, x))
+            sent[_key(day, x)] = RANK[x["window"]]
         else:
             summary["failed"] += 1
         time.sleep(1.1)                   # лимит Telegram — около сообщения в секунду на чат
-    if not dry_run:
-        _save_sent(sent, (until - timedelta(days=14)).date().isoformat())
+    if not dry_run and new:
+        _save_sent(sent, (day - timedelta(days=14)).date().isoformat())
     return summary
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--live", action="store_true", help="онлайн: последний 5-минутный срез против дневной истории")
     ap.add_argument("--dry-run", action="store_true", help="показать сообщения, ничего не слать")
-    ap.add_argument("--force", action="store_true", help="прогнать сейчас: не ждать свежий день и не смотреть отметку")
+    ap.add_argument("--force", action="store_true", help="по закрытию сейчас: не ждать свежий день и не смотреть отметку")
     a = ap.parse_args()
-    why = None if (a.dry_run or a.force) else fresh.wait_reason(NAME)
+    why = None if (a.live or a.dry_run or a.force) else fresh.wait_reason(NAME)
     if why:
         print(f"[{NAME}] пропуск: {why}")
     else:
-        s = run_once(dry_run=a.dry_run)
-        if not a.dry_run and not s["failed"]:
-            fresh.mark_done(NAME, s["data_until"])
-        print(f"[{NAME}] {s}")
+        s = run_once(a.live, dry_run=a.dry_run)
+        if not (a.live or a.dry_run) and not s["failed"]:
+            fresh.mark_done(NAME, s["day"])
+        if not a.live or s["new"]:
+            print(f"[{NAME}] {s}")
