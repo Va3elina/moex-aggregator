@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { pricingUrlFrom } from '../utils/purchaseSource';
 import { useTranslation } from 'react-i18next';
 import { dateLocale } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
@@ -468,7 +469,7 @@ export default function ProfilePage() {
             {/* Action buttons — change tier, cancel/resume */}
             <div className="flex flex-wrap gap-2 items-center">
               <Link
-                to="/pricing"
+                to={pricingUrlFrom('profile')}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
                 style={{
                   backgroundColor: 'var(--bg-secondary)',
@@ -584,7 +585,7 @@ export default function ProfilePage() {
               ))}
             </div>
             <Link
-              to="/pricing"
+              to={pricingUrlFrom('profile')}
               className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
               style={{
                 backgroundColor: 'var(--accent)',

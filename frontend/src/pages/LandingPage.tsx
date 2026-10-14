@@ -15,6 +15,7 @@
  * Залогиненных роутер редиректит с "/" на /heatmap (conditional в App.tsx).
  */
 import { Link } from 'react-router-dom';
+import { pricingUrlFrom } from '../utils/purchaseSource';
 import {
   Grid3X3,
   Wallet,
@@ -160,7 +161,7 @@ export default function LandingPage() {
                 {t('Попробовать бесплатно')}
                 <span style={{ fontSize: 18, lineHeight: 1 }}>→</span>
               </Link>
-              <Link to="/pricing" className="hero-btn-ghost">
+              <Link to={pricingUrlFrom('landing')} className="hero-btn-ghost">
                 {t('Тарифы')}
               </Link>
             </div>

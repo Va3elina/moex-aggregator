@@ -179,6 +179,7 @@ def check_trial_eligibility(db: Session, user: User) -> dict:
 def start_trial(
     db: Session, user: User, tier: str, period: str,
     base_url: str, consent: bool, ip: str | None = None,
+    source: dict | None = None,
 ) -> dict:
     """Создаёт pending триал-строку + инициирует привязку карты через Init 1₽.
 
@@ -240,6 +241,7 @@ def start_trial(
         user_id=user.id, tier=tier, period=period, plan_id=plan_id,
         amount=Decimal("0.00"), currency="RUB", status="pending",
         is_trial=True, trial_consent_at=now, trial_consent_version=TRIAL_CONSENT_VERSION,
+        **(source or {}),
     )
     db.add(sub)
     db.flush()

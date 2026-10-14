@@ -1,6 +1,7 @@
 import { Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { pricingUrlFrom } from '../utils/purchaseSource';
 
 /**
  * DelayedDataBadge — постоянное честное напоминание, что данные индикатора
@@ -72,7 +73,7 @@ export default function DelayedDataBadge({
       <span style={{ fontWeight: 600 }}>{t('Данные с задержкой')}</span>
       <span style={{ opacity: 0.72 }}>{t(compact ? compactMessage : message)}</span>
       <a
-        href="/pricing"
+        href={pricingUrlFrom('delay_banner', indicator)}
         style={{ fontWeight: 600, color: 'var(--accent)', textDecoration: 'underline' }}
       >
         {t(compact ? compactCta : cta)}

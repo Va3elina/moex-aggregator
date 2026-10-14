@@ -31,6 +31,7 @@ from api.billing.factory import (
     get_yookassa_provider,
 )
 from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, tiers_grouped
+from api.billing.source import clean_source
 from api.billing.tiers import user_tier
 from api.database import get_db
 from api.models.payment_method import UserPaymentMethod
@@ -53,6 +54,8 @@ class CheckoutRequest(BaseModel):
     widget_mode: bool = False     # True если инициирован через T-Bank JS SDK (SpeedPay)
     recurrent: bool = False       # True → сохранить карту для auto-renewal (T-Bank Recurrent="Y")
     rail: str = "card"            # 'card' (redirect) | 'sbp' (QR, рекуррентный СБП)
+    source: str | None = None     # откуда пришли к оплате: paywall / delay_banner / header / ... / pricing
+    source_feature: str | None = None  # что упёрлось в замок (для paywall / delay_banner)
 
 
 class CheckoutResponse(BaseModel):
@@ -258,6 +261,8 @@ class SbpBindRequest(BaseModel):
     plan_id: str
     # 'PAYLOAD' — ссылка для телефона, 'IMAGE' — картинка QR для десктопа.
     data_type: str = "PAYLOAD"
+    source: str | None = None
+    source_feature: str | None = None
 
 
 @router.post("/sbp/bind")
@@ -275,7 +280,8 @@ async def sbp_bind_start(
     """
     try:
         return billing_service.start_sbp_binding(
-            db=db, user=user, plan_id=body.plan_id, data_type=body.data_type
+            db=db, user=user, plan_id=body.plan_id, data_type=body.data_type,
+            source=clean_source(body.source, body.source_feature),
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -338,6 +344,7 @@ async def checkout(
             widget_mode=body.widget_mode,
             recurrent=body.recurrent,
             rail=body.rail,
+            source=clean_source(body.source, body.source_feature),
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -670,6 +677,8 @@ class TrialStartRequest(BaseModel):
     tier: str                     # 'basic' / 'pro'
     period: str = "monthly"       # что списать по окончании: monthly / yearly
     consent: bool = False         # явное согласие на автосписание (ГК 438) — обязательно
+    source: str | None = None
+    source_feature: str | None = None
 
 
 @router.post("/trial/start")
@@ -692,6 +701,7 @@ async def trial_start(
         return trial_service.start_trial(
             db, user, body.tier, body.period, origin.rstrip("/"),
             consent=body.consent, ip=ip,
+            source=clean_source(body.source, body.source_feature),
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

@@ -109,6 +109,13 @@ class Subscription(Base):
     # или таймауте. NULL для карточных/обычных подписок.
     sbp_request_key = Column(String(64), nullable=True)
 
+    # === Откуда пришли к оплате (107_subscription_source.sql) ===
+    # source: paywall / delay_banner / header / landing / profile / pricing
+    # (прямой заход). source_feature — что упёрлось в замок. Только на первой
+    # строке из checkout / СБП / триала, у продлений NULL (api/billing/source.py).
+    source = Column(String(16), nullable=True)
+    source_feature = Column(String(64), nullable=True)
+
     # === Провайдер реквизиты ===
     # yk_payment_id — id платежа у провайдера (T-Bank PaymentId или ЮKassa id),
     # заполняется при создании checkout-сессии. Используется в webhook'е для

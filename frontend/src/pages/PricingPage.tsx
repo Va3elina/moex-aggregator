@@ -26,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { apiFetch } from '../services/api';
 import { trackEvent } from '../hooks/useYandexMetrica';
+import { capturePurchaseSource, purchaseSourcePayload } from '../utils/purchaseSource';
 import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../config/features';
 import TierPlanCard, { TIER_META } from '../components/pricing/TierPlanCard';
 import {
@@ -232,6 +233,21 @@ export default function PricingPage() {
     setPendingTrial({ tier, period: trialPeriod });
   };
 
+  // === Метка источника из ?src= / ?feature= ===
+  // Откуда пришли к тарифам (окно замка, плашка задержки, шапка). Запоминаем и
+  // убираем из адреса, чтобы ссылкой из адресной строки метку не разносили.
+  // Клик по призыву пишем здесь, а не в самом призыве: плашка уводит полной
+  // перезагрузкой, и событие из неё терялось бы вместе с очередью трекера.
+  useEffect(() => {
+    if (!capturePurchaseSource(searchParams)) return;
+    track('upsell_click', { src: searchParams.get('src'), feature: searchParams.get('feature') });
+    const cleaned = new URLSearchParams(searchParams);
+    cleaned.delete('src');
+    cleaned.delete('feature');
+    setSearchParams(cleaned, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // === Намерение из ?plan= / ?trial= ===
   // Человек уже нажал «Оформить» — до регистрации или до подтверждения почты.
   // Просить его нажать ту же кнопку второй раз не за что: доигрываем клик за
@@ -287,13 +303,14 @@ export default function PricingPage() {
     const { tier, period: trialPeriod } = pendingTrial;
     setCheckoutLoading(`trial_${tier}`);
     setError(null);
-    track('trial_start', { tier, period: trialPeriod });
-    trackEvent('trial_start', { tier, period: trialPeriod });
+    const src = purchaseSourcePayload();
+    track('trial_start', { tier, period: trialPeriod, src: src.source, feature: src.source_feature });
+    trackEvent('trial_start', { tier, period: trialPeriod, src: src.source });
     try {
       const resp = await apiFetch('/api/billing/trial/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier, period: trialPeriod, consent: true }),
+        body: JSON.stringify({ tier, period: trialPeriod, consent: true, ...src }),
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok || !body.payment_url) {
@@ -322,15 +339,16 @@ export default function PricingPage() {
     const bankWin = isPhone ? window.open('', '_blank') : null;
     setCheckoutLoading(planId);
     setError(null);
-    track('checkout_start', { plan: planId, rail: 'sbp_bind' });
-    trackEvent('checkout_start', { plan: planId, rail: 'sbp_bind' });
+    const src = purchaseSourcePayload();
+    track('checkout_start', { plan: planId, rail: 'sbp_bind', src: src.source, feature: src.source_feature });
+    trackEvent('checkout_start', { plan: planId, rail: 'sbp_bind', src: src.source });
     try {
       const resp = await apiFetch('/api/billing/sbp/bind', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Телефон — ссылка (откроем банк прямо), десктоп — картинка QR от
         // банка. Одна заявка = одна форма: вторая перебила бы первую.
-        body: JSON.stringify({ plan_id: planId, data_type: isPhone ? 'PAYLOAD' : 'IMAGE' }),
+        body: JSON.stringify({ plan_id: planId, data_type: isPhone ? 'PAYLOAD' : 'IMAGE', ...src }),
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok || !body.payload) {
@@ -365,8 +383,9 @@ export default function PricingPage() {
     const planId = pendingPlanId;
     setCheckoutLoading(planId);
     setError(null);
-    track('checkout_start', { plan: planId, rail });
-    trackEvent('checkout_start', { plan: planId, rail });
+    const src = purchaseSourcePayload();
+    track('checkout_start', { plan: planId, rail, src: src.source, feature: src.source_feature });
+    trackEvent('checkout_start', { plan: planId, rail, src: src.source });
     try {
       const resp = await apiFetch('/api/billing/checkout', {
         method: 'POST',
@@ -376,6 +395,7 @@ export default function PricingPage() {
           return_url: `${window.location.origin}/billing/success`,
           recurrent: true,  // подписка ВСЕГДА с авто-продлением (toggle убран)
           rail,
+          ...src,
         }),
       });
       if (!resp.ok) {

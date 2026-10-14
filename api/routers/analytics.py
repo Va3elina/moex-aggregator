@@ -117,6 +117,12 @@ ALLOWED_EVENT_TYPES = {
     #   tg_linked        {from, sec} — привязка подтвердилась, за сколько секунд
     #   tg_unlink        {from}
     "alert_bell_click",
+    # Призывы к подписке (2026-10-14):
+    #   paywall_show {tier, feature, indicator} — открылось окно «Доступно на тарифе»
+    #   upsell_click {src, tier?, feature}      — клик по призыву: окно, плашка задержки
+    # Сама покупка помечается в subscriptions.source (см. 107_subscription_source.sql).
+    "paywall_show",
+    "upsell_click",
     "alert_modal_open",
     "alert_created",
     "tg_link_click",
@@ -611,7 +617,7 @@ def get_growth(
     from api.services import metrica
 
     rng = _resolve_range(days, date_from, date_to)
-    db = dict(get_or_compute(f"admin:growth:v3:{rng['d0']}:{rng['d1']}", lambda: _compute_growth(rng), ttl=300))
+    db = dict(get_or_compute(f"admin:growth:v4:{rng['d0']}:{rng['d1']}", lambda: _compute_growth(rng), ttl=300))
     admin_ids = db.pop("admin_ids")
     payer_ids = db.pop("payer_ids")
     visitors = None
@@ -784,6 +790,7 @@ def _compute_growth(rng: dict) -> dict:
         """)).fetchall()
         guests = _loyal_guests(conn, window)
         retention = _retention_matrix(conn)
+        purchase_sources = _purchase_sources(conn, window)
     return {
         "admin_ids": admin_ids,
         "payer_ids": payer_ids,
@@ -795,6 +802,64 @@ def _compute_growth(rng: dict) -> dict:
         } for r in cohorts],
         "guests": guests,
         "retention": retention,
+        "purchase_sources": purchase_sources,
+    }
+
+
+# Подписки, у которых известен путь к оплате (метка subscriptions.source с
+# 2026-10-14). Оплачено — как в воронке: без триала и подарочного Pro.
+_PAID_SQL = "s.status IN ('active', 'expired', 'cancelled') AND NOT COALESCE(s.is_trial, false) AND s.period <> 'invite'"
+
+
+def _purchase_sources(conn, window: dict) -> dict:
+    """Через какой призыв пришли к оплате за период: окно замка, плашка
+    задержки, кнопка Plus или прямой заход на тарифы. Показы окна и клики по
+    призывам — из analytics_events (с 2026-10-14), без админов."""
+    rows = conn.execute(text(f"""
+        SELECT s.source,
+               COUNT(DISTINCT s.user_id) AS started,
+               COUNT(DISTINCT s.user_id) FILTER (WHERE {_PAID_SQL}) AS paid,
+               COALESCE(SUM(s.amount) FILTER (WHERE {_PAID_SQL}), 0) AS revenue,
+               COUNT(DISTINCT s.user_id) FILTER (WHERE s.is_trial AND s.status <> 'failed' AND s.status <> 'pending') AS trials
+        FROM subscriptions s JOIN users u ON u.id = s.user_id
+        WHERE s.source IS NOT NULL AND u.role IS DISTINCT FROM 'admin'
+          AND s.created_at >= (CAST(:start AS timestamp) AT TIME ZONE 'UTC')
+          AND s.created_at < (CAST(:end AS timestamp) AT TIME ZONE 'UTC')
+        GROUP BY 1
+    """), window).fetchall()
+    features = conn.execute(text(f"""
+        SELECT s.source, s.source_feature, COUNT(DISTINCT s.user_id)
+        FROM subscriptions s JOIN users u ON u.id = s.user_id
+        WHERE s.source IN ('paywall', 'delay_banner') AND s.source_feature IS NOT NULL
+          AND u.role IS DISTINCT FROM 'admin' AND {_PAID_SQL}
+          AND s.created_at >= (CAST(:start AS timestamp) AT TIME ZONE 'UTC')
+          AND s.created_at < (CAST(:end AS timestamp) AT TIME ZONE 'UTC')
+        GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20
+    """), window).fetchall()
+    events = conn.execute(text("""
+        SELECT CASE WHEN e.event_type = 'paywall_show' THEN 'paywall_show'
+                    ELSE 'click:' || COALESCE(e.payload->>'src', '?') END AS k,
+               COUNT(*) AS n,
+               COUNT(DISTINCT COALESCE(e.user_id::text, e.visitor_id)) AS people
+        FROM analytics_events e LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.event_type IN ('paywall_show', 'upsell_click')
+          AND u.role IS DISTINCT FROM 'admin'
+          AND e.server_ts >= :start AND e.server_ts < :end
+        GROUP BY 1
+    """), window).fetchall()
+    shown = next(((n, p) for k, n, p in events if k == 'paywall_show'), (0, 0))
+    clicks = {k[6:]: {"clicks": n, "people": p} for k, n, p in events if k.startswith('click:')}
+    # Строка на каждый источник: и с оплатами, и с одними кликами без покупок.
+    by_src = {r[0]: {"started": r[1], "paid": r[2], "revenue": float(r[3]), "trials": r[4]} for r in rows}
+    zero = {"started": 0, "paid": 0, "revenue": 0.0, "trials": 0}
+    return {
+        "rows": sorted(({
+            "source": k, **by_src.get(k, zero), **clicks.get(k, {"clicks": 0, "people": 0}),
+        } for k in set(by_src) | set(clicks)), key=lambda x: (-x["paid"], -x["started"], -x["clicks"])),
+        "paywall_shows": shown[0],
+        "paywall_people": shown[1],
+        "features": [{"source": f[0], "feature": f[1], "paid": f[2]} for f in features],
+        "since": "2026-10-14",
     }
 
 
