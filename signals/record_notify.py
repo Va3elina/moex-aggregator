@@ -24,6 +24,7 @@ import argparse  # noqa: E402
 import html  # noqa: E402
 import json  # noqa: E402
 import time  # noqa: E402
+import urllib.parse  # noqa: E402
 from datetime import timedelta  # noqa: E402
 
 import pandas as pd  # noqa: E402
@@ -39,6 +40,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_ROOT, ".env"))
 
 NAME = "record_notify"
+SITE = "https://framedata.ru"
 SENT_FILE = os.path.join(fresh.STATE_DIR, f"{NAME}.sent.json")
 GROUPS = ("Акции", "Валюта", "Индексы", "Сырьё")
 MIN_HISTORY = 260                     # торговых дней: на короткой истории «за всё время» ничего не значит
@@ -103,7 +105,20 @@ def _key(until, x: dict) -> str:
 
 
 def message(x: dict) -> str:
-    return f"🔺 <b>{html.escape(x['name'])}</b>\n{LEGS[x['leg']]}\nРекорд {x['window']}"
+    return (f"🔺 <b>{html.escape(x['name'])}</b>\n{LEGS[x['leg']]}\nРекорд {x['window']}\n"
+            f'<a href="{html.escape(chart_url(x))}">График →</a>')
+
+
+def chart_url(x: dict) -> str:
+    """Диплинк на /oi (frontend/src/utils/oiDeepLink.ts): физлица, дневной график; объём — позиции с нужной
+    ногой, число физлиц — режим участников. Периода короче года на странице нет — 3 месяца открываем на году."""
+    p = [("instrument", x["sec"]), ("clgroup", "FIZ"), ("interval", "24"),
+         ("period", "all" if x["window"] == "за всё время" else "1y")]
+    if x["leg"] in ("long", "short"):
+        p += [("mode", "positions"), ("variant", x["leg"])]
+    else:
+        p.append(("mode", "participants"))
+    return f"{SITE}/oi?" + urllib.parse.urlencode(p)
 
 
 def _load_sent() -> set:
