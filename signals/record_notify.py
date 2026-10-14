@@ -1,7 +1,8 @@
 """Рекорды позиций физлиц → отдельное сообщение на каждый в @framesignalbot (личка админа).
 
 Ряды те же, что у движка находок завода постов (signals/insights/detect.load_positions): дневные позиции физлиц
-по фьючерсам. Четыре показателя — объём лонга, объём шорта, число физлиц в лонге, число физлиц в шорте. Рекорд —
+по фьючерсам. Шесть показателей — объём лонга, объём шорта, число физлиц в лонге, число физлиц в шорте, чистый
+лонг и чистый шорт (максимум и минимум чистой позиции, Вадим 14.10). Рекорд —
 максимум показателя, какого не было 3 месяца, год или за всё время (у завода нижний порог ~4 месяца, поэтому окна
 считаются здесь). Вселенная и фильтры как у завода: группы Акции/Валюта/Индексы/Сырьё, медиана участников за год
 ≥ MIN_PART, история от года, без малоактивных контрактов скринера и без дней экспирации ±1. В сообщении — только
@@ -46,9 +47,20 @@ GROUPS = ("Акции", "Валюта", "Индексы", "Сырьё")
 MIN_HISTORY = 260                     # торговых дней: на короткой истории «за всё время» ничего не значит
 # показатель → подпись; цифр в сообщении нет (Вадим 13.10: «цифры не нужны»)
 LEGS = {"long": "Объём лонга физлиц", "short": "Объём шорта физлиц",
-        "nl": "Число физлиц в лонге", "ns": "Число физлиц в шорте"}
-# поле среза open_interest для показателя; шорт хранится со знаком минус
-SNAP = {"long": ("pos_long", 1), "short": ("pos_short", -1), "nl": ("pos_long_num", 1), "ns": ("pos_short_num", 1)}
+        "nl": "Число физлиц в лонге", "ns": "Число физлиц в шорте",
+        "netl": "Чистый лонг физлиц", "nets": "Чистый шорт физлиц"}
+# показатель → (ряд detect.load_positions, знак): чистый шорт — рекорд минимума чистой позиции, то есть максимум −net
+SERIES = {"long": ("long", 1), "short": ("short", 1), "nl": ("nl", 1), "ns": ("ns", 1), "netl": ("net", 1),
+          "nets": ("net", -1)}
+# значение показателя в 5-минутном срезе open_interest; шорт хранится со знаком минус
+SNAP = {"long": lambda r: r.pos_long, "short": lambda r: -r.pos_short, "nl": lambda r: r.pos_long_num,
+        "ns": lambda r: r.pos_short_num, "netl": lambda r: r.pos_long + r.pos_short,
+        "nets": lambda r: -(r.pos_long + r.pos_short)}
+
+
+def _series(P: dict, leg: str, s: str) -> pd.Series:
+    col, sign = SERIES[leg]
+    return (sign * P[col][s]).dropna()
 # окно рекорда: сколько дней не было такого значения → подпись; «всё время» — значение выше всей истории
 WINDOWS = ((365, "за год"), (91, "за 3 месяца"))
 RANK = {"за всё время": 0, "за год": 1, "за 3 месяца": 2}
@@ -95,7 +107,7 @@ def records_close() -> tuple[pd.Timestamp, list]:
     out = []
     for s in _universe(P, groups, _low_activity(), until):
         for leg in LEGS:
-            ser = P[leg][s].dropna()
+            ser = _series(P, leg, s)
             if len(ser) < MIN_HISTORY + 1 or ser.index[-1] != until:
                 continue
             w = window(ser.values[:-1].astype(float), ser.index[:-1], float(ser.values[-1]), until)
@@ -120,12 +132,13 @@ def records_live() -> tuple[pd.Timestamp | None, list]:
     for s in _universe(P, groups, _low_activity(), last):
         if s not in snap.index:
             continue
-        for leg, (col, sign) in SNAP.items():
-            ser = P[leg][s].dropna()
-            v = snap.at[s, col]
+        row = snap.loc[s]
+        for leg, value in SNAP.items():
+            ser = _series(P, leg, s)
+            v = value(row)
             if len(ser) < MIN_HISTORY or ser.index[-1] != last or pd.isna(v):
                 continue
-            w = window(ser.values.astype(float), ser.index, sign * float(v), day)
+            w = window(ser.values.astype(float), ser.index, float(v), day)
             if w:
                 out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w})
     return day, out
@@ -133,11 +146,13 @@ def records_live() -> tuple[pd.Timestamp | None, list]:
 
 def chart_url(x: dict) -> str:
     """Диплинк на /oi (frontend/src/utils/oiDeepLink.ts): физлица, дневной график; объём — позиции с нужной
-    ногой, число физлиц — режим участников. Периода короче года на странице нет — 3 месяца открываем на году."""
+    ногой, чистая позиция — вариант net, число физлиц — режим участников. Периода короче года на странице нет — 3 месяца открываем на году."""
     p = [("instrument", x["sec"]), ("clgroup", "FIZ"), ("interval", "24"),
          ("period", "all" if x["window"] == "за всё время" else "1y")]
     if x["leg"] in ("long", "short"):
         p += [("mode", "positions"), ("variant", x["leg"])]
+    elif x["leg"] in ("netl", "nets"):
+        p += [("mode", "positions"), ("variant", "net")]
     else:
         p.append(("mode", "participants"))
     return f"{SITE}/oi?" + urllib.parse.urlencode(p)
