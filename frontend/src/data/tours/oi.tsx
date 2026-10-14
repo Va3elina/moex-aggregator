@@ -12,6 +12,7 @@
 import { Trans } from 'react-i18next';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import { t } from '../../i18n';
+import { ChartActionsGlyph } from '../../components/ChartActionsMenu';
 
 export function getOiTourSteps(): TourStep[] {
   return [
@@ -114,7 +115,7 @@ export function getOiTourSteps(): TourStep[] {
     body: (
       <>
         <p style={{ marginBottom: 8 }}>
-          <Trans i18nKey="Кнопка <strong>«⋮»</strong> в правом верхнем углу графика собирает все действия над ним:" />
+          {t('Кнопка')} <ChartActionsGlyph /> {t('в правом верхнем углу графика собирает все действия над ним:')}
         </p>
         <p style={{ marginBottom: 8 }}>
           <Trans i18nKey="<strong>Слои</strong> — показать/скрыть линию цены и метки экспираций (смена фьючерсного контракта; на CR контракты квартальные: H март, M июнь, U сентябрь, Z декабрь)." />

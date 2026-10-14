@@ -6,6 +6,7 @@
  */
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import { t } from '../../i18n';
+import { ChartActionsGlyph } from '../../components/ChartActionsMenu';
 
 export function getSeasonalityTourSteps(): TourStep[] {
   return [
@@ -84,7 +85,7 @@ export function getSeasonalityTourSteps(): TourStep[] {
     body: (
       <>
         <p>
-          {t('Кнопка')} <strong>«⋮»</strong> {t('в правом верхнем углу графика: скриншот текущего вида в PNG с подписями (актив, режим, фильтры).')}
+          {t('Кнопка')} <ChartActionsGlyph /> {t('в правом верхнем углу графика: скриншот текущего вида в PNG с подписями (актив, режим, фильтры).')}
         </p>
       </>
     ),

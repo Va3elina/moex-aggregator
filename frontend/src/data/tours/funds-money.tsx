@@ -12,6 +12,7 @@
  */
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import { t } from '../../i18n';
+import { ChartActionsGlyph } from '../../components/ChartActionsMenu';
 
 type ViewMode = 'aum' | 'flows';
 
@@ -111,7 +112,7 @@ export function buildFundsMoneyTour(setViewMode: (m: ViewMode) => void): TourSte
       body: (
         <>
           <p style={{ marginBottom: 8 }}>
-            {t('Кнопка')} <strong>«⋮»</strong> {t('в правом верхнем углу графика собирает слои и скриншот.')}
+            {t('Кнопка')} <ChartActionsGlyph /> {t('в правом верхнем углу графика собирает слои и скриншот.')}
           </p>
           <p>
             {t('В режиме')} <strong>{t('СЧА')}</strong> {t('в слоях есть тумблер')}{' '}

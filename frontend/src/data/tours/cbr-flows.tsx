@@ -6,6 +6,7 @@
  */
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import { t } from '../../i18n';
+import { ChartActionsGlyph } from '../../components/ChartActionsMenu';
 
 export function getCbrFlowsTourSteps(): TourStep[] {
   return [
@@ -79,7 +80,7 @@ export function getCbrFlowsTourSteps(): TourStep[] {
     body: (
       <>
         <p>
-          {t('Кнопка')} <strong>«⋮»</strong>{' '}
+          {t('Кнопка')} <ChartActionsGlyph />{' '}
           {t('в правом верхнем углу графика: скриншот текущего вида в PNG (источник, Банк России, добавляется автоматически).')}
         </p>
       </>

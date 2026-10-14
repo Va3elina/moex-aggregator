@@ -1,5 +1,5 @@
 /**
- * ChartActionsMenu — kebab «⋮» в правом верхнем углу графика, сворачивающий
+ * ChartActionsMenu — кнопка-шестерёнка (раньше kebab «⋮») в правом верхнем углу графика, сворачивающий
  * действия над графиком (Слои, Скриншот, CSV, Алерт) в одно меню.
  *
  * Зачем: контролы данных (актив/ТФ/период/режим) разрослись и выталкивали
@@ -24,7 +24,17 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { MoreVertical } from 'lucide-react';
+import { Settings } from 'lucide-react';
+
+// Иконка кнопки — шестерёнка вместо kebab «⋮»: три точки не все узнавали как
+// кликабельную кнопку. Settings (классическая шестерёнка), а не Settings2 — тот
+// уже занят пунктом «Настройки графика» внутри меню.
+
+/** Инлайн-глиф той же иконки для текстов онбординг-туров («Кнопка ⚙ в углу…»).
+ *  display:inline обязателен — Tailwind preflight делает svg блочным. */
+export function ChartActionsGlyph() {
+  return <Settings size={16} strokeWidth={2.2} aria-label="⚙" style={{ display: 'inline', verticalAlign: '-3px' }} />;
+}
 
 interface ChartActionsMenuProps {
   children: ReactNode;
@@ -95,7 +105,7 @@ export default function ChartActionsMenu({ children, containerRef, tourId }: Cha
           height: 40,
         }}
       >
-        <MoreVertical size={20} />
+        <Settings size={20} />
       </button>
       <div
         data-export-ignore="true"
