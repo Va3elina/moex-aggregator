@@ -63,7 +63,7 @@ from signals import config             # noqa: E402
 from signals.news_similarity import Idf, find_duplicate  # noqa: E402
 from signals.content_ai import (       # noqa: E402
     _fire, _step_a_payload, _known_tickers_line, TRIGGER_ID_STEP_A,
-    _hype_accept, _brain_hint_for_step_a,
+    _hype_accept, _brain_hint_for_step_a, _stagger,
 )
 
 SESSION_PATH = os.path.join(_ROOT, "signals", "mtp_session")
@@ -303,11 +303,11 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
                         кандидат, internal_token, known_tickers,
                         _brain_hint_for_step_a(db, кандидат),
                     )
-                    _fire(TRIGGER_ID_STEP_A, token_a, payload)
+                    _fire(TRIGGER_ID_STEP_A, token_a, payload, dedup=new_id)
                     db.execute(_MARK_DISPATCHED, {"id": new_id})
                     db.commit()
                     summary["step_a_fired"] += 1
-                    time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
+                    _stagger()  # пауза между прямыми /fire; в режиме общей очереди её держит диспетчер
                 except Exception as e:
                     summary["step_a_fire_errors"] += 1
                     print(f"[tg_hype_scan] {channel}: step-a fire failed for candidate "

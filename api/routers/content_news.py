@@ -25,6 +25,7 @@ import difflib
 import html
 import hashlib
 import json
+import logging
 import os
 import re
 from typing import Optional
@@ -304,6 +305,26 @@ def _require_internal_token(x_internal_token: str = Header(default="")) -> None:
         raise HTTPException(status_code=403, detail="Неверный или отсутствующий internal token")
 
 
+def _closes_queue(*steps: str):
+    """Зависимость колбэка рутины: ответ пришёл — сессия отработала, закрываем её задание в общей
+    очереди рутин (signals/routine_queue.py, ключ «ШАГ:кандидат» ставит content_ai._fire). Без этого
+    задание висело бы 'running' до таймаута и занимало место в общем лимите сессий. Закрываем
+    отдельной транзакцией и ДО обработчика: даже если он ответит 409, рутина уже отработала.
+    Сбой здесь колбэк не роняет — задание закроется по таймауту."""
+    def dep(candidate_id: int) -> None:
+        try:
+            from api.database import get_engine
+            with get_engine().begin() as c:
+                c.execute(text("""
+                    UPDATE routine_queue SET status = 'done', finished_at = now()
+                    WHERE dedup_key = ANY(:k) AND status IN ('firing', 'running', 'queued')
+                """), {"k": [f"{s}:{candidate_id}" for s in steps]})
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("moex_api").warning("routine_queue: не закрыто задание %s:%s — %s",
+                                                  steps, candidate_id, e)
+    return dep
+
+
 class StepAResult(BaseModel):
     relevant: bool
     tickers: list[str] = []
@@ -507,7 +528,8 @@ class HypeFilterResult(BaseModel):
     reason: Optional[str] = None
 
 
-@internal_router.patch("/{candidate_id}/hype-filter", dependencies=[Depends(_require_internal_token)])
+@internal_router.patch("/{candidate_id}/hype-filter", dependencies=[Depends(_require_internal_token),
+                                                          Depends(_closes_queue("HYPE_FILTER"))])
 def apply_hype_filter(candidate_id: int, body: HypeFilterResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага Н — независимого от Шага А фильтра «шутка/мусор
     vs реальная новость» (см. signals/content_ai.py:_hype_filter_payload,
@@ -555,7 +577,8 @@ def _единый_тип(db, row, body) -> None:
         body.event_type = код
 
 
-@internal_router.patch("/{candidate_id}/step-a", dependencies=[Depends(_require_internal_token)])
+@internal_router.patch("/{candidate_id}/step-a", dependencies=[Depends(_require_internal_token),
+                                                          Depends(_closes_queue("STEP_A"))])
 def apply_step_a(candidate_id: int, body: StepAResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага А (извлечение). Тут же — Шаг А2 (маппинг тикера,
     БЕЗ ИИ): резолвим первый известный тикер через ticker_futures_map. Категорийный
@@ -882,7 +905,8 @@ def real_rejections(limit: int = 5, db: Session = Depends(get_db)):
     }
 
 
-@internal_router.patch("/{candidate_id}/step-g", dependencies=[Depends(_require_internal_token)])
+@internal_router.patch("/{candidate_id}/step-g", dependencies=[Depends(_require_internal_token),
+                                                          Depends(_closes_queue("STEP_G"))])
 def apply_step_g(candidate_id: int, body: JudgeResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага Г. Судья НЕ меняет статус кандидата: он размечает,
     а решение остаётся за человеком (автоотбраковка с переписыванием жгла бы
@@ -1012,7 +1036,8 @@ def _style_snapshot(draft: str):
                        ensure_ascii=False)
 
 
-@internal_router.patch("/{candidate_id}/step-c", dependencies=[Depends(_require_internal_token)])
+@internal_router.patch("/{candidate_id}/step-c", dependencies=[Depends(_require_internal_token),
+                                                          Depends(_closes_queue("STEP_C", "STEP_C_INSIGHT"))])
 def apply_step_c(candidate_id: int, body: StepCResult, db: Session = Depends(get_db)):
     """Приёмка результата Шага В (синтез). Если модель отказалась писать
     («недостаточно данных») — НЕ дожидаемся веры на слово, возвращаем кандидата
