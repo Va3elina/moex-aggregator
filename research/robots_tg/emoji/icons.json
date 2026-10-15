@@ -77,19 +77,19 @@
  },
  "ук т-капитал": {
   "file": "png/fund_tcap.png",
-  "emoji": "🟡"
+  "emoji": "🟨"
  },
  "ук альфа": {
   "file": "png/fund_alfa.png",
-  "emoji": "🔴"
+  "emoji": "🟥"
  },
  "ук первая": {
   "file": "png/fund_pervaya.png",
-  "emoji": "🟢"
+  "emoji": "🟩"
  },
  "ук вим": {
   "file": "png/fund_vim.png",
-  "emoji": "🔵"
+  "emoji": "🟦"
  },
  "ук атон": {
   "file": "png/fund_aton.png",
@@ -97,38 +97,38 @@
  },
  "ук рекорд": {
   "file": "png/fund_alenka.png",
-  "emoji": "🟦"
+  "emoji": "🪆"
  },
  "ук герои": {
   "file": "png/fund_geroi.png",
-  "emoji": "🟣"
+  "emoji": "🦸"
  },
  "автор коган": {
   "file": "png/fund_kogan.png",
-  "emoji": "👤"
+  "emoji": "🧔"
  },
  "автор воробьёв": {
   "file": "png/fund_vorobiev.png",
-  "emoji": "👤"
+  "emoji": "🧑"
  },
  "автор щетинин": {
   "file": "png/fund_shchetinin.png",
-  "emoji": "👤"
+  "emoji": "👨"
  },
  "автор кудрицкий": {
   "file": "png/fund_vasilich.png",
-  "emoji": "👤"
+  "emoji": "👱"
  },
  "автор крейнин": {
   "file": "png/fund_kreinin.png",
-  "emoji": "👤"
+  "emoji": "🤵"
  },
  "автор шимко": {
   "file": "png/fund_shimko.png",
-  "emoji": "👤"
+  "emoji": "🎩"
  },
  "автор линецкий": {
   "file": "png/fund_linecki.png",
-  "emoji": "👤"
+  "emoji": "👓"
  }
 }

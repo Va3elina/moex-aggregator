@@ -76,7 +76,8 @@ def set_name() -> str:
 
 
 def owner() -> int:
-    return int(TG._cfg()["chat"])
+    # ADMIN_CHAT_ID бывает списком через запятую (несколько получателей) — владелец пака первый
+    return int(str(TG._cfg()["chat"]).split(",")[0].strip())
 
 
 def input_sticker(i: int, name: str, m: dict) -> tuple[dict, tuple[str, bytes]]:

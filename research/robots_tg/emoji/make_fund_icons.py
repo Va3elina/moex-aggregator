@@ -15,22 +15,24 @@ HERE = Path(__file__).resolve().parent
 PUB = HERE.parents[2] / "frontend" / "public"
 SIZE = 100
 
-# имя значка → (картинка сайта, запасной обычный эмодзи, круглая обрезка)
+# имя значка → (картинка сайта, запасной обычный эмодзи, круглая обрезка).
+# ⚠️ Запасной эмодзи у каждого значка СВОЙ и не совпадает со значками роботов: emoji_pack.py sync
+# сопоставляет значки пака с именами по нему — 🔴/🔵/🟢 15.10 перепутали «убыток/вход/прибыль» роботов.
 ICONS = {
-    "ук т-капитал": ("uk-logos/tcap.png", "🟡", False),
-    "ук альфа": ("uk-logos/alfa.png", "🔴", False),
-    "ук первая": ("uk-logos/pervaya.png", "🟢", False),
-    "ук вим": ("uk-logos/vim.png", "🔵", False),
+    "ук т-капитал": ("uk-logos/tcap.png", "🟨", False),
+    "ук альфа": ("uk-logos/alfa.png", "🟥", False),
+    "ук первая": ("uk-logos/pervaya.png", "🟩", False),
+    "ук вим": ("uk-logos/vim.png", "🟦", False),
     "ук атон": ("uk-logos/aton.png", "🔷", False),
-    "ук рекорд": ("uk-logos/alenka.svg", "🟦", False),
-    "ук герои": ("uk-logos/geroi.png", "🟣", False),
-    "автор коган": ("authors/kogan.png", "👤", True),
-    "автор воробьёв": ("authors/vorobiev.png", "👤", True),
-    "автор щетинин": ("authors/shchetinin.png", "👤", True),
-    "автор кудрицкий": ("authors/vasilich.png", "👤", True),
-    "автор крейнин": ("authors/kreinin.png", "👤", True),
-    "автор шимко": ("authors/shimko.png", "👤", True),
-    "автор линецкий": ("authors/linecki.png", "👤", True),
+    "ук рекорд": ("uk-logos/alenka.svg", "🪆", False),
+    "ук герои": ("uk-logos/geroi.png", "🦸", False),
+    "автор коган": ("authors/kogan.png", "🧔", True),
+    "автор воробьёв": ("authors/vorobiev.png", "🧑", True),
+    "автор щетинин": ("authors/shchetinin.png", "👨", True),
+    "автор кудрицкий": ("authors/vasilich.png", "👱", True),
+    "автор крейнин": ("authors/kreinin.png", "🤵", True),
+    "автор шимко": ("authors/shimko.png", "🎩", True),
+    "автор линецкий": ("authors/linecki.png", "👓", True),
 }
 
 
