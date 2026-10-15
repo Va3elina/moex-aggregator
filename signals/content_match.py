@@ -60,7 +60,7 @@ from signals import config                 # noqa: E402
 from signals.db import has_intraday_oi     # noqa: E402
 from signals.content_ai import (           # noqa: E402
     _fire, _step_c_payload, TRIGGER_ID_STEP_C, _news_writer_gate, WAIT_REACTION, _DECLINE_REPEAT, _MARK_DISPATCHED,
-    _sector_check, SECTOR_MARK,
+    _sector_check, SECTOR_MARK, _stagger,
 )
 
 # Найдено 2026-07-14 (session 3) — пауза между _fire() подряд
@@ -305,12 +305,12 @@ def run_once() -> dict:
                     if can_fire:
                         try:
                             _fire(TRIGGER_ID_STEP_C, token_c,
-                                  _step_c_payload(db, payload_row, internal_token))
+                                  _step_c_payload(db, payload_row, internal_token), dedup=row["id"])
                             # отметка «отправлено»: без неё бэкстоп через 15 минут звал писателя второй раз
                             db.execute(_MARK_DISPATCHED, {"id": row["id"]})
                             db.commit()
                             summary["step_c_fired"] += 1
-                            time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
+                            _stagger()  # пауза между прямыми /fire; в режиме общей очереди её держит диспетчер
                         except Exception as e:
                             summary["step_c_fire_errors"] += 1
                             print(f"[content_match] step-c fire failed for candidate "

@@ -12,8 +12,9 @@ from __future__ import annotations
 from sqlalchemy import text
 
 _ENQUEUE = text("""
-    INSERT INTO routine_queue (routine, payload, source, priority, dedup_key, max_attempts, timeout_sec)
-    VALUES (:routine, :payload, :source, :priority, :dedup_key, :max_attempts, :timeout_sec)
+    INSERT INTO routine_queue (routine, payload, source, priority, dedup_key, max_attempts, timeout_sec,
+                               done_on_timeout)
+    VALUES (:routine, :payload, :source, :priority, :dedup_key, :max_attempts, :timeout_sec, :done_on_timeout)
     ON CONFLICT (dedup_key) WHERE dedup_key IS NOT NULL AND status IN ('queued', 'firing', 'running')
     DO NOTHING
     RETURNING id
@@ -25,15 +26,26 @@ _ACTIVE_BY_KEY = text("""
 
 
 def enqueue(conn, routine: str, payload: str, source: str, *, priority: int = 100,
-            dedup_key: str | None = None, max_attempts: int = 3, timeout_sec: int = 1800) -> int:
+            dedup_key: str | None = None, max_attempts: int = 3, timeout_sec: int = 1800,
+            done_on_timeout: bool = False) -> int:
     """Поставить запуск рутины в общую очередь. Повторный вызов с тем же dedup_key, пока
-    прошлое задание не закончилось, нового не создаёт — вернёт id уже стоящего."""
+    прошлое задание не закончилось, нового не создаёт — вернёт id уже стоящего.
+    done_on_timeout — у рутины нет колбэка «готово» (аудит мозга): по истечении timeout_sec
+    задание считается выполненным, а не сбоем."""
     row = conn.execute(_ENQUEUE, dict(routine=routine, payload=payload, source=source, priority=priority,
                                       dedup_key=dedup_key, max_attempts=max_attempts,
-                                      timeout_sec=timeout_sec)).first()
+                                      timeout_sec=timeout_sec, done_on_timeout=done_on_timeout)).first()
     if row:
         return row[0]
     return conn.execute(_ACTIVE_BY_KEY, {"k": dedup_key}).scalar_one()
+
+
+def close_by_key(conn, keys: list[str]) -> int:
+    """Колбэк завода закрывает активное задание по ключу дубля (STEP_A:123 и т.п.)."""
+    return conn.execute(text("""
+        UPDATE routine_queue SET status = 'done', finished_at = now()
+        WHERE dedup_key = ANY(:k) AND status IN ('firing', 'running', 'queued')
+    """), {"k": list(keys)}).rowcount
 
 
 def mark_done(conn, queue_id: int) -> bool:

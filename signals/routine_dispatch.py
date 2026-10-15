@@ -70,10 +70,13 @@ def expire(conn) -> None:
     """Колбэк не пришёл — повторить с паузой (5 мин × попытка) или сдаться."""
     rows = conn.execute(text("""
         UPDATE routine_queue SET
-            status = CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END,
+            status = CASE WHEN status = 'running' AND done_on_timeout THEN 'done'
+                          WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END,
             not_before = now() + make_interval(mins => 5 * attempts),
-            finished_at = CASE WHEN attempts < max_attempts THEN NULL ELSE now() END,
-            last_error = CASE WHEN status = 'running' THEN 'нет колбэка за timeout_sec'
+            finished_at = CASE WHEN (status = 'running' AND done_on_timeout) OR attempts >= max_attempts
+                               THEN now() ELSE NULL END,
+            last_error = CASE WHEN status = 'running' AND done_on_timeout THEN NULL
+                              WHEN status = 'running' THEN 'нет колбэка за timeout_sec'
                               ELSE 'прогон диспетчера упал посреди запуска' END
         WHERE (status = 'running' AND fired_at < now() - make_interval(secs => timeout_sec))
            OR (status = 'firing' AND fired_at < now() - make_interval(mins => %d))

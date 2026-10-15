@@ -606,7 +606,51 @@ def _hype_accept(candidate_id: int, internal_token: str) -> None:
     resp.raise_for_status()
 
 
-def _fire(trigger_id: str, bearer_token: str, text_payload: str) -> None:
+# ── Общая очередь рутин (с 15.10.2026) ──────────────────────────────────────
+# ROUTINE_QUEUE_CONTENT=1 — завод НЕ стреляет /fire сам, а кладёт задание в общую очередь
+# (signals/routine_queue.py); запускает только диспетчер signals/routine_dispatch.py — один на все
+# заводы (посты, справки СЧА, аудит мозга): не больше N сессий разом, пауза между запусками, общая
+# пауза при исчерпании квоты. Колбэки api/routers/content_news.py закрывают задание по ключу
+# «ШАГ:кандидат». Флаг не задан / 0 — прежний прямой /fire (откат без деплоя: убрать строку из .env).
+# Своих повторов у очереди для постов нет (max_attempts=1): повторяет бэкстоп завода, как раньше,
+# иначе повторы задвоились бы.
+_QUEUE_KEYS = {   # trigger_id → ключ рутины в очереди (TRIGGER_ID_<KEY> / CLAUDE_ROUTINE_FIRE_TOKEN_<KEY>)
+    TRIGGER_ID_STEP_A: "STEP_A",
+    TRIGGER_ID_STEP_C: "STEP_C",
+    TRIGGER_ID_STEP_C_INSIGHT: "STEP_C_INSIGHT",
+    TRIGGER_ID_STEP_G: "STEP_G",
+    TRIGGER_ID_HYPE_FILTER: "HYPE_FILTER",
+    os.environ.get("TRIGGER_ID_BRAIN_AUDIT", ""): "BRAIN_AUDIT",
+}
+_QUEUE_OPTS = {   # аудит мозга: колбэка «готово» нет (вердикты кругами) — закрывается по времени
+    "BRAIN_AUDIT": dict(priority=50, timeout_sec=7200, done_on_timeout=True),
+}
+
+
+def _queue_on() -> bool:
+    return os.environ.get("ROUTINE_QUEUE_CONTENT", "0") == "1"
+
+
+def _stagger() -> None:
+    """Пауза между прямыми /fire подряд (FIRE_STAGGER_SEC). В режиме очереди не нужна —
+    паузу держит диспетчер."""
+    if not _queue_on():
+        time.sleep(FIRE_STAGGER_SEC)
+
+
+def _fire(trigger_id: str, bearer_token: str, text_payload: str, dedup=None) -> None:
+    """Запустить рутину. dedup — id кандидата: задание очереди получает ключ «ШАГ:id», по нему
+    колбэк его закрывает, а повтор бэкстопа, пока прошлое задание ещё ждёт, нового не создаёт."""
+    key = _QUEUE_KEYS.get(trigger_id) if trigger_id else None
+    if _queue_on() and key:
+        from api.database import get_engine
+        from signals.routine_queue import enqueue
+        opts = dict(priority=10, timeout_sec=900, max_attempts=1, **_QUEUE_OPTS.get(key, {}))
+        with get_engine().begin() as conn:
+            enqueue(conn, key, text_payload, source="content",
+                    dedup_key=f"{key}:{dedup}" if dedup is not None else key if key == "BRAIN_AUDIT" else None,
+                    **opts)
+        return
     resp = requests.post(
         FIRE_URL_TMPL.format(trigger_id=trigger_id),
         headers={**_ANTHROPIC_HEADERS_BASE, "Authorization": f"Bearer {bearer_token}"},
@@ -2531,7 +2575,7 @@ def fire_revision(db, candidate_id: int, remarks: str) -> None:
         "что_поправить": (remarks or "").strip(),
     }
     db.commit()   # _build_brief пишет след брифа и аннотацию
-    _fire(TRIGGER_ID_STEP_C, token, _payload(brief, internal))
+    _fire(TRIGGER_ID_STEP_C, token, _payload(brief, internal), dedup=candidate_id)
 
 
 def _step_g_payload(db, row, internal_token: str) -> str:
@@ -2608,11 +2652,11 @@ def run_once() -> dict:
             try:
                 _fire(TRIGGER_ID_STEP_A, token_a,
                       _step_a_payload(row, internal_token, known_tickers,
-                                      _brain_hint_for_step_a(db, row)))
+                                      _brain_hint_for_step_a(db, row)), dedup=row["id"])
                 db.commit()   # след подсказки в agent_trace — сразу, до долгого stagger
                 db.execute(_MARK_DISPATCHED, {"id": row["id"]})
                 summary["step_a_fired"] += 1
-                time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
+                _stagger()  # см. FIRE_STAGGER_SEC выше
             except Exception as e:
                 summary["errors"] += 1
                 print(f"[content_ai] step-a fire failed for candidate {row['id']}: "
@@ -2642,10 +2686,10 @@ def run_once() -> dict:
                 summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1
                 continue
             try:
-                _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(db, row, internal_token))
+                _fire(TRIGGER_ID_STEP_C, token_c, _step_c_payload(db, row, internal_token), dedup=row["id"])
                 db.execute(_MARK_DISPATCHED, {"id": row["id"]})
                 summary["step_c_fired"] += 1
-                time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
+                _stagger()  # см. FIRE_STAGGER_SEC выше
             except Exception as e:
                 summary["errors"] += 1
                 print(f"[content_ai] step-c fire failed for candidate {row['id']}: "
@@ -2673,10 +2717,11 @@ def run_once() -> dict:
                     summary["repeat_declined"] = summary.get("repeat_declined", 0) + 1
                     continue
                 try:
-                    _fire(TRIGGER_ID_STEP_C_INSIGHT, token_ci, _insight_payload(db, row, internal_token))
+                    _fire(TRIGGER_ID_STEP_C_INSIGHT, token_ci, _insight_payload(db, row, internal_token),
+                          dedup=row["id"])
                     db.execute(_MARK_DISPATCHED, {"id": row["id"]})
                     summary["insight_fired"] = summary.get("insight_fired", 0) + 1
-                    time.sleep(FIRE_STAGGER_SEC)
+                    _stagger()
                 except Exception as e:
                     summary["errors"] += 1
                     print(f"[content_ai] insight step-c fire failed for candidate {row['id']}: "
@@ -2698,11 +2743,11 @@ def run_once() -> dict:
             ).mappings().all()
             for row in judge_rows:
                 try:
-                    _fire(TRIGGER_ID_STEP_G, token_g, _step_g_payload(db, row, internal_token))
+                    _fire(TRIGGER_ID_STEP_G, token_g, _step_g_payload(db, row, internal_token), dedup=row["id"])
                     db.execute(_MARK_JUDGE_DISPATCHED, {"id": row["id"]})
                     db.commit()
                     summary["judge_fired"] += 1
-                    time.sleep(FIRE_STAGGER_SEC)  # см. FIRE_STAGGER_SEC выше
+                    _stagger()  # см. FIRE_STAGGER_SEC выше
                 except Exception as e:
                     summary["errors"] += 1
                     print(f"[content_ai] step-g fire failed for candidate {row['id']}: "
@@ -2713,11 +2758,11 @@ def run_once() -> dict:
             ).mappings().all()
             for row in card_rows:
                 try:
-                    _fire(TRIGGER_ID_STEP_G, token_g, _step_g_card_payload(row, internal_token))
+                    _fire(TRIGGER_ID_STEP_G, token_g, _step_g_card_payload(row, internal_token), dedup=row["id"])
                     db.execute(_MARK_JUDGE_DISPATCHED, {"id": row["id"]})
                     db.commit()
                     summary["judge_fired"] += 1
-                    time.sleep(FIRE_STAGGER_SEC)
+                    _stagger()
                 except Exception as e:
                     summary["errors"] += 1
                     print(f"[content_ai] step-g (карточка) fire failed for candidate {row['id']}: "
