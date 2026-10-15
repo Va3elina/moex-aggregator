@@ -387,6 +387,28 @@ def _num(v) -> float:
         return 0.0
 
 
+BACKUP_DIR = Path("/opt/frame/backups/scha_replaced")
+
+
+def _backup_month(job) -> None:
+    """Перед заливкой (она заменяет месяц целиком) — копия уже лежащих строк фонда за этот месяц в CSV.
+    Для нового месяца строк нет — файл не создаётся. Сбой копии = сбой заливки (повтор позже)."""
+    import re
+    if not re.fullmatch(r"[A-Z0-9-]{2,20}", job.ticker) or not re.fullmatch(r"\d{4}-\d{2}", job.period):
+        raise InfraError(f"странный тикер/месяц для копии: {job.ticker} {job.period}")
+    sql = (f"\\copy (SELECT h.* FROM fund_holdings_history h JOIN funds f ON f.fund_id = h.fund_id "
+           f"WHERE f.ticker = '{job.ticker}' AND to_char(h.snapshot_date, 'YYYY-MM') = '{job.period}' "
+           f"AND h.source IN ('interfax_manual', 'vim_sdr')) TO STDOUT CSV HEADER")
+    r = subprocess.run(["docker", "exec", "frame-db-1", "psql", "-U", "postgres", "-d", "moex_db", "-c", sql],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        raise InfraError(f"копия месяца не снялась: {r.stderr[-300:]}")
+    if r.stdout.count("\n") > 1:   # шапка + хотя бы одна строка
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        (BACKUP_DIR / f"{job.ticker}_{job.period}_job{job.id}.csv").write_text(r.stdout)
+        log(f"#{job.id} {job.ticker} {job.period}: копия {r.stdout.count(chr(10)) - 1} старых строк перед заменой")
+
+
 def _step_result(eng, job) -> None:
     """Ответ агента → залить (или «залил бы» в режиме отчёта) либо отложить с причиной.
     В Telegram — не здесь, а одной сводкой на пачку (digest)."""
@@ -399,6 +421,7 @@ def _step_result(eng, job) -> None:
     elif not job.agent_ok:
         status, reason = "doubt", "агент сомневается: " + (doubts[0] if doubts else "без пояснения")
     elif AUTO_IMPORT:
+        _backup_month(job)
         agent_file = Path(job.file_path).with_suffix(".agent.json")
         agent_file.write_text(json.dumps(a, ensure_ascii=False))
         res = run_tool("import", in_api(agent_file), job.ticker, job.period)
