@@ -1,6 +1,6 @@
 ---
 name: moex-fund-scha-backfill
-description: Download and import fund holdings (SCHA / Справка о СЧА, форма ЦБ № 0420502) for /fund-trades. Use when user asks to "скачай SCHA", "докачай фонды/УК", "загрузи состав фондов", "backfill SCHA", "добавь УК", or wants to extend fund holdings history from e-disclosure.ru / УК disclosure sites. Covers the e-disclosure walker, curl download, multi-format parser, and DB import pipeline.
+description: Download and import fund holdings (SCHA / Справка о СЧА, форма ЦБ № 0420502) for /fund-trades. Use when user asks to "скачай SCHA", "докачай фонды/УК", "загрузи состав фондов", "backfill SCHA", "добавь УК", or wants to extend fund holdings history from УК disclosure sites. Covers the collector Funds/scha_collector.py (сайты УК, без браузера), multi-format parser, and DB import pipeline.
 ---
 
 # Fund SCHA Backfill (/fund-trades)
@@ -14,6 +14,26 @@ Cbonds Mobile API (reconstruct), см. `Funds/DATA_SOURCES.md`. Этот ски�
 - Таблица `fund_holdings_history`, unique key **`(fund_id, COALESCE(isin,''), asset_name, snapshot_date, source)`**
   — НЕ по эмитенту (иначе схлопывает выпуски, теряя 30-60% позиций). Не менять обратно!
 
+## ⚡ Сборщик справок `Funds/scha_collector.py` (с 15.10.2026 — основной путь, шаги 3–5 ниже руками не нужны)
+Для фондов из `SOURCES` (19 фондов акций: Атон, Герои, Рекорд, Альфа ×9, Т-Капитал, ВИМ ×2, Первая ×4)
+сборщик сам читает страницу раскрытия, сверяет месяцы с БД (interfax_manual/vim_sdr) и качает недостающее
+в `data/scha_inbox/TICKER_YYYY-MM-DD.ext` — имя сразу для `manual_scha_backfill.py`. Браузер не нужен.
+```bash
+.venv/bin/python Funds/scha_collector.py                       # что нового на сайтах (без скачивания)
+.venv/bin/python Funds/scha_collector.py --download --check    # скачать + прогнать parse_any (БД не трогает)
+```
+- Все 7 сайтов УК отвечают и с мака, и с прод-сервера. **e-disclosure.ru не используем вообще**
+  (решение Вадима 15.10.2026): всё, что нужно, есть на сайтах самих УК.
+- Адаптеры: `html` (ссылка с текстом «Справка о СЧА … на ДД.ММ.ГГГГ / за <месяц> ГГГГ / за III квартал / за 2025 год»),
+  `ihc` (`ih-capital.ru/disclosure.json`), `alfa` (JSON `window.__SERVER_STATE__`: вкладки monthly + quarterly + yearly,
+  вся история сразу; март/июнь/сентябрь/декабрь у Альфы ТОЛЬКО на quarterly).
+- Атон не присылает промежуточный сертификат GlobalSign → он лежит в `certs/globalsign_rsa_ov_ssl_ca_2018.pem`.
+  Без него curl/Python рвут TLS (`unable to get local issuer certificate`) — это НЕ бан IP: на маке
+  система достраивает цепочку сама, поэтому кажется, что «с мака работает, с сервера нет».
+- Проверено 15.10: август и июнь 2026 по 19 фондам сходятся с БД по ISIN, штукам и рублям; исключения —
+  справки, залитые до фикса ISIN-колонки «иных ценных бумаг» (#1528/#1706), там в БД нет облигаций ВЭБ.РФ.
+- Новый фонд = строка в `SOURCES` (тикер = `funds.ticker`). Импорт — штатный шаг 6.
+
 ## 📇 Справочники по УК (per-УК карточки — открой ПЕРЕД backfill'ом)
 Точные URL/слаги/паттерны имён, формат файлов, где лежат количество/стоимость и
 подводные камни — в отдельной карточке на каждую УК (`references/uk-*.md`). Открой
@@ -21,12 +41,12 @@ Cbonds Mobile API (reconstruct), см. `Funds/DATA_SOURCES.md`. Этот ски�
 
 | УК | uk_id | главный источник | ключевая трудность | карточка |
 |---|---|---|---|---|
-| Первая / Сбер | 34 | first-am.ru (curl) | БПИФ/ОПИФ разные пути; e-disclosure IP-бан | `references/uk-pervaya.md` |
+| Первая / Сбер | 34 | first-am.ru (curl) | БПИФ/ОПИФ разные пути; кириллица в URL | `references/uk-pervaya.md` |
 | Т-Капитал | 3597 | cdn.t-capital-funds.ru (curl) | `(cid:9)` в архивном 2021-формате → «триллион акций» | `references/uk-tkapital.md` |
-| ВИМ | 7 | wealthim.ru (браузер/аттач) | баг ×1000 в positions | `references/uk-vim.md` |
+| ВИМ | 7 | wealthim.ru (curl) | баг ×1000 в positions | `references/uk-vim.md` |
 | Альфа | 5 | alfacapital.ru (monthly XLSX) | дневная справка без позиций | `references/uk-alfa.md` |
-| Атон | 12603 | e-disclosure (браузер) | XBRL multi-sheet XLSX; OPIF-63 ≠ AMRE | `references/uk-aton.md` |
-| Райффайзен | 20 | e-disclosure 37192 | фонды OPIF-281/282 не найдены | `references/uk-raiffeisen.md` |
+| Атон | 12603 | am-aton.ru (curl + сертификат GlobalSign) | XBRL multi-sheet XLSX; OPIF-63 ≠ AMRE | `references/uk-aton.md` |
+| Райффайзен | 20 | — | фонды OPIF-281/282 не найдены, в сборщике нет | `references/uk-raiffeisen.md` |
 
 ## Шаг 1. Определить НУЖНЫЕ фонды (сверка с whitelist)
 НЕ качать всё подряд. Нужны только фонды из `WHITELIST_TICKERS` в
@@ -34,59 +54,13 @@ Cbonds Mobile API (reconstruct), см. `Funds/DATA_SOURCES.md`. Этот ски�
 - **Качаем**: stocks (акции), bonds (облигации).
 - **Пропускаем**: gold (ОМС/золото), money_market (РЕПО/депозиты) — нет ISIN-позиций.
 
-## Шаг 2. Источник SCHA по типу фонда
-- **БПИФ** (биржевые, тикер 4 буквы типа SBMX/TMOS) → **e-disclosure.ru**, полный архив.
-- **ОПИФ** (открытые, тикер OPIF-NNNN) → **own-site УК** (e-disclosure их НЕ содержит!),
-  напр. alfacapital.ru/disclosure/pifs/<slug>/nav-document (месячный XLSX).
-
-e-disclosure card-id по УК (в `DATA_SOURCES.md`): Альфа=7203, Т-Капитал=38022,
-Первая=6731, Райфф=37192, Атон=12603.
-
-> ⭐ **Первая/Сбер БПИФ → own-site `first-am.ru` напрямую curl'ом** (e-disclosure
-> банит по IP, но first-am отдаёт 200 с Chrome UA — браузер НЕ нужен!). Индекс
-> `first-am.ru/individuals/etf/{slug}/documents`, файл `/download/{doc_id}/<имя>.PDF`
-> (нужен полный путь + `urllib.parse.quote(safe=":/?&=%#,-._~+")`). Slug-карта,
-> формат имён и подробности — `DATA_SOURCES.md` §4 «Первая / Сбер … first-am.ru».
-> Т-Капитал own-site: `cdn.t-capital-funds.ru/static/documents/otchet-scha-{tk}-DD-MM-YYYY.PDF`.
-
-## Шаг 3. Walker (Chrome MCP) — собрать fileid'ы
-На `e-disclosure.ru/portal/files.aspx?id=<card>&type=23`:
-```javascript
-// Заголовок фонда = div.title_middle с «...»; SCHA-строки имеют "Отчетная дата:"
-const nodes = document.querySelectorAll('div.title_middle, table.files-table tr');
-let cur=null; const byFund={};
-nodes.forEach(n=>{
-  if(n.classList?.contains('title_middle')){
-    const m=n.textContent.match(/[«"]([^»"]{5,80})[»"]/);
-    if(m && /фонд|ПИФ/.test(n.textContent)) cur=m[1].trim(); return;
-  }
-  const fl=n.querySelector?.('a[href*="FileLoad"]');
-  if(!fl||!cur) return;
-  const txt=n.textContent.replace(/\s+/g,' ');
-  if(!txt.includes('Справка о стоимости')) return;
-  const fid=(fl.href.match(/[Ff]ileid=(\d+)/)||[])[1];
-  const dm=txt.match(/Отчетная дата:\s*(\d{2})\.(\d{2})\.(\d{4})/);
-  const snap=dm?`${dm[3]}-${dm[2]}-${dm[1]}`:null;
-  if(snap)(byFund[cur]=byFund[cur]||{})[snap]=fid;  // дедуп по дате
-});
-```
-Маппинг имени фонда → тикер сверять с `funds` таблицей. Брать последние 12 month-end.
-
-## Шаг 4. Download — curl НАПРЯМУЮ (браузер не нужен!)
-e-disclosure отдаёт файл без ServicePipe-блока:
-```python
-url = f"https://www.e-disclosure.ru/portal/FileLoad.ashx?Fileid={fid}"
-req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
-# → /tmp/reimport_X/TICKER_<snapshot>.zip  (имя по тикеру+дате — backfill резолвит фонд)
-```
-
-## Шаг 5. Parse + verify ПЕРЕД импортом
-```python
-from Funds.parsers.scha_xls_parser import parse_scha_xls  # XLS
-from Funds.parsers.scha_parser import parse_scha           # PDF
-# zip: распаковать inner (cp866 decode), роутить по расширению (.xls/.xlsx→xls-parser, .pdf→pdf-parser)
-```
-Проверить: assets > 0, snapshot_date корректна. Если PDF не даёт дату — backfill возьмёт из имени файла.
+## Шаги 2–5. Найти, скачать, проверить — делает `Funds/scha_collector.py` (см. раздел выше)
+Источник — только сайты УК (e-disclosure.ru не используем, решение 15.10.2026). Новый фонд/УК:
+1. Найти страницу раскрытия фонда на сайте УК, где лежат «Справка о стоимости чистых активов».
+2. Если ссылки на справки есть в HTML с датой в тексте — хватит строки `"ТИКЕР": ("html", url)` в `SOURCES`.
+   Иначе (JSON, SPA, дата только в заголовке раздела) — свой адаптер по образцу `list_ihc` / `list_alfa`.
+3. `scha_collector.py --tickers ТИКЕР --all-months --download --check` → Σ бумаг / активы 80–101 %,
+   дата из справки = месяц из ссылки. Сверить пару месяцев с уже залитыми, если они есть.
 
 ## Шаг 6. Import на прод
 ```bash

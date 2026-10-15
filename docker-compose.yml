@@ -266,6 +266,9 @@ services:
       # api/routers/mandate_scan.py): shared secret для server-to-server callback,
       # отдельный от CONTENT_AI_INTERNAL_TOKEN (свой домен, свой blast radius).
       - MANDATE_SCAN_INTERNAL_TOKEN=${MANDATE_SCAN_INTERNAL_TOKEN:-}
+      # Агент-чтец справок о СЧА (рутина frame-scha-reader, api/routers/scha_jobs.py): свой секрет —
+      # агент читает внешние документы, токен открывает только ручки справок.
+      - SCHA_INTERNAL_TOKEN=${SCHA_INTERNAL_TOKEN:-}
       # Уведомление в @frameadminbot о кандидатах, прошедших отбор (mandate_scan.py:
       # _notify_admin) — те же credentials, что у tg_bot-сервиса (BOT_TOKEN/ADMIN_CHAT_ID
       # ниже по файлу), просто нужны ещё и здесь, в api-контейнере.
