@@ -11,7 +11,7 @@ signals/scha_pipeline.py через `docker exec <api> python3 -m Funds.scha_job
 text   — весь текст файла с сохранённой раскладкой, БЕЗ угадывания: страницы/листы/таблицы,
          ячейки через « | ». Читает агент-чтец (рутина frame-scha-reader). Последняя строка stdout —
          JSON {"text": ...} или {"error": ...}.
-import — ответ агента → fund_holdings_history (source=interfax_manual). Строки одной бумаги (разные
+import — ответ агента → fund_holdings_history (source=interfax_manual), месяц заменяется целиком. Строки одной бумаги (разные
          места хранения) складываются: ключ таблицы — (фонд, ISIN, имя, дата), вторая строка с тем же
          ISIN иначе затёрла бы первую. Последняя строка stdout — JSON с итогом.
 """
@@ -127,8 +127,13 @@ def cmd_import(agent_json: str, ticker: str, period: str) -> dict:
     fund_id, how = mb.find_fund_id(eng, None, ticker)
     if not fund_id:
         return {"error": f"фонд {ticker} не найден в funds"}
+    # Справка — ПОЛНЫЙ срез фонда за месяц: заменяем месяц целиком (replace=True), а не дописываем.
+    # Иначе при перечитывании уже залитого месяца старые строки с длинными именами («ПАО Сбербанк»)
+    # остались бы рядом с новыми короткими («Сбербанк ао») — двойные строки. Для нового месяца удалять
+    # нечего. Предохранитель save_assets: нужна «Общая стоимость активов» и покрытие ≥ 80 %.
+    # Копию старых строк конвейер снимает ДО этого вызова (signals/scha_pipeline.py: _backup_month).
     n = mb.save_assets(eng, fund_id, date.fromisoformat(snap), assets,
-                       gross_assets=_num(a.get("gross_assets_rub")))
+                       gross_assets=_num(a.get("gross_assets_rub")), replace=True)
     return {"inserted": n, "fund_id": fund_id, "snapshot_date": snap, "assets": len(assets)}
 
 
