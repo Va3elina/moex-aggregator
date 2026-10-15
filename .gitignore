@@ -123,3 +123,6 @@ research/content_pipeline_v2/dataset/corpus.json
 research/content_pipeline_v2/__pycache__/
 research/content_pipeline_v2/.venv/
 bt_data/
+
+# Публичные файлы сайта (презентации и т.п.) — исключение из общего *.pdf
+!frontend/public/files/*.pdf

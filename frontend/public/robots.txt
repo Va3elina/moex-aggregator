@@ -17,6 +17,7 @@ Disallow: /api-docs
 Disallow: /admin/
 Disallow: /billing/
 Disallow: /fund-trades
+Disallow: /files/
 
 # Yandex-специфичные директивы (понимает только YandexBot).
 # Clean-param: отбрасывает UTM/реферальные хвосты — иначе /buffett?utm_source=tg
@@ -33,6 +34,7 @@ Disallow: /api-docs
 Disallow: /admin/
 Disallow: /billing/
 Disallow: /fund-trades
+Disallow: /files/
 Clean-param: utm_source&utm_medium&utm_campaign&utm_term&utm_content&ref&fbclid&gclid&yclid
 
 # Главное зеркало (для Yandex)
