@@ -1,0 +1,176 @@
+{
+ "ticker": "OPIF-63",
+ "period": "2026-01",
+ "file": "OPIF-63_2026-01-30.xlsx",
+ "snapshot_date": "2026-01-30",
+ "gross_assets_rub": 7884934472.31,
+ "source_of_truth": "справка, выверено 15.10; X5 = 11 237 + 4 593 (лист 3.8: 15 830)",
+ "why_hard": "XBRL-Excel: расписка ФосАгро вместо акции, коды стран в стоимости",
+ "rows": [
+  {
+   "isin": "RU0006944147",
+   "quantity": 58066,
+   "value_rub": 31680809.6
+  },
+  {
+   "isin": "RU0007288411",
+   "quantity": 643010,
+   "value_rub": 102881600.0
+  },
+  {
+   "isin": "RU0007661625",
+   "quantity": 4893620,
+   "value_rub": 624425912.0
+  },
+  {
+   "isin": "RU0007775219",
+   "quantity": 731000,
+   "value_rub": 165754250.0
+  },
+  {
+   "isin": "RU0008926258",
+   "quantity": 4982100,
+   "value_rub": 109805484.0
+  },
+  {
+   "isin": "RU0008943394",
+   "quantity": 759390,
+   "value_rub": 49246441.5
+  },
+  {
+   "isin": "RU0009024277",
+   "quantity": 117630,
+   "value_rub": 623203740.0
+  },
+  {
+   "isin": "RU0009029524",
+   "quantity": 2885430,
+   "value_rub": 126742512.75
+  },
+  {
+   "isin": "RU0009029540",
+   "quantity": 2538508,
+   "value_rub": 775793429.88
+  },
+  {
+   "isin": "RU0009033591",
+   "quantity": 224760,
+   "value_rub": 128989764.0
+  },
+  {
+   "isin": "RU0009084438",
+   "quantity": 1475646,
+   "value_rub": 39237427.14
+  },
+  {
+   "isin": "RU0009091573",
+   "quantity": 73372,
+   "value_rub": 103483868.8
+  },
+  {
+   "isin": "RU0009100945",
+   "quantity": 331340,
+   "value_rub": 107973765.8
+  },
+  {
+   "isin": "RU000A0DKVS5",
+   "quantity": 363723,
+   "value_rub": 428174715.6
+  },
+  {
+   "isin": "RU000A0J2Q06",
+   "quantity": 436178,
+   "value_rub": 177851579.5
+  },
+  {
+   "isin": "RU000A0JNAA8",
+   "quantity": 240817,
+   "value_rub": 625931546.4
+  },
+  {
+   "isin": "RU000A0JP5V6",
+   "quantity": 5775948,
+   "value_rub": 446942856.24
+  },
+  {
+   "isin": "RU000A0JPFP0",
+   "quantity": 35122,
+   "value_rub": 24367643.6
+  },
+  {
+   "isin": "RU000A0JPNM1",
+   "quantity": 23731600,
+   "value_rub": 83357245.0
+  },
+  {
+   "isin": "RU000A0JR4A1",
+   "quantity": 344040,
+   "value_rub": 62587756.8
+  },
+  {
+   "isin": "RU000A0JRKT8",
+   "quantity": 22407,
+   "value_rub": 144254077.08
+  },
+  {
+   "isin": "RU000A0ZZAC4",
+   "quantity": 3974800,
+   "value_rub": 50062606.0
+  },
+  {
+   "isin": "RU000A0ZZM04",
+   "quantity": 82300,
+   "value_rub": 7634148.0
+  },
+  {
+   "isin": "RU000A107662",
+   "quantity": 125801,
+   "value_rub": 370358144.0
+  },
+  {
+   "isin": "RU000A107T19",
+   "quantity": 162861,
+   "value_rub": 771146835.0
+  },
+  {
+   "isin": "RU000A107UL4",
+   "quantity": 228366,
+   "value_rub": 760595799.6
+  },
+  {
+   "isin": "RU000A108KL3",
+   "quantity": 37735,
+   "value_rub": 56711931.5
+  },
+  {
+   "isin": "RU000A108X38",
+   "quantity": 132796,
+   "value_rub": 333782746.0
+  },
+  {
+   "isin": "RU000A10CRQ4",
+   "quantity": 226250,
+   "value_rub": 13769575.0
+  },
+  {
+   "isin": "RU000A10CW95",
+   "quantity": 111342,
+   "value_rub": 517962984.0
+  },
+  {
+   "isin": "US7496552057",
+   "quantity": 53251,
+   "value_rub": 0.0
+  },
+  {
+   "isin": "US98387E2054",
+   "quantity": 15830,
+   "value_rub": 0.0
+  },
+  {
+   "isin": "US71922G4073",
+   "quantity": 806,
+   "value_rub": 806.0
+  }
+ ]
+}
