@@ -1,0 +1,216 @@
+{
+ "ticker": "TMOS",
+ "period": "2022-07",
+ "file": "TMOS_2022-07-31.pdf",
+ "snapshot_date": "2022-07-29",
+ "gross_assets_rub": 3221422883.25,
+ "source_of_truth": "агент: сумма расписок = итогу раздела 185 363 192; база и парсер занижены ×10",
+ "why_hard": "PDF 2022: стоимость расписок разорвана на две строки (×10)",
+ "rows": [
+  {
+   "isin": "RU000A1025V3",
+   "quantity": 832510,
+   "value_rub": 41821139.85
+  },
+  {
+   "isin": "RU0006944147",
+   "quantity": 45274,
+   "value_rub": 17027551.4
+  },
+  {
+   "isin": "RU0007252813",
+   "quantity": 724550,
+   "value_rub": 46733475.0
+  },
+  {
+   "isin": "RU0007288411",
+   "quantity": 16863,
+   "value_rub": 272337450.0
+  },
+  {
+   "isin": "RU0007661625",
+   "quantity": 1732020,
+   "value_rub": 338194225.2
+  },
+  {
+   "isin": "RU0007775219",
+   "quantity": 275450,
+   "value_rub": 67058302.5
+  },
+  {
+   "isin": "RU0008926258",
+   "quantity": 2720500,
+   "value_rub": 76622882.5
+  },
+  {
+   "isin": "RU0008943394",
+   "quantity": 281640,
+   "value_rub": 17168774.4
+  },
+  {
+   "isin": "RU0009024277",
+   "quantity": 112888,
+   "value_rub": 437666776.0
+  },
+  {
+   "isin": "RU0009029524",
+   "quantity": 1627700,
+   "value_rub": 47772995.0
+  },
+  {
+   "isin": "RU0009029540",
+   "quantity": 3045030,
+   "value_rub": 401639457.0
+  },
+  {
+   "isin": "RU0009029557",
+   "quantity": 290750,
+   "value_rub": 36503662.5
+  },
+  {
+   "isin": "RU0009033591",
+   "quantity": 213504,
+   "value_rub": 87323136.0
+  },
+  {
+   "isin": "RU0009046452",
+   "quantity": 375870,
+   "value_rub": 48863100.0
+  },
+  {
+   "isin": "RU0009046510",
+   "quantity": 58157,
+   "value_rub": 42675606.6
+  },
+  {
+   "isin": "RU0009062285",
+   "quantity": 224050,
+   "value_rub": 6206185.0
+  },
+  {
+   "isin": "RU0009084396",
+   "quantity": 648010,
+   "value_rub": 17152824.7
+  },
+  {
+   "isin": "RU0009091573",
+   "quantity": 168,
+   "value_rub": 18698400.0
+  },
+  {
+   "isin": "RU000A0DKVS5",
+   "quantity": 187578,
+   "value_rub": 197332056.0
+  },
+  {
+   "isin": "RU000A0DQZE3",
+   "quantity": 734000,
+   "value_rub": 10838244.0
+  },
+  {
+   "isin": "RU000A0J2Q06",
+   "quantity": 348927,
+   "value_rub": 123171231.0
+  },
+  {
+   "isin": "RU000A0JKQU8",
+   "quantity": 19705,
+   "value_rub": 96337745.0
+  },
+  {
+   "isin": "RU000A0JNAA8",
+   "quantity": 9503,
+   "value_rub": 82143932.0
+  },
+  {
+   "isin": "RU000A0JP5V6",
+   "quantity": 1380830000,
+   "value_rub": 25662725.55
+  },
+  {
+   "isin": "RU000A0JP7J7",
+   "quantity": 44165,
+   "value_rub": 34051215.0
+  },
+  {
+   "isin": "RU000A0JPKH7",
+   "quantity": 32190000,
+   "value_rub": 24789519.0
+  },
+  {
+   "isin": "RU000A0JPNM1",
+   "quantity": 10048900,
+   "value_rub": 32488093.7
+  },
+  {
+   "isin": "RU000A0JR4A1",
+   "quantity": 424990,
+   "value_rub": 36634138.0
+  },
+  {
+   "isin": "RU000A0JRKT8",
+   "quantity": 10307,
+   "value_rub": 76694387.0
+  },
+  {
+   "isin": "RU000A0JSQ90",
+   "quantity": 121260,
+   "value_rub": 9681398.4
+  },
+  {
+   "isin": "RU000A0JUG31",
+   "quantity": 1824000,
+   "value_rub": 8930304.0
+  },
+  {
+   "isin": "RU000A100K72",
+   "quantity": 26361,
+   "value_rub": 11664742.5
+  },
+  {
+   "isin": "US33835G2057",
+   "quantity": 64205,
+   "value_rub": 21958110.0
+  },
+  {
+   "isin": "US37949E2046",
+   "quantity": 31778,
+   "value_rub": 9469844.0
+  },
+  {
+   "isin": "US42207L1061",
+   "quantity": 6838,
+   "value_rub": 11132264.0
+  },
+  {
+   "isin": "US5603172082",
+   "quantity": 31886,
+   "value_rub": 13041374.0
+  },
+  {
+   "isin": "US69269L1044",
+   "quantity": 14670,
+   "value_rub": 20295945.0
+  },
+  {
+   "isin": "US87238U2033",
+   "quantity": 34679,
+   "value_rub": 67624050.0
+  },
+  {
+   "isin": "US98387E2054",
+   "quantity": 31109,
+   "value_rub": 41841605.0
+  },
+  {
+   "isin": "JE00B6T5S470",
+   "quantity": 96986,
+   "value_rub": 26186220.0
+  },
+  {
+   "isin": "NL0009805522",
+   "quantity": 96392,
+   "value_rub": 188157184.0
+  }
+ ]
+}

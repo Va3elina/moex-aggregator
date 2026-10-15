@@ -1,0 +1,146 @@
+{
+ "ticker": "AKME",
+ "period": "2021-04",
+ "file": "AKME_2021-04-30.xlsx",
+ "snapshot_date": "2021-04-30",
+ "gross_assets_rub": 113928906.7,
+ "source_of_truth": "справка, выверено 15.10; итог активов — по агенту",
+ "why_hard": "старый Excel Альфы: нет «Общей стоимости активов» для парсера, иностранные акции",
+ "rows": [
+  {
+   "isin": "RU000A0JKQU8",
+   "quantity": 469,
+   "value_rub": 2398466.0
+  },
+  {
+   "isin": "RU0009062467",
+   "quantity": 5300,
+   "value_rub": 1914360.0
+  },
+  {
+   "isin": "RU000A0DKVS5",
+   "quantity": 3540,
+   "value_rub": 4807320.0
+  },
+  {
+   "isin": "RU0007661625",
+   "quantity": 53950,
+   "value_rub": 12413895.0
+  },
+  {
+   "isin": "RU0007775219",
+   "quantity": 40,
+   "value_rub": 12810.0
+  },
+  {
+   "isin": "RU0008926258",
+   "quantity": 16600,
+   "value_rub": 565396.0
+  },
+  {
+   "isin": "RU0009029524",
+   "quantity": 7900,
+   "value_rub": 338475.5
+  },
+  {
+   "isin": "RU0009024277",
+   "quantity": 2328,
+   "value_rub": 13494252.0
+  },
+  {
+   "isin": "RU000A0JNAA8",
+   "quantity": 14,
+   "value_rub": 194187.0
+  },
+  {
+   "isin": "RU0009046510",
+   "quantity": 4135,
+   "value_rub": 7336317.0
+  },
+  {
+   "isin": "RU0009033591",
+   "quantity": 5894,
+   "value_rub": 2989436.8
+  },
+  {
+   "isin": "RU000A0J2Q06",
+   "quantity": 6500,
+   "value_rub": 3416075.0
+  },
+  {
+   "isin": "RU0007288411",
+   "quantity": 211,
+   "value_rub": 5414260.0
+  },
+  {
+   "isin": "RU0009046452",
+   "quantity": 25370,
+   "value_rub": 6739286.8
+  },
+  {
+   "isin": "RU0009084396",
+   "quantity": 80000,
+   "value_rub": 5214400.0
+  },
+  {
+   "isin": "RU000A0JP5V6",
+   "quantity": 8150000,
+   "value_rub": 419073.0
+  },
+  {
+   "isin": "RU000A0JPNN9",
+   "quantity": 870000,
+   "value_rub": 185223.0
+  },
+  {
+   "isin": "RU0007252813",
+   "quantity": 8070,
+   "value_rub": 877128.3
+  },
+  {
+   "isin": "RU000A0DQZE3",
+   "quantity": 45000,
+   "value_rub": 1524150.0
+  },
+  {
+   "isin": "RU000A0JPKH7",
+   "quantity": 467000,
+   "value_rub": 383033.4
+  },
+  {
+   "isin": "RU000A0JPNM1",
+   "quantity": 705000,
+   "value_rub": 3459082.5
+  },
+  {
+   "isin": "RU0009029540",
+   "quantity": 47370,
+   "value_rub": 14102996.4
+  },
+  {
+   "isin": "RU000A0JRKT8",
+   "quantity": 100,
+   "value_rub": 436700.0
+  },
+  {
+   "isin": "US69269L1044",
+   "quantity": 5,
+   "value_rub": 23405.0
+  },
+  {
+   "isin": "US98387E2054",
+   "quantity": 1350,
+   "value_rub": 3121875.0
+  },
+  {
+   "isin": "NL0009805522",
+   "quantity": 1100,
+   "value_rub": 5451160.0
+  },
+  {
+   "isin": "JE00B6T5S470",
+   "quantity": 4036,
+   "value_rub": 6265486.4
+  }
+ ]
+}

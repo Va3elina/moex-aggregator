@@ -1,0 +1,246 @@
+{
+ "ticker": "SBMX",
+ "period": "2026-08",
+ "file": "SBMX_2026-08-31.pdf",
+ "snapshot_date": "2026-08-31",
+ "gross_assets_rub": 18616517759.66,
+ "source_of_truth": "справка, выверено 15.10",
+ "why_hard": "Первая БПИФ: ISIN рвётся на две строки; X5 по 0 ₽",
+ "rows": [
+  {
+   "isin": "RU0009062285",
+   "quantity": 2626610,
+   "value_rub": 84524309.8
+  },
+  {
+   "isin": "RU0009024277",
+   "quantity": 671301,
+   "value_rub": 3163170312.0
+  },
+  {
+   "isin": "RU0008958863",
+   "quantity": 19695000,
+   "value_rub": 28154002.5
+  },
+  {
+   "isin": "RU0009046452",
+   "quantity": 2078710,
+   "value_rub": 145177106.4
+  },
+  {
+   "isin": "RU0008943394",
+   "quantity": 2201460,
+   "value_rub": 89665465.8
+  },
+  {
+   "isin": "RU0008926258",
+   "quantity": 20652200,
+   "value_rub": 313190613.0
+  },
+  {
+   "isin": "RU0007775219",
+   "quantity": 1082600,
+   "value_rub": 200172740.0
+  },
+  {
+   "isin": "RU000A0ZZM04",
+   "quantity": 496740,
+   "value_rub": 34275060.0
+  },
+  {
+   "isin": "RU000A0JXNU8",
+   "quantity": 878670,
+   "value_rub": 68105711.7
+  },
+  {
+   "isin": "RU000A0JQUZ6",
+   "quantity": 633402,
+   "value_rub": 45908976.96
+  },
+  {
+   "isin": "RU000A100K72",
+   "quantity": 280669,
+   "value_rub": 84565569.7
+  },
+  {
+   "isin": "RU000A1025V3",
+   "quantity": 6323510,
+   "value_rub": 166245077.9
+  },
+  {
+   "isin": "RU000A102S15",
+   "quantity": 36397,
+   "value_rub": 66897686.0
+  },
+  {
+   "isin": "RU000A106YF0",
+   "quantity": 340642,
+   "value_rub": 41268778.3
+  },
+  {
+   "isin": "RU000A107662",
+   "quantity": 82608,
+   "value_rub": 222628560.0
+  },
+  {
+   "isin": "RU000A107T19",
+   "quantity": 339218,
+   "value_rub": 1207107253.0
+  },
+  {
+   "isin": "RU000A107UL4",
+   "quantity": 3615630,
+   "value_rub": 922636463.4
+  },
+  {
+   "isin": "RU000A108KL3",
+   "quantity": 60302,
+   "value_rub": 79086073.0
+  },
+  {
+   "isin": "RU000A108X38",
+   "quantity": 260153,
+   "value_rub": 466584405.5
+  },
+  {
+   "isin": "RU000A10ANA1",
+   "quantity": 102627,
+   "value_rub": 63628740.0
+  },
+  {
+   "isin": "RU000A10CW95",
+   "quantity": 185867,
+   "value_rub": 427029432.5
+  },
+  {
+   "isin": "RU0007288411",
+   "quantity": 6665330,
+   "value_rub": 851162641.0
+  },
+  {
+   "isin": "RU000A0JNAA8",
+   "quantity": 395537,
+   "value_rub": 420772260.6
+  },
+  {
+   "isin": "RU000A103X66",
+   "quantity": 56457,
+   "value_rub": 53498653.2
+  },
+  {
+   "isin": "RU0007661625",
+   "quantity": 18377000,
+   "value_rub": 1631142520.0
+  },
+  {
+   "isin": "RU000A0J2Q06",
+   "quantity": 1540380,
+   "value_rub": 488069403.0
+  },
+  {
+   "isin": "RU0009046510",
+   "quantity": 254583,
+   "value_rub": 162627620.4
+  },
+  {
+   "isin": "RU000A0DKVS5",
+   "quantity": 842498,
+   "value_rub": 811409823.8
+  },
+  {
+   "isin": "RU000A0ZZFU5",
+   "quantity": 59422,
+   "value_rub": 130419405.6
+  },
+  {
+   "isin": "RU000A0JRKT8",
+   "quantity": 22244,
+   "value_rub": 120495748.0
+  },
+  {
+   "isin": "RU000A0JPP37",
+   "quantity": 80949000,
+   "value_rub": 58064717.7
+  },
+  {
+   "isin": "RU0009084396",
+   "quantity": 4429420,
+   "value_rub": 99440479.0
+  },
+  {
+   "isin": "RU0009033591",
+   "quantity": 1842381,
+   "value_rub": 1070054884.8
+  },
+  {
+   "isin": "RU0007252813",
+   "quantity": 3308670,
+   "value_rub": 64519065.0
+  },
+  {
+   "isin": "RU000A0JPNM1",
+   "quantity": 77248900,
+   "value_rub": 178097338.95
+  },
+  {
+   "isin": "RU000A0DQZE3",
+   "quantity": 6470900,
+   "value_rub": 47697003.9
+  },
+  {
+   "isin": "RU000A0JR4A1",
+   "quantity": 1376080,
+   "value_rub": 210801695.2
+  },
+  {
+   "isin": "RU000A0ZZAC4",
+   "quantity": 9669000,
+   "value_rub": 97173450.0
+  },
+  {
+   "isin": "RU000A0JUG31",
+   "quantity": 17005800,
+   "value_rub": 164616144.0
+  },
+  {
+   "isin": "RU0009100945",
+   "quantity": 247160,
+   "value_rub": 58918000.8
+  },
+  {
+   "isin": "RU0009029540",
+   "quantity": 8566094,
+   "value_rub": 2359873236.06
+  },
+  {
+   "isin": "RU000A0JP5V6",
+   "quantity": 8540779,
+   "value_rub": 442028017.15
+  },
+  {
+   "isin": "RU0009029524",
+   "quantity": 9286250,
+   "value_rub": 388025956.25
+  },
+  {
+   "isin": "RU0009091573",
+   "quantity": 76015,
+   "value_rub": 79770141.0
+  },
+  {
+   "isin": "RU0006944147",
+   "quantity": 341082,
+   "value_rub": 191005920.0
+  },
+  {
+   "isin": "RU0009029557",
+   "quantity": 1653409,
+   "value_rub": 456737702.16
+  },
+  {
+   "isin": "US98387E2054",
+   "quantity": 78262,
+   "value_rub": 0.0
+  }
+ ]
+}

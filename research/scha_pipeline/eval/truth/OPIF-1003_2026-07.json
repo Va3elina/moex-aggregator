@@ -1,0 +1,186 @@
+{
+ "ticker": "OPIF-1003",
+ "period": "2026-07",
+ "file": "OPIF-1003_2026-07-31.pdf",
+ "snapshot_date": "2026-07-31",
+ "gross_assets_rub": 10541849072.52,
+ "source_of_truth": "справка, выверено 15.10",
+ "why_hard": "ВИМ ОПИФ: слипшиеся числа «6 300,00»",
+ "rows": [
+  {
+   "isin": "RU000A1025V3",
+   "quantity": 403680,
+   "value_rub": 10035484.8
+  },
+  {
+   "isin": "RU000A103X66",
+   "quantity": 102000,
+   "value_rub": 97838400.0
+  },
+  {
+   "isin": "RU000A106T36",
+   "quantity": 279903,
+   "value_rub": 49262928.0
+  },
+  {
+   "isin": "RU000A107UL4",
+   "quantity": 3760000,
+   "value_rub": 1003243200.0
+  },
+  {
+   "isin": "RU000A100K72",
+   "quantity": 199000,
+   "value_rub": 60555700.0
+  },
+  {
+   "isin": "RU000A107T19",
+   "quantity": 217000,
+   "value_rub": 848361500.0
+  },
+  {
+   "isin": "RU000A108K09",
+   "quantity": 2000000,
+   "value_rub": 147560000.0
+  },
+  {
+   "isin": "RU000A108X38",
+   "quantity": 139000,
+   "value_rub": 283977000.0
+  },
+  {
+   "isin": "RU000A107662",
+   "quantity": 130000,
+   "value_rub": 350610000.0
+  },
+  {
+   "isin": "RU000A108ZR8",
+   "quantity": 1830000,
+   "value_rub": 155842800.0
+  },
+  {
+   "isin": "RU000A0JQUZ6",
+   "quantity": 950000,
+   "value_rub": 98800000.0
+  },
+  {
+   "isin": "RU000A10ANA1",
+   "quantity": 122000,
+   "value_rub": 74322400.0
+  },
+  {
+   "isin": "RU0009084438",
+   "quantity": 6,
+   "value_rub": 300.0
+  },
+  {
+   "isin": "RU000A10CW95",
+   "quantity": 192000,
+   "value_rub": 546048000.0
+  },
+  {
+   "isin": "RU000A0ZZFU5",
+   "quantity": 212000,
+   "value_rub": 473014400.0
+  },
+  {
+   "isin": "RU000A10CTQ0",
+   "quantity": 1650000,
+   "value_rub": 187869000.0
+  },
+  {
+   "isin": "RU000A104U43",
+   "quantity": 940000,
+   "value_rub": 113166600.0
+  },
+  {
+   "isin": "RU000A0JP5V6",
+   "quantity": 16226285,
+   "value_rub": 914837948.3
+  },
+  {
+   "isin": "RU0007661625",
+   "quantity": 4500000,
+   "value_rub": 414045000.0
+  },
+  {
+   "isin": "RU0007288411",
+   "quantity": 2800000,
+   "value_rub": 335832000.0
+  },
+  {
+   "isin": "RU0009024277",
+   "quantity": 43000,
+   "value_rub": 199090000.0
+  },
+  {
+   "isin": "RU0009084396",
+   "quantity": 5,
+   "value_rub": 105.85
+  },
+  {
+   "isin": "RU0007775219",
+   "quantity": 2620000,
+   "value_rub": 479460000.0
+  },
+  {
+   "isin": "RU000A0JNAA8",
+   "quantity": 240000,
+   "value_rub": 308640000.0
+  },
+  {
+   "isin": "RU000A0J2Q06",
+   "quantity": 222,
+   "value_rub": 77111.7
+  },
+  {
+   "isin": "RU0008943394",
+   "quantity": 2825000,
+   "value_rub": 116842000.0
+  },
+  {
+   "isin": "RU0009029540",
+   "quantity": 3230000,
+   "value_rub": 892772000.0
+  },
+  {
+   "isin": "RU0009033591",
+   "quantity": 460000,
+   "value_rub": 241730000.0
+  },
+  {
+   "isin": "RU0006944147",
+   "quantity": 530000,
+   "value_rub": 270194000.0
+  },
+  {
+   "isin": "RU0009091573",
+   "quantity": 470000,
+   "value_rub": 499046000.0
+  },
+  {
+   "isin": "RU000A0JRKT8",
+   "quantity": 6000,
+   "value_rub": 34512000.0
+  },
+  {
+   "isin": "RU000A0JPNN9",
+   "quantity": 90000000,
+   "value_rub": 4667400.0
+  },
+  {
+   "isin": "RU000A0JR4A1",
+   "quantity": 2670000,
+   "value_rub": 421032300.0
+  },
+  {
+   "isin": "US7496552057",
+   "quantity": 239197,
+   "value_rub": 0.0
+  },
+  {
+   "isin": "US98387E2054",
+   "quantity": 308961,
+   "value_rub": 0.0
+  }
+ ]
+}

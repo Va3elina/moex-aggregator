@@ -1,0 +1,101 @@
+{
+ "ticker": "RU000A104M43",
+ "period": "2026-08",
+ "file": "RU000A104M43_2026-08-31.pdf",
+ "snapshot_date": "2026-08-31",
+ "gross_assets_rub": 1009558463.45,
+ "source_of_truth": "справка, выверено 15.10",
+ "why_hard": "Рекорд (Алёнка)",
+ "rows": [
+  {
+   "isin": "RU000A0JVZF7",
+   "quantity": 6071,
+   "value_rub": 0.0
+  },
+  {
+   "isin": "RU000A0JPPL8",
+   "quantity": 31000000,
+   "value_rub": 19647800.0
+  },
+  {
+   "isin": "RU000A0HL5M1",
+   "quantity": 337000,
+   "value_rub": 83508600.0
+  },
+  {
+   "isin": "RU0009046452",
+   "quantity": 1110000,
+   "value_rub": 77522400.0
+  },
+  {
+   "isin": "RU000A0JNAA8",
+   "quantity": 77777,
+   "value_rub": 82739172.6
+  },
+  {
+   "isin": "RU000A107JE2",
+   "quantity": 81485,
+   "value_rub": 48646545.0
+  },
+  {
+   "isin": "RU000A0ZZFU5",
+   "quantity": 100,
+   "value_rub": 219480.0
+  },
+  {
+   "isin": "RU000A107UL4",
+   "quantity": 275000,
+   "value_rub": 70174500.0
+  },
+  {
+   "isin": "RU0009084396",
+   "quantity": 2600000,
+   "value_rub": 58370000.0
+  },
+  {
+   "isin": "RU0007252813",
+   "quantity": 4700000,
+   "value_rub": 91650000.0
+  },
+  {
+   "isin": "RU0008926258",
+   "quantity": 3000000,
+   "value_rub": 45495000.0
+  },
+  {
+   "isin": "RU000A108K09",
+   "quantity": 1000000,
+   "value_rub": 70010000.0
+  },
+  {
+   "isin": "RU000A0JPPT1",
+   "quantity": 48000000,
+   "value_rub": 28924800.0
+  },
+  {
+   "isin": "RU000A0JPPN4",
+   "quantity": 350000000,
+   "value_rub": 69912500.0
+  },
+  {
+   "isin": "RU000A0ET7Y7",
+   "quantity": 13000000,
+   "value_rub": 21677500.0
+  },
+  {
+   "isin": "RU000A0JNGA5",
+   "quantity": 85000000,
+   "value_rub": 88230000.0
+  },
+  {
+   "isin": "RU000A0JPKH7",
+   "quantity": 275000000,
+   "value_rub": 98670000.0
+  },
+  {
+   "isin": "RU0009029524",
+   "quantity": 1200000,
+   "value_rub": 50142000.0
+  }
+ ]
+}

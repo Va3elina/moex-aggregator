@@ -38,6 +38,7 @@ Routine решит записать через наш собственный cal
 | frame-content-step-a | `trig_01CTyFze4rXBRGwPKVFtSooj` | `env_01GNzSXGSPBc76secixtxtZu` | Bash, WebSearch | тикер/значимость (для "завода") |
 | frame-content-step-c | `trig_01KPtMNbEYNfqewKvwhdo4rj` | `env_01GNzSXGSPBc76secixtxtZu` | Bash | синтез черновика поста |
 | frame-content-step-n | `trig_01HpPTBmK6egXVdjETZw48FA` | `env_01GNzSXGSPBc76secixtxtZu` | Bash | шум/новость (для бота коллеги, НЕ трогает статус кандидата) |
+| frame-scha-reader («Справки СЧА · агент-чтец») | `trig_01AUcWQBFoYUMJNSTf2ro9W7` | `env_01GNzSXGSPBc76secixtxtZu` | Bash | читает справку о СЧА (research/scha_pipeline/BRIEF.md), колбэк /api/internal/scha/*, токен SCHA_INTERNAL_TOKEN |
 | frame-monitor | `trig_01Cen2AL3BQYsHvf99QDMMuG` | `env_01GNzSXGSPBc76secixtxtZu` | Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch | ежедневный health-аудит (cron `30 7 * * *`) |
 
 Проверить актуальный список/детали (`get` тоже отдаёт полный промпт триггера):
@@ -127,6 +128,26 @@ RemoteTrigger action=create body={
 `CLAUDE_ROUTINE_FIRE_TOKEN_<ИМЯ>`) — код читает их через `os.environ.get(...)` с
 пустым дефолтом (не хардкодить, деплой кода не должен зависеть от того, создан ли
 уже Routine — см. `TRIGGER_ID_HYPE_FILTER` в `content_ai.py` как образец).
+
+## ⚠️ Ловушки создания через API (найдено 15.10.2026, рутина frame-scha-reader)
+
+- **`create` цепляет к рутине ВСЕ подключения аккаунта** (Gmail, Todoist, Календарь, Figma, Docs) —
+  в ответе `mcp_connections`. Рабочим рутинам они не нужны, а Todoist/почта — личное Вадима.
+  Сразу после `create` — `update` с `{"mcp_connections": [<только Claude_Code_Remote>]}`
+  (connector_uuid `bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a`, как у Шага В).
+- **Токен для `/fire` при создании через API НЕ выдаётся** (`api_token_hint: ""`). У рабочих
+  рутин его выпускали отдельно (`api_token_created_at` позже `created_at`) — кнопкой на странице
+  рутины в claude.ai/code/routines. До этого запускать можно только `RemoteTrigger action=run`
+  из сессии (так проверялась frame-scha-reader).
+
+## Общая очередь рутин (с 15.10.2026)
+
+`signals/routine_queue.py` + `signals/routine_dispatch.py` (cron раз в минуту) — ОДНА очередь для
+всех заводов: `enqueue(conn, ROUTINE_KEY, payload, source=…)`, диспетчер — единственный, кто зовёт
+`/fire`: ≤ `ROUTINE_MAX_RUNNING` (2) сессий разом, ≥ 10 с между запусками, ошибка квоты → пауза всей
+очереди на час. Env: `TRIGGER_ID_<KEY>` + `CLAUDE_ROUTINE_FIRE_TOKEN_<KEY>`. Колбэк рутины закрывает
+задание (`routine_queue.status='done'`). Таблицы — `db/migrations/108_*`. Справки СЧА уже на очереди
+(ключ `SCHA_READER`); завод постов (`content_ai._fire`) — переезд отдельным шагом.
 
 ## Ограничения
 
