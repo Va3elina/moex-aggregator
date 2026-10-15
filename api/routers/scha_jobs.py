@@ -5,8 +5,10 @@
                                             что фонд держал в прошлом месяце (для самопроверки)
   POST /api/internal/scha/jobs/{id}/result  ответ агента: бумаги, итоги, самопроверка, ok/сомнения
 
-Server-to-server: проверка shared secret X-Internal-Token (CONTENT_AI_INTERNAL_TOKEN — тот же, что у
-рутин завода постов, см. content_news.py). Рутина не залогинена как пользователь.
+Server-to-server: shared secret X-Internal-Token = SCHA_INTERNAL_TOKEN — СВОЙ, не общий с заводом постов
+(CONTENT_AI_INTERNAL_TOKEN публикует посты в канал). Агент читает внешний документ: если в справке
+спрятана инструкция для модели, утёкший токен открывает только эти две ручки. Рутина не залогинена
+как пользователь.
 
 Конвейер — signals/scha_pipeline.py: он вынимает текст в архив (/data/manual_scha/auto, сюда
 смонтирован только на чтение), ставит рутину в общую очередь и после ответа заливает/сообщает.
@@ -34,7 +36,7 @@ MONTHLY_SOURCES = ["interfax_manual", "vim_sdr"]
 
 
 def _require_internal_token(x_internal_token: str = Header(default="")) -> None:
-    expected = os.environ.get("CONTENT_AI_INTERNAL_TOKEN", "")
+    expected = os.environ.get("SCHA_INTERNAL_TOKEN", "")
     if not expected or x_internal_token != expected:
         raise HTTPException(status_code=403, detail="Неверный или отсутствующий internal token")
 
@@ -82,7 +84,7 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
 
 
 class AgentResult(BaseModel):
-    queue_id: Optional[int] = None
+    queue_id: Optional[int] = None      # для журнала; закрываем ТОЛЬКО очередь своего задания
     snapshot_date: Optional[str] = None
     gross_assets_rub: Optional[float] = None
     rows: list[dict[str, Any]] = Field(default_factory=list)
@@ -99,16 +101,18 @@ def post_result(job_id: int, body: AgentResult, db: Session = Depends(get_db)):
                      {"id": job_id}).mappings().first()
     if not job:
         raise HTTPException(status_code=404, detail="нет такого задания")
-    qid = body.queue_id or job["queue_id"]
-    if qid:
+    # Ответ принимается только от задания, которое его ждёт: повтор колбэка той же сессии не
+    # перетирает первый ответ, а ответ «чужого» номера не оживит закрытое/упавшее задание.
+    if job["status"] != "agent_wait":
+        db.commit()
+        return {"status": "already", "job_status": job["status"]}
+    # Закрываем ТОЛЬКО задание очереди этой справки — queue_id из тела не доверяем: иначе ответом
+    # можно было бы закрыть чужую рутину (завод постов) в общей очереди.
+    if job["queue_id"]:
         db.execute(text("""
             UPDATE routine_queue SET status = 'done', finished_at = now()
             WHERE id = :q AND status IN ('firing', 'running', 'queued')
-        """), {"q": qid})
-    if job["status"] not in ("agent_wait", "text_ready", "failed"):
-        db.commit()
-        # уже принят (повтор колбэка той же сессии) — второй ответ не перетирает первый
-        return {"status": "already", "job_status": job["status"]}
+        """), {"q": job["queue_id"]})
     db.execute(text("""
         UPDATE scha_jobs SET status = 'agent_done', agent = CAST(:a AS jsonb), agent_ok = :ok,
                next_try_at = now(), updated_at = now(), last_error = NULL

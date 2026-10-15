@@ -78,6 +78,12 @@ def esc(s) -> str:
     return html.escape(str(s), quote=False)
 
 
+def link(url: str, label: str = "справка") -> str:
+    """Ссылка в Telegram-HTML: адрес экранируется ВМЕСТЕ с кавычками — он взят со страницы УК,
+    кавычка в нём иначе закрыла бы атрибут href и вставила свою разметку."""
+    return f'<a href="{html.escape(url, quote=True)}">{esc(label)}</a>'
+
+
 def num_ru(x: float, nd: int = 0) -> str:
     return f"{x:,.{nd}f}".replace(",", " ").replace(".", ",")
 
@@ -247,8 +253,7 @@ def _fail(eng, job, why: str) -> None:
     with eng.begin() as conn:
         _set(conn, job.id, status="failed", last_error=why[:1000])
         event(conn, job.id, "failed", why)
-    notify(f"⚠️ {_head(job)}\nсправка не обработана: {esc(why[:300])}\n"
-           f'<a href="{esc(job.url)}">справка</a>')
+    notify(f"⚠️ {_head(job)}\nсправка не обработана: {esc(why[:300])}\n{link(job.url)}")
     log(f"#{job.id} {job.ticker} {job.period}: failed — {why}")
 
 
@@ -283,9 +288,11 @@ def _step_text(eng, job) -> None:
 
 
 def _step_enqueue(eng, job) -> None:
-    token = os.environ.get("CONTENT_AI_INTERNAL_TOKEN", "")
+    # СВОЙ токен, не CONTENT_AI_INTERNAL_TOKEN: агент читает внешний документ, токен в его руках
+    # должен открывать только ручки справок (api/routers/scha_jobs.py).
+    token = os.environ.get("SCHA_INTERNAL_TOKEN", "")
     if not token:
-        raise InfraError("нет CONTENT_AI_INTERNAL_TOKEN в .env — рутине нечем постучаться за заданием")
+        raise InfraError("нет SCHA_INTERNAL_TOKEN в .env — рутине нечем постучаться за заданием")
     with eng.begin() as conn:
         qid = enqueue(conn, ROUTINE, "", source="scha", priority=100,
                       dedup_key=f"scha:{job.id}", timeout_sec=1800)
@@ -299,25 +306,70 @@ def _step_enqueue(eng, job) -> None:
     log(f"#{job.id} {job.ticker} {job.period}: в очередь рутин #{qid}")
 
 
+_ISIN = __import__("re").compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
+MAX_ROWS = 2000
+
+
+def _format_problems(a: dict, period: str) -> list[str]:
+    """Проверка ФОРМАТА ответа перед записью — не правильности чтения (её делает агент по брифу):
+    ответ модели, прочитавшей внешний документ, в базу идёт только в ожидаемом виде."""
+    import math
+    out = []
+    rows = a.get("rows")
+    if not isinstance(rows, list) or not rows:
+        return ["в ответе нет списка бумаг"]
+    if len(rows) > MAX_ROWS:
+        out.append(f"слишком много строк: {len(rows)}")
+    if not str(a.get("snapshot_date") or "").startswith(period):
+        out.append(f"дата справки {a.get('snapshot_date')!r} не за {period}")
+    for r in rows[:MAX_ROWS]:
+        if not isinstance(r, dict):
+            out.append("строка ответа не объект")
+            continue
+        isin = str(r.get("isin") or "").strip().upper()
+        if not _ISIN.match(isin):
+            out.append(f"не ISIN: {isin[:20]!r}")
+            continue
+        for k in ("quantity", "value_rub"):
+            v = r.get(k)
+            if v in (None, ""):
+                continue
+            try:
+                x = float(str(v).replace("\u00a0", "").replace(" ", "").replace(",", "."))
+            except ValueError:
+                out.append(f"{isin}: {k} не число ({str(v)[:20]!r})")
+                continue
+            if not math.isfinite(x) or x < 0:
+                out.append(f"{isin}: {k} = {x}")
+    return out[:5]
+
+
 def _step_result(eng, job) -> None:
     a = job.agent or {}
-    rows = [r for r in a.get("rows") or [] if r.get("isin")]
-    total = sum(float(r.get("value_rub") or 0) for r in rows)
-    gross = float(a.get("gross_assets_rub") or 0)
+    rows = [r for r in a.get("rows") or [] if isinstance(r, dict) and r.get("isin")]
+    def _f(v):
+        try:
+            return float(str(v).replace("\u00a0", "").replace(" ", "").replace(",", ".")) if v not in (None, "") else 0.0
+        except ValueError:
+            return 0.0
+    total = sum(_f(r.get("value_rub")) for r in rows)
+    gross = _f(a.get("gross_assets_rub"))
     cov = f"{num_ru(total / gross * 100, 1)} % активов" if gross else "без итога активов"
     stats = f"{len(rows)} бумаг на {num_ru(total / 1e6, 1)} млн ₽, {cov}"
     doubts = [str(d) for d in (a.get("doubts") or []) if d]
-    link = f'<a href="{esc(job.url)}">справка</a>'
-    if not job.agent_ok:
+    bad_format = _format_problems(a, job.period) if job.agent_ok else []
+    if bad_format:
+        doubts = ["ответ агента не в ожидаемом виде: " + "; ".join(bad_format)] + doubts
+    if not job.agent_ok or bad_format:
         status = "doubt"
         msg = (f"🟡 {_head(job)}\nне залито — агент сомневается ({stats}):\n"
-               + "\n".join(f"— {esc(d[:300])}" for d in doubts[:5]) + f"\n{link}")
+               + "\n".join(f"— {esc(d[:300])}" for d in doubts[:5]) + f"\n{link(job.url)}")
     elif AUTO_IMPORT:
         agent_file = Path(job.file_path).with_suffix(".agent.json")
         agent_file.write_text(json.dumps(a, ensure_ascii=False))
         res = run_tool("import", in_api(agent_file), job.ticker, job.period)
         if res.get("error"):
-            status, msg = "doubt", f"🟡 {_head(job)}\nне залито: {esc(res['error'])}\n{link}"
+            status, msg = "doubt", f"🟡 {_head(job)}\nне залито: {esc(res['error'])}\n{link(job.url)}"
         else:
             status, msg = "imported", f"✅ {_head(job)}\nзалито: {stats}"
         with eng.begin() as conn:
