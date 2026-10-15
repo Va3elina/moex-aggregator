@@ -90,10 +90,42 @@ def num_ru(x: float, nd: int = 0) -> str:
 
 # ── Telegram ──────────────────────────────────────────────────────────────
 
-def notify(text_: str, silent: bool = False) -> None:
-    sys.path.insert(0, str(ROOT / "research" / "robots_tg"))
+def _tg():
+    """Модуль сообщений бота. Рабочая копия — /opt/robot-notify (там state/emoji_ids.json пака эмодзи,
+    без него вместо логотипов будут обычные эмодзи); в репозитории — тот же код без состояния."""
+    for d in (Path("/opt/robot-notify"), ROOT / "research" / "robots_tg"):
+        if (d / "robots_tg.py").exists():
+            sys.path.insert(0, str(d))
+            break
     import robots_tg
-    robots_tg.send(text_, silent=silent)
+    return robots_tg
+
+
+def notify(text_: str, silent: bool = False) -> None:
+    _tg().send(text_, silent=silent)
+
+
+# Значок фонда — логотип УК или фото автора из пака бота (research/robots_tg/emoji/make_fund_icons.py),
+# те же картинки, что на сайте (fundConfig.ts: UK_LOGOS / AUTHOR_LOGOS).
+UK_ICON = {"3597": "ук т-капитал", "5": "ук альфа", "34": "ук первая", "7": "ук вим",
+           "aton": "ук атон", "record": "ук рекорд", "geroi": "ук герои"}
+AUTHOR_ICON = {"RU000A10BZ69": "автор коган", "RU000A10EBY8": "автор воробьёв", "RU000A10B8Z2": "автор щетинин",
+               "RU000A10B917": "автор кудрицкий", "RU000A10B909": "автор крейнин", "RU000A10D1E0": "автор шимко",
+               "RU000A10D5D3": "автор линецкий"}
+ICON_FALLBACK = {"ук т-капитал": "🟡", "ук альфа": "🔴", "ук первая": "🟢", "ук вим": "🔵", "ук атон": "🔷",
+                 "ук рекорд": "🟦", "ук герои": "🟣"}
+
+
+def fund_icon(ticker: str, uk_id: str | None) -> str:
+    name = AUTHOR_ICON.get(ticker) or UK_ICON.get(str(uk_id or ""))
+    if not name:
+        return ""
+    fb = ICON_FALLBACK.get(name, "👤")
+    try:
+        cid = _tg()._emoji_ids().get(name)
+    except Exception:  # noqa: BLE001
+        cid = None
+    return f'<tg-emoji emoji-id="{cid}">{fb}</tg-emoji>' if cid else fb
 
 
 def notify_once(conn, key: str, text_: str) -> None:
@@ -213,10 +245,7 @@ def _scan(eng) -> int:
                     log(f"{tk} {p}: новая справка → задание #{job.id}")
             time.sleep(col.PAUSE)
         time.sleep(col.PAUSE)
-    if found:
-        lines = [f"{'🆕 ' if new_fund else ''}{esc(names.get(tk, tk))} ({esc(tk)}) · {month_ru(p)}"
-                 for tk, p, new_fund in found]
-        notify("📄 Новые справки СЧА\n" + "\n".join(lines), silent=True)
+    # «Найдены» в Telegram не шлём (Вадим 15.10: нужен только итог) — итог придёт сводкой из work().
     log(f"сканер: новых {len(found)}, сбоев {failed}")
     return 0
 
@@ -233,7 +262,7 @@ def _claim(eng):
     """Взять одно готовое к шагу задание на LEASE_MIN минут (упадёт воркер — вернётся само)."""
     with eng.begin() as conn:
         job = conn.execute(text("""
-            SELECT j.*, f.name AS fund_name FROM scha_jobs j LEFT JOIN funds f ON f.ticker = j.ticker
+            SELECT j.*, f.name AS fund_name, f.uk_id FROM scha_jobs j LEFT JOIN funds f ON f.ticker = j.ticker
             WHERE j.status IN ('new', 'text_ready', 'agent_done') AND j.next_try_at <= now()
             ORDER BY j.id LIMIT 1 FOR UPDATE OF j SKIP LOCKED
         """)).first()
@@ -245,16 +274,11 @@ def _claim(eng):
         return job
 
 
-def _head(job) -> str:
-    return f"{esc(job.fund_name or job.ticker)} ({esc(job.ticker)}) · {month_ru(job.period)}"
-
-
 def _fail(eng, job, why: str) -> None:
     with eng.begin() as conn:
         _set(conn, job.id, status="failed", last_error=why[:1000])
         event(conn, job.id, "failed", why)
-    notify(f"⚠️ {_head(job)}\nсправка не обработана: {esc(why[:300])}\n{link(job.url)}")
-    log(f"#{job.id} {job.ticker} {job.period}: failed — {why}")
+    log(f"#{job.id} {job.ticker} {job.period}: failed — {why}")   # в Telegram — сводкой (digest)
 
 
 def _infra_fail(eng, job, e: Exception) -> None:
@@ -344,51 +368,100 @@ def _format_problems(a: dict, period: str) -> list[str]:
     return out[:5]
 
 
+def _num(v) -> float:
+    try:
+        return float(str(v).replace("\u00a0", "").replace(" ", "").replace(",", ".")) if v not in (None, "") else 0.0
+    except ValueError:
+        return 0.0
+
+
 def _step_result(eng, job) -> None:
+    """Ответ агента → залить (или «залил бы» в режиме отчёта) либо отложить с причиной.
+    В Telegram — не здесь, а одной сводкой на пачку (digest)."""
     a = job.agent or {}
-    rows = [r for r in a.get("rows") or [] if isinstance(r, dict) and r.get("isin")]
-    def _f(v):
-        try:
-            return float(str(v).replace("\u00a0", "").replace(" ", "").replace(",", ".")) if v not in (None, "") else 0.0
-        except ValueError:
-            return 0.0
-    total = sum(_f(r.get("value_rub")) for r in rows)
-    gross = _f(a.get("gross_assets_rub"))
-    cov = f"{num_ru(total / gross * 100, 1)} % активов" if gross else "без итога активов"
-    stats = f"{len(rows)} бумаг на {num_ru(total / 1e6, 1)} млн ₽, {cov}"
     doubts = [str(d) for d in (a.get("doubts") or []) if d]
     bad_format = _format_problems(a, job.period) if job.agent_ok else []
+    reason, import_result = None, None
     if bad_format:
-        doubts = ["ответ агента не в ожидаемом виде: " + "; ".join(bad_format)] + doubts
-    if not job.agent_ok or bad_format:
-        status = "doubt"
-        msg = (f"🟡 {_head(job)}\nне залито — агент сомневается ({stats}):\n"
-               + "\n".join(f"— {esc(d[:300])}" for d in doubts[:5]) + f"\n{link(job.url)}")
+        status, reason = "doubt", "ответ агента не в ожидаемом виде: " + "; ".join(bad_format)
+    elif not job.agent_ok:
+        status, reason = "doubt", "агент сомневается: " + (doubts[0] if doubts else "без пояснения")
     elif AUTO_IMPORT:
         agent_file = Path(job.file_path).with_suffix(".agent.json")
         agent_file.write_text(json.dumps(a, ensure_ascii=False))
         res = run_tool("import", in_api(agent_file), job.ticker, job.period)
-        if res.get("error"):
-            status, msg = "doubt", f"🟡 {_head(job)}\nне залито: {esc(res['error'])}\n{link(job.url)}"
-        else:
-            status, msg = "imported", f"✅ {_head(job)}\nзалито: {stats}"
-        with eng.begin() as conn:
-            _set(conn, job.id, import_result=json.dumps(res, ensure_ascii=False))
+        import_result = json.dumps(res, ensure_ascii=False)
+        status, reason = ("doubt", f"не записалось: {res['error']}") if res.get("error") else ("imported", None)
     else:
-        status, msg = "report_only", f"🟢 {_head(job)}\nзалил бы: {stats}"
+        status = "report_only"
     with eng.begin() as conn:
-        first = not conn.execute(text("""
-            SELECT 1 FROM fund_holdings_history h JOIN funds f ON f.fund_id = h.fund_id
-            WHERE f.ticker = :t AND h.source = ANY(:s) AND h.snapshot_date < CAST(:d AS date) LIMIT 1
-        """), {"t": job.ticker, "s": list(MONTHLY_SOURCES), "d": job.period + "-01"}).first()
-        _set(conn, job.id, status=status)
-        event(conn, job.id, status, "; ".join(doubts)[:2000])
-    if first:
-        msg = "🆕 первые данные фонда\n" + msg
-    notify(msg, silent=status in ("imported", "report_only"))
+        cols = dict(status=status, last_error=reason[:1000] if reason else None)
+        if import_result:
+            cols["import_result"] = import_result
+        _set(conn, job.id, **cols)
+        event(conn, job.id, status, (reason or "; ".join(doubts))[:2000])
+    log(f"#{job.id} {job.ticker} {job.period}: {status}" + (f" — {reason}" if reason else ""))
+
+
+DIGEST_MAX_WAIT_H = 3   # если одна справка застряла, остальным не ждать сводку дольше
+
+
+def digest(eng) -> None:
+    """Одно сообщение на пачку справок (Вадим 15.10: «очень шумно»): месяц один раз в заголовке,
+    фонды списком с логотипом, без кодов; только итог — залито / не залито и почему.
+    «Залил бы» (режим отчёта) в сводку не идёт, если не задан SCHA_NOTIFY_REPORT_ONLY=1.
+    Шлём, когда в работе не осталось справок, или когда самый старый итог ждёт дольше DIGEST_MAX_WAIT_H."""
     with eng.begin() as conn:
-        conn.execute(text("UPDATE scha_jobs SET notified_at = now() WHERE id = :id"), {"id": job.id})
-    log(f"#{job.id} {job.ticker} {job.period}: {status}")
+        busy = conn.execute(text(
+            "SELECT count(*) FROM scha_jobs WHERE status IN ('new','text_ready','agent_wait','agent_done')")).scalar()
+        rows = conn.execute(text("""
+            SELECT j.id, j.ticker, j.period, j.url, j.status, j.agent, j.last_error, j.updated_at,
+                   f.name AS fund_name, f.uk_id,
+                   NOT EXISTS (SELECT 1 FROM fund_holdings_history h JOIN funds f2 ON f2.fund_id = h.fund_id
+                               WHERE f2.ticker = j.ticker AND h.source = ANY(:s)
+                                 AND h.snapshot_date < CAST(j.period || '-01' AS date)) AS first_data
+            FROM scha_jobs j LEFT JOIN funds f ON f.ticker = j.ticker
+            WHERE j.notified_at IS NULL AND j.status IN ('imported', 'report_only', 'doubt', 'failed')
+            ORDER BY j.period, f.name
+        """), {"s": list(MONTHLY_SOURCES)}).all()
+        oldest_h = conn.execute(text("""
+            SELECT extract(epoch FROM now() - min(updated_at)) / 3600 FROM scha_jobs
+            WHERE notified_at IS NULL AND status IN ('imported', 'report_only', 'doubt', 'failed')
+        """)).scalar()
+    if not rows or (busy and (oldest_h or 0) < DIGEST_MAX_WAIT_H):
+        return
+    show_report = os.environ.get("SCHA_NOTIFY_REPORT_ONLY", "0") == "1"
+    by_period: dict[str, list[str]] = {}
+    for r in rows:
+        name = f"{fund_icon(r.ticker, r.uk_id)} {esc(r.fund_name or r.ticker)}".strip()
+        if r.first_data:
+            name += " 🆕"
+        a = r.agent or {}
+        n = len([x for x in a.get("rows") or [] if isinstance(x, dict) and x.get("isin")])
+        tot = sum(_num(x.get("value_rub")) for x in a.get("rows") or [] if isinstance(x, dict))
+        g = _num(a.get("gross_assets_rub"))
+        stats = f"{n} бумаг, {num_ru(tot / g * 100, 1)} %" if g else f"{n} бумаг"
+        if r.status == "imported":
+            line = f"✅ {name} — {stats}"
+        elif r.status == "report_only":
+            if not show_report:
+                continue
+            line = f"🟢 {name} — прочитано, {stats} (режим отчёта, в базу не писали)"
+        else:
+            why = esc((r.last_error or "без пояснения")[:220])
+            line = f"❌ {name} — не залито: {why} · {link(r.url)}"
+        by_period.setdefault(r.period, []).append(line)
+    parts = [f"<b>Справки СЧА · {month_ru(per)}</b>\n" + "\n".join(lines) for per, lines in by_period.items()]
+    if os.environ.get("SCHA_DIGEST_DRY") == "1":   # посмотреть сводку, не отправляя и не отмечая
+        print("\n\n".join(parts) or "(сообщения не будет)")
+        return
+    if parts:
+        bad = any(r.status in ("doubt", "failed") for r in rows)
+        notify("\n\n".join(parts), silent=not bad)
+    with eng.begin() as conn:
+        conn.execute(text("UPDATE scha_jobs SET notified_at = now() WHERE id = ANY(:ids)"),
+                     {"ids": [r.id for r in rows]})
+    log(f"сводка: {len(rows)} справок" + ("" if parts else " (без сообщения: только режим отчёта)"))
 
 
 def _sweep_lost(eng) -> None:
@@ -419,6 +492,7 @@ def work() -> int:
             STEPS[job.status](eng, job)
         except Exception as e:  # noqa: BLE001 — InfraError и неизвестное: повтор с паузой и пределом
             _infra_fail(eng, job, e)
+    digest(eng)
     return 0
 
 

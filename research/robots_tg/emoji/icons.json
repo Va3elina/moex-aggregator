@@ -74,5 +74,61 @@
  "лесенка 6": {
   "file": "png/18.png",
   "emoji": "6️⃣"
+ },
+ "ук т-капитал": {
+  "file": "png/fund_tcap.png",
+  "emoji": "🟡"
+ },
+ "ук альфа": {
+  "file": "png/fund_alfa.png",
+  "emoji": "🔴"
+ },
+ "ук первая": {
+  "file": "png/fund_pervaya.png",
+  "emoji": "🟢"
+ },
+ "ук вим": {
+  "file": "png/fund_vim.png",
+  "emoji": "🔵"
+ },
+ "ук атон": {
+  "file": "png/fund_aton.png",
+  "emoji": "🔷"
+ },
+ "ук рекорд": {
+  "file": "png/fund_alenka.png",
+  "emoji": "🟦"
+ },
+ "ук герои": {
+  "file": "png/fund_geroi.png",
+  "emoji": "🟣"
+ },
+ "автор коган": {
+  "file": "png/fund_kogan.png",
+  "emoji": "👤"
+ },
+ "автор воробьёв": {
+  "file": "png/fund_vorobiev.png",
+  "emoji": "👤"
+ },
+ "автор щетинин": {
+  "file": "png/fund_shchetinin.png",
+  "emoji": "👤"
+ },
+ "автор кудрицкий": {
+  "file": "png/fund_vasilich.png",
+  "emoji": "👤"
+ },
+ "автор крейнин": {
+  "file": "png/fund_kreinin.png",
+  "emoji": "👤"
+ },
+ "автор шимко": {
+  "file": "png/fund_shimko.png",
+  "emoji": "👤"
+ },
+ "автор линецкий": {
+  "file": "png/fund_linecki.png",
+  "emoji": "👤"
  }
 }
