@@ -8,10 +8,13 @@
 ≥ MIN_PART, история от года, без малоактивных контрактов скринера и без дней экспирации ±1. В сообщении — только
 актив, показатель, окно рекорда и ссылка на график, без цифр (Вадим 13.10: «цифры не нужны»).
 
-Два режима, общее состояние отправленного (STATE_DIR/record_notify.sent.json: день|актив|показатель → окно):
+Повторы (STATE_DIR/record_notify.sent.json: актив|показатель → день и окно последнего уведомления): после
+уведомления такое же или более короткое окно по тому же активу и показателю молчит COOLDOWN_DAYS дней, более
+длинное приходит сразу и начинает отсчёт заново (Вадим 16.10: полугодовой рекорд назавтра снова не нужен, годовой — да).
+
+Два режима:
   • --live (крон каждые 5 минут, 9:00–23:55 МСК) — последний 5-минутный срез дня против истории дневных значений:
-    рекорд уходит в момент пробоя (Вадим 14.10: «почему не онлайн, а пачкой в 10:45»). Повторно — только если
-    за день окно выросло (3 месяца → полгода → … → всё время);
+    рекорд уходит в момент пробоя (Вадим 14.10: «почему не онлайн, а пачкой в 10:45»);
   • по закрытию (ждёт дневные позиции, signals/insights/fresh.py) — догон того, что срезы не поймали; в сообщении
     пометка «по закрытию». На кроне НЕ стоит (Вадим 16.10: нужны только рекорды с минимальным лагом), запуск руками.
 
@@ -65,6 +68,7 @@ def _series(P: dict, leg: str, s: str) -> pd.Series:
 WINDOWS = ((1825, "за 5 лет"), (1095, "за 3 года"), (730, "за 2 года"), (365, "за год"), (182, "за полгода"),
            (91, "за 3 месяца"))
 RANK = {"за всё время": 0, **{w: i for i, (_, w) in enumerate(WINDOWS, 1)}}
+COOLDOWN_DAYS = 30                    # столько дней не повторять то же или более короткое окно по активу и показателю
 # период графика /oi под окно: на странице есть 1y, 5y и all
 CHART_PERIOD = {"за всё время": "all", "за 5 лет": "5y", "за 3 года": "5y", "за 2 года": "5y"}
 
@@ -162,24 +166,42 @@ def message(x: dict, close_day=None) -> str:
             f'<a href="{html.escape(chart_url(x))}">График →</a>')
 
 
-def _key(day, x: dict) -> str:
-    return f"{pd.Timestamp(day).date()}|{x['sec']}|{x['leg']}"
+def _key(x: dict) -> str:
+    return f"{x['sec']}|{x['leg']}"
 
 
 def _load_sent() -> dict:
-    """день|актив|показатель → ранг отправленного окна (0 — за всё время)."""
+    """актив|показатель → {day, rank}: последнее отправленное окно (rank 0 — за всё время) и его день."""
     try:
         with open(SENT_FILE, encoding="utf-8") as fh:
             raw = json.load(fh)
     except FileNotFoundError:
         return {}
-    return {k: 0 for k in raw} if isinstance(raw, list) else raw    # список — прежний формат, без окна
+    if isinstance(raw, list):                         # самый первый формат: список день|актив|показатель
+        raw = {k: 0 for k in raw}
+    out: dict = {}
+    for k, v in raw.items():
+        if isinstance(v, dict):
+            out[k] = v
+            continue
+        day, key = k.split("|", 1)                    # прежний формат: день|актив|показатель → ранг
+        if key not in out or day > out[key]["day"]:
+            out[key] = {"day": day, "rank": v}
+    return out
 
 
 def _save_sent(sent: dict, since: str) -> None:
     os.makedirs(fresh.STATE_DIR, exist_ok=True)
     with open(SENT_FILE, "w", encoding="utf-8") as fh:
-        json.dump({k: v for k, v in sorted(sent.items()) if k[:10] >= since}, fh, ensure_ascii=False)
+        json.dump({k: v for k, v in sorted(sent.items()) if v["day"] >= since}, fh, ensure_ascii=False)
+
+
+def due(x: dict, prev: dict | None, day) -> bool:
+    """Слать ли рекорд: по активу и показателю не было уведомления COOLDOWN_DAYS, или окно длиннее отправленного
+    (полгода → год — новость, полгода назавтра снова — нет; Вадим 16.10)."""
+    if prev is None or RANK[x["window"]] < prev["rank"]:
+        return True
+    return (pd.Timestamp(day) - pd.Timestamp(prev["day"])).days >= COOLDOWN_DAYS
 
 
 def run_once(live: bool, dry_run: bool = False) -> dict:
@@ -189,7 +211,7 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
     if day is None:
         return summary
     sent = _load_sent()
-    new = [x for x in recs if RANK[x["window"]] < sent.get(_key(day, x), 99)]
+    new = [x for x in recs if due(x, sent.get(_key(x)), day)]
     new.sort(key=lambda x: (RANK[x["window"]], x["name"], list(LEGS).index(x["leg"])))
     summary["new"] = len(new)
     for x in new:
@@ -199,12 +221,12 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
             continue
         if send(msg, NAME):
             summary["sent"] += 1
-            sent[_key(day, x)] = RANK[x["window"]]
+            sent[_key(x)] = {"day": str(pd.Timestamp(day).date()), "rank": RANK[x["window"]]}
         else:
             summary["failed"] += 1
         time.sleep(1.1)                   # лимит Telegram — около сообщения в секунду на чат
     if not dry_run and new:
-        _save_sent(sent, (day - timedelta(days=14)).date().isoformat())
+        _save_sent(sent, (day - timedelta(days=COOLDOWN_DAYS + 7)).date().isoformat())
     return summary
 
 
