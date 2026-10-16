@@ -2,6 +2,10 @@
 
     /opt/frame/signals/.venv/bin/python -m signals.scha_reread TMOS 2022-07 2023-04
     /opt/frame/signals/.venv/bin/python -m signals.scha_reread TMOS 2021-06..2023-09
+    /opt/frame/signals/.venv/bin/python -m signals.scha_reread SBRB --list sbrb_archive.tsv
+
+--list — месяцы, которых на странице УК уже нет (Первая держит 3 года), из файла «YYYY-MM<TAB>ссылка»
+(ссылки — research/fund_bonds/first_archive.py по снимкам веб-архива; качаем с сайта УК).
 
 Находит справки на сайте УК (Funds/scha_collector.py), качает в архив и ставит задания scha_jobs.
 Дальше — обычный конвейер signals/scha_pipeline.py work: текст → общая очередь → агент → заливка,
@@ -16,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import sys
+from pathlib import Path
 
 from signals.scha_pipeline import ARCHIVE, col, event, get_engine, log, text
 
@@ -38,12 +43,21 @@ def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__)
         return 2
-    tk, months = sys.argv[1], months_arg(sys.argv[2:])
+    tk = sys.argv[1]
     if tk not in col.SOURCES:
         print(f"{tk}: нет в Funds/scha_collector.py SOURCES")
         return 2
-    kind, arg = col.SOURCES[tk]
-    docs = col.one_per_month(col.ADAPTERS[kind](tk, arg))
+    if sys.argv[2] == "--list":
+        docs = {}
+        for ln in Path(sys.argv[3]).read_text().splitlines():
+            if ln.strip():
+                p, url = ln.split("\t", 1)
+                docs[p] = col.Doc(tk, p, None, url.strip(), "архив")
+        months = sorted(docs)
+    else:
+        months = months_arg(sys.argv[2:])
+        kind, arg = col.SOURCES[tk]
+        docs = col.one_per_month(col.ADAPTERS[kind](tk, arg))
     eng = get_engine()
     queued, missing = [], []
     for p in months:
