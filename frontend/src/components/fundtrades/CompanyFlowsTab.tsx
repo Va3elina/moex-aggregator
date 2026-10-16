@@ -37,7 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { CalendarRange, CandlestickChart, ChevronDown, Coins, Hourglass, Percent, TrendingUp } from 'lucide-react';
-import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond, isBondFund } from '../../config/fundConfig';
 import {
     listFundTradeAssets,
     listFundsWithHistory,
@@ -417,7 +417,8 @@ export default function CompanyFlowsTab({
     useEffect(() => {
         let cancelled = false;
         listFundsWithHistory()
-            .then(r => { if (!cancelled) setFundsMeta(r.funds); })
+            // «По бумаге» — про акции (ручка company-flows считает только фонды акций).
+            .then(r => { if (!cancelled) setFundsMeta(r.funds.filter(f => !isBondFund(f))); })
             .catch(() => { /* пикер переживёт без СЧА/доходности */ });
         return () => {
             cancelled = true;

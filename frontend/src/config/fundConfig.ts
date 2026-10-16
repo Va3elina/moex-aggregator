@@ -106,6 +106,32 @@ export const SUBCATEGORY_HELP: Record<string, string> = {
 export const isIndexSubcategory = (subcat?: string | null): boolean =>
     !!subcat && subcat.trim().toLowerCase().startsWith('индекс');
 
+/** Облигационный фонд. В пикерах «Сделок фондов» — своя секция «Облигации»
+ *  (Длинные / Средние / Короткие), по умолчанию не выбрана: «все фонды» = фонды акций. */
+export const isBondFund = (f: { category?: string | null }): boolean => f.category === 'bonds';
+
+// Порядок групп облигаций — как в «Деньгах в фондах».
+const BOND_GROUP_ORDER = ['Длинные', 'Средние', 'Короткие'];
+
+/** Облигационные фонды по подкатегориям: Длинные → Средние → Короткие → прочие. */
+export function groupBondsBySubcat<T extends { subcategory?: string | null }>(
+    funds: T[],
+): { subcat: string | null; funds: T[] }[] {
+    const map = new Map<string, T[]>();
+    for (const f of funds) {
+        const k = f.subcategory ?? '';
+        if (!map.has(k)) map.set(k, []);
+        map.get(k)!.push(f);
+    }
+    const rank = (k: string) => {
+        const i = BOND_GROUP_ORDER.indexOf(k);
+        return i >= 0 ? i : BOND_GROUP_ORDER.length;
+    };
+    return Array.from(map.entries())
+        .sort((a, b) => rank(a[0]) - rank(b[0]))
+        .map(([k, fs]) => ({ subcat: k || null, funds: fs }));
+}
+
 // Editorial-friendly палитра — deep desaturated tones, не неон.
 // Подходит к paper bg на editorial-light + dark. Mirror FUND_PALETTE из
 // chartTheme.ts (там тот же набор для chart-series). Раньше тут был неоновый
