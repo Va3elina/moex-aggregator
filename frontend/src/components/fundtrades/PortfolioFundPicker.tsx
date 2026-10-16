@@ -22,7 +22,7 @@ import { t, getLang, monthGenitive } from '../../i18n';
 import ModalLayer from '../ModalLayer';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { X, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown, AlertCircle, Lock, Wallet } from 'lucide-react';
-import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP, isIndexSubcategory } from '../../config/fundConfig';
+import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP, isIndexSubcategory, isBondFund, groupBondsBySubcat } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
@@ -132,6 +132,8 @@ interface SubcatGroup {
     subcat: string | null;
     order: number;
     funds: FundWithHistory[];
+    /** Группа секции «Облигации» (Длинные / Средние / Короткие). */
+    bond?: boolean;
 }
 
 // Подпись подкатегории — как в FundsTable: «Управляемые фонды акций» в списке
@@ -150,7 +152,7 @@ const subcatLabel = (subcat: string | null): string => {
 function groupBySubcat(funds: FundWithHistory[]): SubcatGroup[] {
     const map = new Map<string, SubcatGroup>();
     let seen = 0;
-    for (const f of funds) {
+    for (const f of funds.filter((x) => !isBondFund(x))) {
         const key = f.subcategory ?? '__none__';
         let g = map.get(key);
         if (!g) {
@@ -165,11 +167,21 @@ function groupBySubcat(funds: FundWithHistory[]): SubcatGroup[] {
         }
         g.funds.push(f);
     }
-    return Array.from(map.values()).sort((a, b) => {
+    const stocks = Array.from(map.values()).sort((a, b) => {
         const ai = isIndexSubcategory(a.subcat) ? 1 : 0;
         const bi = isIndexSubcategory(b.subcat) ? 1 : 0;
         return ai !== bi ? ai - bi : a.order - b.order;
     });
+    // Облигации — отдельной секцией после всех групп акций.
+    const bonds = groupBondsBySubcat(funds.filter(isBondFund)).map((g, i) => ({
+        key: `bond:${g.subcat ?? ''}`,
+        label: g.subcat ? t(g.subcat) : t('Прочие'),
+        subcat: g.subcat,
+        order: i,
+        funds: g.funds,
+        bond: true,
+    }));
+    return [...stocks, ...bonds];
 }
 
 const MONTHS_LOWER = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
@@ -188,9 +200,9 @@ const monthKey = (iso: string): string => iso.slice(0, 7);
 export const indexFundTickers = (funds: FundWithHistory[]): string[] =>
     funds.filter((f) => isIndexSubcategory(f.subcategory)).map((f) => f.ticker);
 
-/** Дефолтный набор портфеля: всё, кроме индексных фондов. */
+/** Дефолтный набор портфеля: фонды акций, кроме индексных (облигации — по выбору). */
 export const defaultPortfolioTickers = (funds: FundWithHistory[]): string[] =>
-    funds.filter((f) => !isIndexSubcategory(f.subcategory)).map((f) => f.ticker);
+    funds.filter((f) => !isBondFund(f) && !isIndexSubcategory(f.subcategory)).map((f) => f.ticker);
 
 /** Подсказка «?» у тумблера «Без индексных фондов». Функция, а не константа —
  *  t() нельзя звать на верхнем уровне модуля. */
@@ -224,7 +236,10 @@ function PickerModal({
     locked?: boolean;
 }) {
     const { t } = useTranslation();
-    const allTickers = useMemo(() => funds.map((f) => f.ticker), [funds]);
+    // «Все» = все фонды АКЦИЙ; облигационные — своя секция, по умолчанию не выбрана.
+    const allTickers = useMemo(() => funds.filter((f) => !isBondFund(f)).map((f) => f.ticker), [funds]);
+    const bondTickers = useMemo(() => funds.filter(isBondFund).map((f) => f.ticker), [funds]);
+    const stockFunds = useMemo(() => funds.filter((f) => !isBondFund(f)), [funds]);
     // Черновик: пусто в persisted-наборе = все выбраны. У запертого тира
     // «пусто» означает бэковый дефолт «без индексных» (_default_nonindex_funds)
     // — черновик инициализируем так же, чтобы тумблер «Без индексных фондов»
@@ -259,7 +274,8 @@ function PickerModal({
         // пулу доступных: пока таблетка прожата, индексные не должны вернуться
         // «через ноль» (снял все → вернулись все 19, включая индексные).
         const effective = draft.size === 0 ? new Set(pool) : draft;
-        const covered = effective.size === 0 || allTickers.every((t) => effective.has(t));
+        const covered = effective.size === 0
+            || (allTickers.every((t) => effective.has(t)) && !bondTickers.some((t) => effective.has(t)));
         onApply(covered ? new Set() : new Set(effective));
         onClose();
     };
@@ -414,6 +430,15 @@ function PickerModal({
             return next;
         });
     };
+    const toggleBonds = () => {
+        const allOn = bondTickers.every((t) => draft.has(t));
+        setDraft((prev) => {
+            const next = new Set(prev);
+            if (allOn) bondTickers.forEach((t) => next.delete(t));
+            else bondTickers.forEach((t) => next.add(t));
+            return next;
+        });
+    };
     const toggleGroup = (g: SubcatGroup) => {
         const tickers = g.funds.map((f) => f.ticker);
         const allOn = tickers.every((t) => draft.has(t));
@@ -457,7 +482,7 @@ function PickerModal({
                             тут не пишем: об этом говорят сама прожатая таблетка и плашка
                             поверх размытой группы. */}
                         <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                            {t('выбрано {{n}} из {{total}}', { n: draft.size, total: allTickers.length - (indexOff ? idxTickers.length : 0) })}
+                            {t('выбрано {{n}} из {{total}}', { n: draft.size, total: allTickers.length - (indexOff ? idxTickers.length : 0) + bondTickers.length })}
                         </span>
                         {/* Таблетка-тумблер «Без индексных фондов» прямо в шапке, следом за
                             счётчиком: прожата — три индексных фонда сняты (счётчик сразу
@@ -542,21 +567,41 @@ function PickerModal({
                                         </div>
                                     </td>
                                     <td className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAll}>
-                                        <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{t('Выбрать все')}</span>
+                                        <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{bondTickers.length ? t('Все фонды акций') : t('Выбрать все')}</span>
                                     </td>
                                     <td className="px-2 py-1 text-right cursor-pointer select-none" style={NUM_STYLE} onClick={toggleAll}>
-                                        {navSumBln(funds).toFixed(2)}
+                                        {navSumBln(stockFunds).toFixed(2)}
                                     </td>
                                     <td className="cursor-pointer select-none" onClick={toggleAll} />
                                 </tr>
 
-                                {groups.map((g) => {
+                                {groups.map((g, gi) => {
                                     const tickers = g.funds.map((f) => f.ticker);
                                     const gAll = tickers.every((t) => draft.has(t));
                                     const gAny = tickers.some((t) => draft.has(t));
                                     const isCollapsed = collapsed.has(g.key);
+                                    const bondsAll = bondTickers.every((t) => draft.has(t));
+                                    const bondsAny = bondTickers.some((t) => draft.has(t));
                                     return (
                                         <React.Fragment key={g.key}>
+                                            {/* Секция «Облигации»: чекбокс выбирает все облигационные
+                                                фонды разом; по умолчанию секция не выбрана. */}
+                                            {g.bond && !groups[gi - 1]?.bond && (
+                                                <tr style={{ borderTop: '2px solid var(--text-primary)' }}>
+                                                    <td className="pl-2 pr-0" style={{ paddingTop: 14, paddingBottom: 6 }}>
+                                                        <div className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer" onClick={toggleBonds}>
+                                                            <CheckBox checked={bondsAll} indeterminate={bondsAny && !bondsAll} />
+                                                        </div>
+                                                    </td>
+                                                    <td className="pl-1 pr-2 cursor-pointer select-none" style={{ paddingTop: 14, paddingBottom: 6 }} onClick={toggleBonds}>
+                                                        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)' }}>{t('Облигации')}</span>
+                                                    </td>
+                                                    <td className="px-2 text-right select-none" style={{ ...NUM_STYLE, paddingTop: 14, paddingBottom: 6 }}>
+                                                        {navSumBln(funds.filter(isBondFund)).toFixed(2)}
+                                                    </td>
+                                                    <td />
+                                                </tr>
+                                            )}
                                             {/* Заголовок подкатегории — один в один со строкой
                                                 подкатегории в FundsTable: чекбокс группы, шеврон
                                                 сворачивания, название, «?»-справка и СЧА группы. */}
@@ -853,12 +898,14 @@ export default function PortfolioFundPicker({
     // по всему набору (19) писал бы «16 из 19», будто три фонда сняты вручную.
     const idxTickers = useMemo(() => indexFundTickers(funds), [funds]);
     const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !selected.has(t));
-    const pool = funds.length - (indexOff ? idxTickers.length : 0);
-    const allActive = selected.size === 0 || selected.size === pool;
+    const bondSet = useMemo(() => new Set(funds.filter(isBondFund).map((f) => f.ticker)), [funds]);
+    const bondsSelected = Array.from(selected).filter((t) => bondSet.has(t)).length;
+    const pool = funds.length - bondSet.size - (indexOff ? idxTickers.length : 0);
+    const allActive = selected.size === 0 || (bondsSelected === 0 && selected.size === pool);
     // Заперт → таблетка всегда в «нейтральном» виде: акцентная заливка означает
     // «фильтр применён», а у locked-тира он не применён и применён быть не может.
     const active = !allActive && canPick;
-    const label = allActive || !canPick ? allLabelText : t('{{n}} из {{total}} фондов', { n: selected.size, total: pool });
+    const label = allActive || !canPick ? allLabelText : t('{{n}} из {{total}} фондов', { n: selected.size, total: pool + bondSet.size });
 
     return (
         <div style={{ display: 'inline-flex', minWidth: 0 }}>

@@ -517,7 +517,7 @@ export default function MobileFundTradesPage() {
 
   // Все фонды для FundPicker (movers multi + актив-sheet single).
   const moverPickerFunds = useMemo<FundPickerFund[]>(
-    () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
+    () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id, category: f.category, subcategory: f.subcategory })),
     [funds],
   );
   // Индексные тикеры для таблетки «Без индексных фондов» в пикере движений.
@@ -532,7 +532,7 @@ export default function MobileFundTradesPage() {
   const fundsByCategory = useMemo(() => {
     const groups: Record<string, FundWithHistory[]> = {};
     for (const f of funds) {
-      const key = f.subcategory === 'Авторские' ? 'Авторские' : (f.category || 'other');
+      const key = f.category !== 'bonds' && f.subcategory === 'Авторские' ? 'Авторские' : (f.category || 'other');
       if (!groups[key]) groups[key] = [];
       groups[key].push(f);
     }
@@ -545,7 +545,9 @@ export default function MobileFundTradesPage() {
       return bv - av;
     };
     for (const k of Object.keys(groups)) groups[k] = [...groups[k]].sort(cmp);
-    return groups;
+    // Порядок разделов: акции → авторские → облигации → прочее.
+    const rank = (k: string) => { const i = ['stocks', 'Авторские', 'bonds'].indexOf(k); return i < 0 ? 9 : i; };
+    return Object.fromEntries(Object.entries(groups).sort((a, b) => rank(a[0]) - rank(b[0])));
   }, [funds, fundSort, returnPeriod]);
 
   // movers: клик по активу → Потоки по компании с предвыбором.
@@ -1718,7 +1720,7 @@ function SnapshotReviewTab() {
   }, [review]);
 
   const pickerFunds = useMemo<FundPickerFund[]>(
-    () => availableFunds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
+    () => availableFunds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id, category: f.category, subcategory: f.subcategory })),
     [availableFunds],
   );
   const pickerSelected = useMemo(() => new Set([ticker]), [ticker]);

@@ -19,7 +19,7 @@ import { t } from '../../i18n';
 import ModalLayer from '../ModalLayer';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { Search, X } from 'lucide-react';
-import { UK_LOGOS, stripUkName } from '../../config/fundConfig';
+import { UK_LOGOS, stripUkName, SUBCATEGORY_HELP, isBondFund, groupBondsBySubcat } from '../../config/fundConfig';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import HelpTooltip from '../HelpTooltip';
 import { indexFundsHelp } from './PortfolioFundPicker';
@@ -29,6 +29,10 @@ export interface FundPickerFund {
     name: string;
     uk?: string | null;
     uk_id?: number | string | null;
+    /** 'bonds' → фонд уходит в секцию «Облигации» (группы по подкатегории),
+     *  по умолчанию не выбран: «Все фонды» = все фонды акций. */
+    category?: string | null;
+    subcategory?: string | null;
 }
 
 export interface FundPickerProps {
@@ -94,6 +98,10 @@ interface UkGroup {
     ukId?: number | string | null;
     name: string;           // отображаемое имя УК (UK_LOGOS.name → uk-поле → «Прочие»)
     funds: FundPickerFund[];
+    /** Группа секции «Облигации»: заголовок — подкатегория (Длинные/…), а лого УК —
+     *  у каждой строки, потому что в группе фонды разных УК. */
+    bond?: boolean;
+    subcat?: string | null;
 }
 
 // Группировка фондов по УК: ключ группы — uk_id (если есть), иначе имя УК.
@@ -167,12 +175,15 @@ function FundPickerModal({
     }, [onClose]);
 
     const allActive = mode === 'multi' && selected.size === 0;
+    const hasBonds = useMemo(() => funds.some(isBondFund), [funds]);
+    const bondTickers = useMemo(() => funds.filter(isBondFund).map((f) => f.ticker), [funds]);
 
     // Тумблер «Без индексных фондов» — не отдельное состояние, а срез выбора:
     // прожат ⇔ ни один индексный фонд не отмечен (зеркало PortfolioFundPicker).
     // «Пусто = все фонды», поэтому пустой набор разворачиваем в полный: иначе
     // индексные считались бы снятыми там, где на деле выбраны все.
-    const allTickers = useMemo(() => funds.map((f) => f.ticker), [funds]);
+    // «Все» — это все фонды АКЦИЙ: облигационные по умолчанию не выбраны.
+    const allTickers = useMemo(() => funds.filter((f) => !isBondFund(f)).map((f) => f.ticker), [funds]);
     const idxTickers = useMemo(
         () => indexTickers.filter((t) => allTickers.includes(t)),
         [indexTickers, allTickers],
@@ -187,8 +198,8 @@ function FundPickerModal({
         const next = new Set(effective);
         if (indexOff) idxTickers.forEach((t) => next.add(t));
         else idxTickers.forEach((t) => next.delete(t));
-        // Полный набор канонически схлопываем в пусто = «все фонды».
-        const covered = allTickers.every((t) => next.has(t));
+        // Полный набор акций без облигаций канонически схлопываем в пусто = «все фонды».
+        const covered = allTickers.every((t) => next.has(t)) && !bondTickers.some((t) => next.has(t));
         onChange(covered ? new Set() : next);
     };
 
@@ -202,7 +213,24 @@ function FundPickerModal({
                 f.name.toLowerCase().includes(q),
         )
         : funds;
-    const groups = useMemo(() => groupByUk(filtered), [filtered]);
+    const groups = useMemo<UkGroup[]>(() => [
+        ...groupByUk(filtered.filter((f) => !isBondFund(f))),
+        ...groupBondsBySubcat(filtered.filter(isBondFund)).map((g) => ({
+            key: `bond:${g.subcat ?? ''}`,
+            name: g.subcat ? t(g.subcat) : t('Прочие'),
+            funds: g.funds,
+            bond: true,
+            subcat: g.subcat,
+        })),
+    ], [filtered, t]);
+    const bondsShown = groups.filter((g) => g.bond).flatMap((g) => g.funds.map((f) => f.ticker));
+    const bondsOn = bondsShown.filter((t) => selected.has(t)).length;
+    const toggleBonds = () => {
+        const next = new Set(selected);
+        if (bondsOn === bondsShown.length) bondsShown.forEach((t) => next.delete(t));
+        else bondsShown.forEach((t) => next.add(t));
+        onChange(next);
+    };
 
     const toggleMulti = (ticker: string) => {
         const next = new Set(selected);
@@ -375,7 +403,7 @@ function FundPickerModal({
                                         </svg>
                                     )}
                                 </span>
-                                {t('Все фонды')}
+                                {hasBonds ? t('Все фонды акций') : t('Все фонды')}
                             </button>
                         )}
 
@@ -384,8 +412,46 @@ function FundPickerModal({
                                 {funds.length === 0 ? t('Нет фондов') : t('Ничего не найдено')}
                             </div>
                         ) : (
-                            groups.map((g) => (
+                            groups.map((g, gi) => (
                                 <div key={g.key}>
+                                    {/* Секция «Облигации» — перед первой облигационной группой:
+                                        чекбокс выбирает/снимает все облигационные фонды разом. */}
+                                    {g.bond && !groups[gi - 1]?.bond && (
+                                        <div
+                                            onClick={mode === 'multi' ? toggleBonds : undefined}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 8,
+                                                padding: '18px 14px 8px',
+                                                marginTop: 8,
+                                                borderTop: '2px solid var(--text-primary)',
+                                                cursor: mode === 'multi' ? 'pointer' : 'default',
+                                            }}
+                                        >
+                                            {mode === 'multi' && (
+                                                <span
+                                                    style={{
+                                                        width: 18, height: 18, flexShrink: 0, display: 'flex',
+                                                        alignItems: 'center', justifyContent: 'center', borderRadius: 4,
+                                                        background: bondsOn === bondsShown.length ? 'var(--accent)' : 'transparent',
+                                                        border: `2px solid ${bondsOn > 0 ? 'var(--accent)' : 'var(--text-muted)'}`,
+                                                    }}
+                                                >
+                                                    {bondsOn === bondsShown.length ? (
+                                                        <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                            <polyline points="2 7 6 11 12 3" />
+                                                        </svg>
+                                                    ) : bondsOn > 0 ? (
+                                                        <span style={{ width: 8, height: 2, background: 'var(--accent)', borderRadius: 1 }} />
+                                                    ) : null}
+                                                </span>
+                                            )}
+                                            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                                {t('Облигации')}
+                                            </span>
+                                        </div>
+                                    )}
                                     {/* Заголовок-группа УК. В multi — кликабелен: чекбокс выбирает ВЕСЬ УК. */}
                                     {(() => {
                                         const gTickers = g.funds.map((f) => f.ticker);
@@ -437,7 +503,7 @@ function FundPickerModal({
                                                         ) : null}
                                                     </span>
                                                 )}
-                                                <UkAvatar ukId={g.ukId} ukName={g.name} size={22} />
+                                                {!g.bond && <UkAvatar ukId={g.ukId} ukName={g.name} size={22} />}
                                                 <span
                                                     style={{
                                                         fontSize: 'var(--fs-xs)',
@@ -454,6 +520,11 @@ function FundPickerModal({
                                                 >
                                                     {g.name}
                                                 </span>
+                                                {g.bond && g.subcat && SUBCATEGORY_HELP[g.subcat] && (
+                                                    <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
+                                                        <HelpTooltip content={t(SUBCATEGORY_HELP[g.subcat])} size={16} float />
+                                                    </span>
+                                                )}
                                                 {mode === 'multi' && gOn > 0 && (
                                                     <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', flexShrink: 0, fontWeight: 700 }}>
                                                         {gOn}/{gTickers.length}
@@ -516,6 +587,7 @@ function FundPickerModal({
                                                             </svg>
                                                         ))}
                                                 </span>
+                                                {g.bond && <UkAvatar ukId={f.uk_id} ukName={f.uk} size={20} />}
                                                 <span
                                                     style={{
                                                         fontWeight: 700,
@@ -527,7 +599,7 @@ function FundPickerModal({
                                                     }}
                                                     title={f.name}
                                                 >
-                                                    {stripUkName(f.name, g.ukId)}
+                                                    {stripUkName(f.name, g.bond ? f.uk_id : g.ukId)}
                                                 </span>
                                                 <span
                                                     style={{
@@ -609,7 +681,7 @@ export default function FundPicker({
             return `${selectedFund.ticker} · ${selectedFund.name}`;
         }
         if (buttonLabel) return buttonLabel(selected.size, total);
-        return allActive ? t('Все фонды') : t('{{n}} фондов', { n: selected.size });
+        return allActive ? (funds.some(isBondFund) ? t('Все фонды акций') : t('Все фонды')) : t('{{n}} фондов', { n: selected.size });
     })();
 
     const active = mode === 'single' ? !!selectedFund : !allActive;

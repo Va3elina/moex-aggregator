@@ -75,9 +75,14 @@ WHITELIST_TICKERS = (
     "OPIF-43",    # Фонд российских акций
     "OPIF-4979",  # Фонд смешанный с выплатой дохода (SCHA interfax_manual)
     "OPIF-8119",  # Фонд облигаций с выплатой дохода
+    "SBGB",       # Государственные облигации (ОФЗ)
+    "SBLB",       # Долгосрочные гособлигации
     "OPIF-8123",  # Фонд акций с выплатой дохода
     # Атон, Райффайзен — Cbonds + reconstruct
     "AMGB",       # Атон - Длинные ОФЗ (SCHA с e-disclosure)
+    "WOFZ",       # ВИМ - ОФЗ
+    "WFLO",       # ВИМ - Облигации с переменным купоном
+    "RU000A109SR1",  # Рублевые перспективы (ГЕРОИ, облигации)
     "OPIF-63",    # Атон - Петр Столыпин
     "OPIF-281",   # Райффайзен - Акции
     "OPIF-282",   # Райффайзен - Компании роста
@@ -188,6 +193,17 @@ FT_HISTORY_FLOOR = date(2021, 9, 1)
 # равно нет, так что скрывать нечего. При раскате на весь проект и добавлении
 # разно-периодичных фондов — пересмотреть на строгий per-fund.
 _FAR_FUTURE = date(9999, 12, 31)
+
+# Облигационные фонды (2026-10-16, Вадим): видны в пикере разделом «Облигации»
+# (Длинные / Средние / Короткие), но по умолчанию НЕ выбраны. Поэтому:
+#   явный набор `funds` → берём и акции, и облигации из него;
+#   набора нет (дефолт, manager, ручки без пикера) → только акции, как было.
+# Деньги/золото по-прежнему скрыты целиком.
+PICKABLE_CATEGORIES = ("stocks", "bonds")
+
+
+def _category_sql(explicit_funds: bool) -> str:
+    return "f.category IN ('stocks', 'bonds')" if explicit_funds else "f.category = 'stocks'"
 
 
 # Ключ матрицы для «Общего портфеля» — своя задержка, независимая от остальных
@@ -587,7 +603,7 @@ def list_funds_with_history(
             SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
             AND trade_date <= fd_last.td - INTERVAL '60 months' ORDER BY trade_date DESC LIMIT 1
         ) fd_5y ON true
-        WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
+        WHERE f.ticker = ANY(:tickers) AND f.category IN ('stocks', 'bonds')
           AND EXISTS (SELECT 1 FROM fund_holdings_history h2
                       WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources))
         ORDER BY f.uk NULLS LAST, f.category, f.ticker
@@ -738,9 +754,9 @@ def fund_trades_detail(
     """), {"t": ticker}).mappings().first()
     if not fund_row:
         raise HTTPException(status_code=404, detail=f"Fund {ticker} not found")
-    # Облигационные/денежные/золотые фонды скрыты — фича показывает только акции.
-    if fund_row["category"] != "stocks":
-        raise HTTPException(status_code=404, detail=f"Fund {ticker} not available (only stock funds)")
+    # Денежные/золотые фонды скрыты — фича показывает акции и облигации.
+    if fund_row["category"] not in PICKABLE_CATEGORIES:
+        raise HTTPException(status_code=404, detail=f"Fund {ticker} not available (only stock and bond funds)")
 
     fund_id = fund_row["fund_id"]
 
@@ -1032,9 +1048,8 @@ def top_movers(
     if _cut != _FAR_FUTURE:
         _cs = _cut.isoformat()
         as_of = _cs if not as_of else min(as_of, _cs)
-    # Фича показывает ТОЛЬКО акции — облигации/деньги/золото скрыты целиком.
-    # Параметр category игнорируется (всегда stocks).
-    category_filter = "AND f.category = 'stocks'"
+    # Параметр category игнорируется; категории — по правилу _category_sql (ниже,
+    # когда известен явный набор funds).
     whitelist_filter = "AND f.ticker = ANY(:tickers)"
 
     # Своя подвыборка фондов — с Basic (матрица, fund_trades.fund_picker).
@@ -1072,6 +1087,8 @@ def top_movers(
                     status_code=400,
                     detail=f"manager must be comma-separated integer uk_id, got '{part}'",
                 )
+
+    category_filter = "AND " + _category_sql(bool(fund_tickers))
 
     # Приоритет: funds (тикеры фондов) → manager (uk_id) → все фонды.
     # manager игнорируется, когда задан непустой funds.
@@ -1456,6 +1473,7 @@ def combined_portfolio(
         manager_filter = "AND f.uk_id = ANY(:managers)"
     else:
         manager_filter = ""
+    cat_sql = _category_sql(bool(fund_tickers))
 
     params = {
         "tickers": list(WHITELIST_TICKERS),
@@ -1480,7 +1498,7 @@ def combined_portfolio(
                        COUNT(DISTINCT h.fund_id) AS n
                 FROM fund_holdings_history h
                 JOIN funds f ON f.fund_id = h.fund_id
-                WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks' {manager_filter}
+                WHERE f.ticker = ANY(:tickers) AND {cat_sql} {manager_filter}
                   AND h.source = ANY(:sources)
                   AND h.snapshot_date >= :floor
                   AND h.snapshot_date <= :cutoff
@@ -1544,7 +1562,7 @@ def combined_portfolio(
             SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
             AND trade_date <= fd_last.td - INTERVAL '36 months' ORDER BY trade_date DESC LIMIT 1
         ) fd_3y ON true
-        WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks' {manager_filter}
+        WHERE f.ticker = ANY(:tickers) AND {cat_sql} {manager_filter}
           AND EXISTS (SELECT 1 FROM fund_holdings_history h2
                       WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources)
                         AND h2.snapshot_date <= :cutoff)
@@ -1625,7 +1643,7 @@ def combined_portfolio(
     hold_rows = db.execute(text(f"""
         WITH sel AS (
             SELECT f.fund_id FROM funds f
-            WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks' {manager_filter}
+            WHERE f.ticker = ANY(:tickers) AND {cat_sql} {manager_filter}
         ),
         last_snap AS (
             -- HAVING: фонд участвует, только если его последний снапшот (<= cutoff)
@@ -1701,7 +1719,7 @@ def combined_portfolio(
     available_month_dates = db.execute(text(f"""
         SELECT MAX(h.snapshot_date) AS d
         FROM fund_holdings_history h JOIN funds f ON f.fund_id = h.fund_id
-        WHERE f.category = 'stocks' AND f.ticker = ANY(:tickers) AND h.source = ANY(:sources)
+        WHERE {cat_sql} AND f.ticker = ANY(:tickers) AND h.source = ANY(:sources)
           AND h.snapshot_date >= :floor {manager_filter}
         GROUP BY date_trunc('month', h.snapshot_date)
         ORDER BY d DESC
