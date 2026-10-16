@@ -1,8 +1,8 @@
 """Рекорды позиций физлиц → отдельное сообщение на каждый в @framesignalbot (личка админа).
 
 Ряды те же, что у движка находок завода постов (signals/insights/detect.load_positions): дневные позиции физлиц
-по фьючерсам. Шесть показателей — объём лонга, объём шорта, число физлиц в лонге, число физлиц в шорте, чистый
-лонг и чистый шорт (максимум и минимум чистой позиции, Вадим 14.10). Рекорд —
+по фьючерсам. Показатели — только чистые позиции (Вадим 16.10): по объёму и по числу трейдеров, каждая в две
+стороны (рекорд лонга — максимум чистой позиции, рекорд шорта — минимум). Рекорд —
 максимум показателя, какого не было 3 месяца, полгода, год, 2, 3, 5 лет или за всё время (у завода нижний порог ~4 месяца, поэтому окна
 считаются здесь). Вселенная и фильтры как у завода: группы Акции/Валюта/Индексы/Сырьё, медиана участников за год
 ≥ MIN_PART, история от года, без малоактивных контрактов скринера и без дней экспирации ±1. В сообщении — только
@@ -45,22 +45,20 @@ NAME = "record_notify"
 SENT_FILE = os.path.join(fresh.STATE_DIR, f"{NAME}.sent.json")
 GROUPS = ("Акции", "Валюта", "Индексы", "Сырьё")
 MIN_HISTORY = 260                     # торговых дней: на короткой истории «за всё время» ничего не значит
-# показатель → подпись; цифр в сообщении нет (Вадим 13.10: «цифры не нужны»)
-LEGS = {"long": "Объём лонга физлиц", "short": "Объём шорта физлиц",
-        "nl": "Число физлиц в лонге", "ns": "Число физлиц в шорте",
-        "netl": "Чистый лонг физлиц", "nets": "Чистый шорт физлиц"}
-# показатель → (ряд detect.load_positions, знак): чистый шорт — рекорд минимума чистой позиции, то есть максимум −net
-SERIES = {"long": ("long", 1), "short": ("short", 1), "nl": ("nl", 1), "ns": ("ns", 1), "netl": ("net", 1),
-          "nets": ("net", -1)}
+# показатель → подпись; цифр в сообщении нет (Вадим 13.10: «цифры не нужны»). Только чистые позиции — по объёму и
+# по числу трейдеров (Вадим 16.10); лонг — рекорд максимума чистой позиции, шорт — минимума (максимум −net).
+LEGS = {"netl": "Чистая позиция по объёму · лонг", "nets": "Чистая позиция по объёму · шорт",
+        "ntl": "Чистая позиция по числу трейдеров · лонг", "nts": "Чистая позиция по числу трейдеров · шорт"}
+# дневной ряд показателя из detect.load_positions; число трейдеров «чистое», как на графике /oi: лонг минус шорт
+SERIES = {"netl": lambda P: P["net"], "nets": lambda P: -P["net"],
+          "ntl": lambda P: P["nl"] - P["ns"], "nts": lambda P: P["ns"] - P["nl"]}
 # значение показателя в 5-минутном срезе open_interest; шорт хранится со знаком минус
-SNAP = {"long": lambda r: r.pos_long, "short": lambda r: -r.pos_short, "nl": lambda r: r.pos_long_num,
-        "ns": lambda r: r.pos_short_num, "netl": lambda r: r.pos_long + r.pos_short,
-        "nets": lambda r: -(r.pos_long + r.pos_short)}
+SNAP = {"netl": lambda r: r.pos_long + r.pos_short, "nets": lambda r: -(r.pos_long + r.pos_short),
+        "ntl": lambda r: r.pos_long_num - r.pos_short_num, "nts": lambda r: r.pos_short_num - r.pos_long_num}
 
 
 def _series(P: dict, leg: str, s: str) -> pd.Series:
-    col, sign = SERIES[leg]
-    return (sign * P[col][s]).dropna()
+    return SERIES[leg](P)[s].dropna()
 
 
 # окно рекорда: сколько дней не было такого значения → подпись; «всё время» — значение выше всей истории
@@ -150,16 +148,11 @@ def records_live() -> tuple[pd.Timestamp | None, list]:
 
 
 def chart_url(x: dict) -> str:
-    """Диплинк на /oi (frontend/src/utils/oiDeepLink.ts): физлица, дневной график; объём — позиции с нужной
-    ногой, чистая позиция — вариант net, число физлиц — режим участников. Период графика — CHART_PERIOD, окна до года открываем на году."""
+    """Диплинк на /oi (frontend/src/utils/oiDeepLink.ts): физлица, дневной график, вариант «Чистая позиция»; объём —
+    режим позиций, число трейдеров — режим участников. Период графика — CHART_PERIOD, окна до года — на году."""
+    mode = "positions" if x["leg"] in ("netl", "nets") else "participants"
     p = [("instrument", x["sec"]), ("clgroup", "FIZ"), ("interval", "24"),
-         ("period", CHART_PERIOD.get(x["window"], "1y"))]
-    if x["leg"] in ("long", "short"):
-        p += [("mode", "positions"), ("variant", x["leg"])]
-    elif x["leg"] in ("netl", "nets"):
-        p += [("mode", "positions"), ("variant", "net")]
-    else:
-        p.append(("mode", "participants"))
+         ("period", CHART_PERIOD.get(x["window"], "1y")), ("mode", mode), ("variant", "net")]
     return f"{SITE}/oi?" + urllib.parse.urlencode(p)
 
 
