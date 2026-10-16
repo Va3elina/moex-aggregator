@@ -51,12 +51,15 @@ SSH = ["ssh", "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none", "-o", "Con
 MONTHLY_SOURCES = ("interfax_manual", "vim_sdr")
 
 # Фонд → (адаптер, страница раскрытия). Тикер = funds.ticker в БД.
-# Адаптеры: html — ссылки <a> с текстом «Справка о СЧА …» (Атон, Рекорд, Т-Капитал, ВИМ, Первая);
+# Адаптеры: html — ссылки <a> с текстом «Справка о СЧА …» (Рекорд, Т-Капитал, ВИМ, Первая);
+#                  ВИМ показывает 20 документов на страницу — листаем ?PAGEN_1=N;
+#           aton — JSON страницы Атона (__NEXT_DATA__): ссылками выведен только текущий год, в JSON — все;
 #           ihc  — /disclosure.json Героев (секция по имени фонда);
 #           alfa — JSON состояния страницы Альфы (вкладки monthly + quarterly, вся история сразу).
+# Облигационные фонды (funds.category='bonds') — research/fund_bonds/RESEARCH.md.
 SOURCES: dict[str, tuple[str, str]] = {
     # Атон
-    "OPIF-63": ("html", "https://www.am-aton.ru/legaldocs/docpif/pyotr_stolypin"),
+    "OPIF-63": ("aton", "https://www.am-aton.ru/legaldocs/docpif/pyotr_stolypin"),
     # Герои
     "RU000A108AB5": ("ihc", "Флагманский"),
     # Рекорд Капитал
@@ -81,6 +84,29 @@ SOURCES: dict[str, tuple[str, str]] = {
     "OPIF-4979": ("html", "https://first-am.ru/individuals/fund/mixed-fund-with-income-payment/documents"),
     "OPIF-8123": ("html", "https://first-am.ru/individuals/fund/stock-fund-with-income-payment/documents"),
     "SBMX": ("html", "https://first-am.ru/individuals/etf/etf-moex/documents"),
+
+    # ── Облигации ──
+    "AMGB": ("aton", "https://www.am-aton.ru/legaldocs/docpif/amgb"),
+    "RU000A109SR1": ("ihc", "Рублевые перспективы"),
+    "AKMB": ("alfa", "bpif-ctrlbonds"),
+    "OPIF-33": ("alfa", "opif_akop"),
+    "OPIF-9113": ("alfa", "opif_akipo"),
+    "OPIF-11259": ("alfa", "bpif_varcoup_bonds"),
+    "TBRU": ("html", "https://t-capital-funds.ru/documents/mutual_funds/TBRU/"),
+    "TOFZ": ("html", "https://t-capital-funds.ru/documents/mutual_funds/TOFZ/"),
+    "OBLG": ("html", "https://www.wealthim.ru/about/disclosure/pif/bpif/wimfrb/reports/"),
+    "WOFZ": ("html", "https://www.wealthim.ru/about/disclosure/pif/bpif/wofz/reports/"),
+    "WFLO": ("html", "https://www.wealthim.ru/about/disclosure/pif/bpif/wflo/reports/"),
+    "OPIF-54": ("html", "https://www.wealthim.ru/about/disclosure/pif/opif/wimfk/documents/reports/"),
+    "OPIF-9165": ("html", "https://www.wealthim.ru/about/disclosure/pif/opif/wimor/documents/reports/"),
+    "SBGB": ("html", "https://first-am.ru/individuals/etf/etf-ofz/documents"),
+    "SBLB": ("html", "https://first-am.ru/individuals/etf/etf-sblb/documents"),
+    "SBRB": ("html", "https://first-am.ru/individuals/etf/corporate-bonds-rub/documents"),
+    "SBFR": ("html", "https://first-am.ru/individuals/etf/etf-sbfr/documents"),
+    "SAFE": ("html", "https://first-am.ru/individuals/etf/fond-konservativnyi-smart/documents"),
+    "OPIF-47": ("html", "https://first-am.ru/individuals/fund/opif-obligatsiy-fond-ros-obligatsiy/documents"),
+    "OPIF-8119": ("html", "https://first-am.ru/individuals/fund/bond-fund-with-income-payment/documents"),
+    "OPIF-4995": ("html", "https://first-am.ru/individuals/fund/pif-nakopitelniy/documents"),
 }
 
 _MONTHS = {
@@ -102,6 +128,7 @@ class Doc:
     day: date | None      # точная дата «на …», если есть в тексте
     url: str
     title: str
+    corrected: bool = False  # «Скорректированная справка» — побеждает исходную за тот же месяц
 
     @property
     def file_date(self) -> date:
@@ -174,8 +201,9 @@ def _text(fragment: str) -> str:
 
 def date_from_text(t: str) -> tuple[str | None, date | None]:
     """«… на 31.08.2026» → ('2026-08', 2026-08-31); «… за август 2026 года» → ('2026-08', None).
-    «на» важнее любой другой даты в тексте (у ВИМ перед названием стоит дата публикации)."""
-    for pat in (r"на\s+(\d{2})\.(\d{2})\.(\d{4})", r"(\d{2})\.(\d{2})\.(\d{4})"):
+    «на» важнее любой другой даты в тексте (у ВИМ перед названием стоит дата публикации).
+    У Героев в 2024 дата в начале через пробелы: «28 12 2024 Справка…»."""
+    for pat in (r"на\s+(\d{2})\.(\d{2})\.(\d{4})", r"(\d{2})\.(\d{2})\.(\d{4})", r"^\s*(\d{2})\s+(\d{2})\s+(\d{4})\b"):
         m = re.search(pat, t)
         if m:
             d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
@@ -200,6 +228,24 @@ def date_from_text(t: str) -> tuple[str | None, date | None]:
 # ── Адаптеры ──────────────────────────────────────────────────────────────
 
 def list_html(ticker: str, page_url: str) -> list[Doc]:
+    if "wealthim.ru" not in page_url:
+        return _list_html_page(ticker, page_url)
+    # ВИМ: 20 документов на страницу (SIZEN_1 игнорирует), за последней снова отдаёт первую —
+    # листаем, пока страница приносит новые месяцы. История на сайте — с 08.2022 (6 страниц).
+    docs: list[Doc] = []
+    seen: set[str] = set()
+    for n in range(1, 16):
+        page = _list_html_page(ticker, page_url + (f"?PAGEN_1={n}" if n > 1 else ""))
+        fresh = {d.period for d in page} - seen
+        if not fresh:
+            break
+        seen |= fresh
+        docs += page
+        time.sleep(PAUSE)
+    return docs
+
+
+def _list_html_page(ticker: str, page_url: str) -> list[Doc]:
     body, _ = http_get(page_url)
     t = body.decode("utf-8", "ignore")
     docs = []
@@ -211,6 +257,29 @@ def list_html(ticker: str, page_url: str) -> list[Doc]:
         if not period:
             continue
         docs.append(Doc(ticker, period, day, urllib.parse.urljoin(page_url, _html.unescape(m.group(1))), title))
+    return docs
+
+
+def list_aton(ticker: str, page_url: str) -> list[Doc]:
+    """Атон (Next.js): на странице ссылками только текущий год, все годы — в <script id="__NEXT_DATA__">
+    → props.pageProps.data[] — разделы; справки в разделе с code «otchet_<slug>». Месяц — из названия
+    («на 31.08.2026»), не из dateDocument (там бывает 28-е вместо 31-го)."""
+    body, _ = http_get(page_url)
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', body.decode("utf-8", "ignore"), re.S)
+    if not m:
+        raise RuntimeError("aton: нет __NEXT_DATA__ (сменили вёрстку?)")
+    docs = []
+    for sec in json.loads(m.group(1))["props"]["pageProps"]["data"]:
+        if not (sec.get("code") or "").startswith("otchet_"):
+            continue
+        for it in sec.get("items") or []:
+            title = it.get("name") or ""
+            url = (it.get("file") or {}).get("url")
+            if not url or not _IS_SCHA.search(title) or _NOT_SCHA.search(title):
+                continue
+            period, day = date_from_text(title)
+            if period:
+                docs.append(Doc(ticker, period, day, urllib.parse.urljoin(page_url, url), title))
     return docs
 
 
@@ -251,7 +320,8 @@ def list_alfa(ticker: str, slug: str) -> list[Doc]:
         state, _ = json.JSONDecoder().raw_decode(t[m.end():])
         for d in state["disclosure"]["fund"]["documents"]["documents"]:
             title = d.get("name") or ""
-            if not title.startswith("Справка о стоимости чистых активов") or d.get("isArchived"):
+            corrected = title.lower().startswith("скорректированная справка о стоимости чистых активов")
+            if not (title.startswith("Справка о стоимости чистых активов") or corrected) or d.get("isArchived"):
                 continue
             cat = d.get("categoryId") or ""
             mm = re.match(r"monthly-(\d{4})-month-([A-Z]+)$", cat)
@@ -265,21 +335,24 @@ def list_alfa(ticker: str, slug: str) -> list[Doc]:
                 period = f"{my.group(1)}-12"
             else:
                 continue
-            docs.append(Doc(ticker, period, None, "https://www.alfacapital.ru" + d["path"], f"{title[:40]}… [{cat}]"))
+            docs.append(Doc(ticker, period, None, "https://www.alfacapital.ru" + d["path"], f"{title[:40]}… [{cat}]",
+                            corrected))
         time.sleep(PAUSE)
     return docs
 
 
-ADAPTERS = {"html": list_html, "ihc": list_ihc, "alfa": list_alfa}
+ADAPTERS = {"html": list_html, "aton": list_aton, "ihc": list_ihc, "alfa": list_alfa}
 
 
 def one_per_month(docs: list[Doc]) -> dict[str, Doc]:
-    """Если за месяц несколько справок (дубль ссылки, поздняя перепубликация) — берём с самой
-    поздней датой; одинаковые — первую по странице (сайты сортируют свежие сверху)."""
+    """Если за месяц несколько справок (дубль ссылки, поздняя перепубликация) — скорректированная
+    важнее исходной, дальше — с самой поздней датой; одинаковые — первую по странице (сайты
+    сортируют свежие сверху)."""
     best: dict[str, Doc] = {}
     for d in docs:
         cur = best.get(d.period)
-        if cur is None or (d.day and cur.day and d.day > cur.day):
+        if (cur is None or (d.corrected and not cur.corrected)
+                or (d.corrected == cur.corrected and d.day and cur.day and d.day > cur.day)):
             best[d.period] = d
     return best
 
