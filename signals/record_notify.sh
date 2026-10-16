@@ -1,8 +1,7 @@
 #!/bin/bash
-# Wrapper: рекорды позиций физлиц → @framesignalbot (signals/record_notify.py). Два крона, общий замок — у режимов
-# общее состояние отправленного:
+# Wrapper: рекорды позиций физлиц → @framesignalbot (signals/record_notify.py). На кроне только онлайн-режим
+# (Вадим 16.10: догон по закрытию не нужен, только с минимальным лагом); замок — от наложения прогонов:
 #   */5 6-20 * * * /bin/bash /opt/frame/signals/record_notify.sh --live >> /opt/frame/logs/record_notify.log 2>&1
-#   45 7-17 * * * /bin/bash /opt/frame/signals/record_notify.sh >> /opt/frame/logs/record_notify.log 2>&1
 # Ручной прогон без отправки: --dry-run (по закрытию) или --live --dry-run; по закрытию сейчас: --force
 set -eu
 
