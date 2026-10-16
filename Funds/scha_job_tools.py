@@ -130,10 +130,12 @@ def cmd_import(agent_json: str, ticker: str, period: str) -> dict:
     # Справка — ПОЛНЫЙ срез фонда за месяц: заменяем месяц целиком (replace=True), а не дописываем.
     # Иначе при перечитывании уже залитого месяца старые строки с длинными именами («ПАО Сбербанк»)
     # остались бы рядом с новыми короткими («Сбербанк ао») — двойные строки. Для нового месяца удалять
-    # нечего. Предохранитель save_assets: нужна «Общая стоимость активов» и покрытие ≥ 80 %.
+    # нечего. Предохранитель save_assets: нужна «Общая стоимость активов». Порог покрытия (≥ 80 %)
+    # — от старого парсера, терявшего строки; агент сам сверяет строки с итогами справки, а у
+    # облигационных фондов в деньгах и РЕПО бывает 20–90 % (16.10: OPIF-9113 07.2023 — 9 % бумаг).
     # Копию старых строк конвейер снимает ДО этого вызова (signals/scha_pipeline.py: _backup_month).
     n = mb.save_assets(eng, fund_id, date.fromisoformat(snap), assets,
-                       gross_assets=_num(a.get("gross_assets_rub")), replace=True)
+                       gross_assets=_num(a.get("gross_assets_rub")), replace=True, min_coverage=0)
     return {"inserted": n, "fund_id": fund_id, "snapshot_date": snap, "assets": len(assets)}
 
 

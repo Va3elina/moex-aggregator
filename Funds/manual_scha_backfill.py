@@ -227,7 +227,7 @@ def find_fund_id(engine, isin_pif: str | None, ticker: str | None) -> tuple[int 
 
 def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
                 gross_assets: float | None = None, resolve_names: bool = True,
-                replace: bool = False) -> int:
+                replace: bool = False, min_coverage: float | None = None) -> int:
     """Сохраняет позиции с резолвом имён через MOEX ISS.
 
     Знаменатель доли — `gross_assets` («Раздел 3. Подраздел 10. Общая стоимость
@@ -249,10 +249,13 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
             if not (gross_assets and gross_assets > 0):
                 raise ValueError("--replace: нет gross_assets в форме — покрытие "
                                  "неопределимо, снапшот НЕ заменён")
+            # min_coverage: агент-чтец сам сверяет «бумаги + деньги + дебиторка = общая стоимость»,
+            # и у облигационных фондов 10–25 % активов бывает в деньгах/РЕПО — ему порог не нужен (0).
+            floor = REPLACE_MIN_COVERAGE if min_coverage is None else min_coverage
             coverage = sec_sum / gross_assets * 100
-            if coverage < REPLACE_MIN_COVERAGE:
+            if coverage < floor:
                 raise ValueError(
-                    f"--replace: покрытие {coverage:.1f}% < {REPLACE_MIN_COVERAGE}% "
+                    f"--replace: покрытие {coverage:.1f}% < {floor}% "
                     f"— снапшот НЕ заменён (возможно реальный кэш? проверь руками)")
             # Гранулярность — МЕСЯЦ: отчётная дата одного месяца пишется УК
             # то последним торговым (29/30), то календарным (31) днём; точное
