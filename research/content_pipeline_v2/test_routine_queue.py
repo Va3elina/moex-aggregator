@@ -88,3 +88,15 @@ def test_every_fire_call_passes_candidate():
         assert calls, name
         for m in calls:
             assert "dedup=" in m.group(0), f"{name}: {m.group(0)[:120]}"
+
+
+def test_routine_rate_limit_is_per_routine():
+    """429 «This routine's fire rate limit» — пауза только этой рутины на указанное время."""
+    from signals import routine_dispatch as RD
+    err = ('HTTPError: 429 {"error":{"message":"This routine\'s fire rate limit has been reached. '
+           'Try again in 39m58s.","type":"rate_limit_error"}}')
+    assert RD._is_routine_rate_limit(err)
+    assert RD._retry_after_sec(err) == 39 * 60 + 58
+    assert RD._retry_after_sec("try again in 1h2m") == 3720
+    assert RD._retry_after_sec("usage limit reached") is None
+    assert not RD._is_routine_rate_limit("HTTPError: 429 usage limit reached for your plan")
