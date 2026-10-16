@@ -75,8 +75,15 @@ def _month_label(period: date) -> str:
 
 
 # ─── Описание датасетов ───────────────────────────────────────────────────────
-# tg_text/headline/context — функции от периода релиза; deep_link — plain-роут
-# (buildAnomalyUrl на фронте отдаёт его как есть).
+# tg_text/headline/context/route — функции от периода релиза; route — plain-роут
+# с query (buildAnomalyUrl на фронте отдаёт его как есть).
+
+def _fund_link(period: date) -> str:
+    # Открываем «Общий портфель» сразу на анонсированном месяце: иначе страница
+    # покажет сохранённый ранее срез (прошлый месяц) и новых сделок не видно.
+    # Параметры одноразовые — FundTradesPage применяет их и убирает из URL.
+    return f"/fund-trades?tab=portfolio&month={period:%Y-%m}"
+
 
 def _fund_tg(period: date) -> str:
     m = _month_label(period)
@@ -84,7 +91,7 @@ def _fund_tg(period: date) -> str:
             f"<b>Сделки фондов</b>\n"
             f"{_ce(*_EMO_FUNDS)} Фонды отчитались за {m}: составы и сделки "
             f"обновлены по всем фондам.\n"
-            f'<a href="{SITE}/fund-trades">открыть →</a>')
+            f'<a href="{SITE}{_fund_link(period)}">открыть →</a>')
 
 
 def _cbr_tg(period: date) -> str:
@@ -99,14 +106,14 @@ def _cbr_tg(period: date) -> str:
 DATASETS = {
     "fund_trades": {
         "name": "Сделки фондов",
-        "route": "/fund-trades",
+        "route": _fund_link,
         "tg_text": _fund_tg,
         "headline": lambda p: f"Фонды отчитались за {_month_label(p)}",
         "context": lambda p: "Составы и сделки обновлены по всем фондам",
     },
     "cbr_flows": {
         "name": "Потоки ЦБ",
-        "route": "/cbr-flows",
+        "route": lambda p: "/cbr-flows",
         "tg_text": _cbr_tg,
         "headline": lambda p: f"ЦБ обновил потоки за {_month_label(p)}",
         "context": lambda p: "Покупки и продажи по группам участников торгов",
@@ -209,7 +216,7 @@ def _site_notify(db, dataset: str, spec: dict, period: date) -> int:
         "asset_id": dataset, "asset_name": spec["name"],
         "headline": spec["headline"](period), "context": spec["context"](period),
         "signal_date": period,
-        "deep_link": json.dumps({"route": spec["route"]}, ensure_ascii=False),
+        "deep_link": json.dumps({"route": spec["route"](period)}, ensure_ascii=False),
     }).fetchone()
     if row:
         db.execute(text("SELECT pg_notify('anomaly', :p)"),
@@ -227,7 +234,7 @@ def _tg_broadcast(db, spec: dict, period: date) -> dict:
     msg = spec["tg_text"](period)
     kb = {"inline_keyboard": [[{
         "text": "📈 Открыть",
-        "url": SITE + spec["route"],
+        "url": SITE + spec["route"](period),
     }]]}
     for uid, chat_id in users:
         result = send_message(chat_id, msg, reply_markup=kb)
