@@ -107,6 +107,7 @@
   "Отменить (последнее действие)": "Undo (last action)",
   "Вернуть": "Redo",
   "Очистить всю разметку": "Clear all annotations",
+  "Удалить выделенное": "Delete selected",
 
   "экспорт в CSV": "CSV export",
   "Не удалось скачать CSV (статус {{status}})": "Failed to download CSV (status {{status}})",

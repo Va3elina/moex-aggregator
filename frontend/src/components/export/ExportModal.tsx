@@ -136,6 +136,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
     // через onHistoryChange callback который бампает counter.
     const [historyTick, setHistoryTick] = useState(0);
     const onHistoryChange = () => setHistoryTick((t) => t + 1);
+    const [hasSelection, setHasSelection] = useState(false);
 
     // Статус копирования в буфер — отдельно от phase (операция быстрая, без spinner-фазы).
     const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
@@ -331,7 +332,9 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
         setState({ phase: 'annotating', canvas: state.canvas });
     };
 
+    /** Корзина: выделено — удаляем только его, иначе вся разметка с подтверждением. */
     const handleClear = () => {
+        if (annotationRef.current?.deleteSelected()) return;
         const count = annotationRef.current?.getObjectsCount() ?? 0;
         if (count === 0) return;
         if (!window.confirm(t('Удалить всю разметку?'))) return;
@@ -413,6 +416,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             canUndo={canUndo}
                             canRedo={canRedo}
                             canClear={objectsCount > 0}
+                            hasSelection={hasSelection}
                             onToolChange={setTool}
                             onColorChange={setColor}
                             onStrokeWidthChange={setStrokeWidth}
@@ -458,6 +462,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             onShapeCreated={() => setTool('select')}
                             colorPresets={COLOR_PRESET_VALUES}
                             onSelectionStyle={handleSelectionStyle}
+                            onSelectionChange={setHasSelection}
                         />
                     )}
 
