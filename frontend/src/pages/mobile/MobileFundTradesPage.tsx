@@ -18,7 +18,7 @@
  * ключами frame:fundtrades:* (синхрон с десктопом), useGrowReveal, onboarding.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Wallet,
   Lock,
@@ -311,6 +311,20 @@ export default function MobileFundTradesPage() {
   useEffect(() => {
     if (tab === 'movers' || tab === 'snapshots') setTab('funds');
   }, [tab]);
+  // Диплинк из уведомления «вышли новые данные» (?tab=portfolio&month=YYYY-MM).
+  // Пикера месяца тут нет — портфель и так открывается на дефолте бэкенда
+  // (самый полный месяц), поэтому берём только вкладку. Параметры одноразовые.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const qTab = searchParams.get('tab');
+    if (!qTab && !searchParams.get('month')) return;
+    if (qTab === 'funds' || qTab === 'portfolio' || qTab === 'company') setTab(qTab);
+    const next = new URLSearchParams(searchParams);
+    next.delete('tab');
+    next.delete('month');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const [period] = useState<FundTradesPeriod>('1m'); // шаг данных — месяц vs предыдущий
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   // Состав фондов: период доходности + сортировка + мультиселект УК.

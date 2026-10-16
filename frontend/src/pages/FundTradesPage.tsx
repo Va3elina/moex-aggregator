@@ -18,8 +18,8 @@
  *     new=accent, sold_out=muted
  *   - Шаг данных — 1 снапшот в месяц; сравнение всегда «месяц vs предыдущий».
  */
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getLang, monthGenitive } from '../i18n';
 import {
@@ -315,6 +315,28 @@ export default function FundTradesPage() {
     // даже если состав за него опубликовали не все фонды.
     const [portfolioAsOfSaved, setPortfolioAsOf] = usePersistedState<string>('frame:fundtrades:portfolioAsOf', '');
     const portfolioAsOf = portfolioAsOfSaved || undefined;
+    // Самый свежий месяц набора, который пользователь уже видел ('YYYY-MM'). Отличает
+    // «сидел на последнем месяце» от «осознанно смотрит прошлое»: первого переносим
+    // на новый месяц, как только за него начинают отчитываться фонды.
+    const [portfolioLatestSeen, setPortfolioLatestSeen] = usePersistedState<string>('frame:fundtrades:portfolioLatestSeen', '');
+    // Диплинк из уведомления «вышли новые данные»: ?tab=portfolio&month=YYYY-MM
+    // открывает «Общий портфель» на анонсированном месяце. Месяц ждёт в ref, пока
+    // не придёт список available_months (as_of нужен полной датой из него).
+    const [searchParams, setSearchParams] = useSearchParams();
+    const pendingMonthRef = useRef<string | null>(null);
+    useEffect(() => {
+        const qTab = searchParams.get('tab');
+        const qMonth = searchParams.get('month');
+        if (!qTab && !qMonth) return;
+        if (qTab === 'funds' || qTab === 'portfolio' || qTab === 'company') setTab(qTab);
+        if (qMonth && /^\d{4}-\d{2}$/.test(qMonth)) pendingMonthRef.current = qMonth;
+        // Параметры одноразовые: убираем, чтобы перезагрузка не откатывала ручной выбор.
+        const next = new URLSearchParams(searchParams);
+        next.delete('tab');
+        next.delete('month');
+        setSearchParams(next, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
     // Блок «Сделки фондов» рядом с составом: чистая покупка за период (1м/6м/1г/3г).
     const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
     // Свой диапазон месяцев (кнопка-календарь) — задан, отменяет пресет. Персистится
@@ -441,15 +463,44 @@ export default function FundTradesPage() {
         return c != null && m > c;
     };
 
-    // Санитайз восстановленного месяца: сохранённый срез мог пропасть из набора
-    // (сменились выбранные фонды) или уйти под гейт (тариф понизился) — тогда
-    // возвращаемся к дефолту бэкенда, иначе пикер показывал бы месяц, которого нет.
+    // Сохранённый месяц-срез против свежего списка месяцев набора:
+    //  1) диплинк ?month= — открываем анонсированный месяц;
+    //  2) пользователь сидел на последнем месяце, а фонды начали отчитываться за
+    //     следующий — переносим на новый, иначе свежие сделки не увидеть;
+    //  3) санитайз: срез пропал из набора (сменились фонды) или ушёл под гейт
+    //     (тариф понизился) — к дефолту бэкенда, иначе пикер показал бы
+    //     несуществующий месяц. Дата месяца — MAX по фондам и сдвигается, когда
+    //     отчитывается фонд с более поздним концом месяца, поэтому сверяем по 'YYYY-MM'.
     useEffect(() => {
-        if (!portfolioAsOfSaved || !portfolio) return;
+        if (!portfolio) return;
         const months = portfolio.available_months ?? [];
         if (months.length === 0) return;
-        if (!months.includes(portfolioAsOfSaved) || isPortfolioMonthLocked(portfolioAsOfSaved)) {
-            setPortfolioAsOf('');
+        const ym = (d: string) => d.slice(0, 7);
+        const open = months.filter((m) => !isPortfolioMonthLocked(m));
+        const latest = open[0];
+        if (!latest) return;
+        // Отметку «видел» только двигаем вперёд: временно снятый фонд не должен
+        // откатывать её и потом заново перекидывать срез.
+        const seen = portfolioLatestSeen || prevYm(ym(latest)); // первый заход: считаем, что видел прошлый месяц
+        if (ym(latest) > seen) setPortfolioLatestSeen(ym(latest));
+        else if (!portfolioLatestSeen) setPortfolioLatestSeen(seen);
+
+        const pending = pendingMonthRef.current;
+        if (pending) {
+            pendingMonthRef.current = null;
+            const hit = open.find((m) => ym(m) === pending);
+            if (hit) {
+                if (hit !== portfolioAsOfSaved) setPortfolioAsOf(hit);
+                return;
+            }
+        }
+        if (!portfolioAsOfSaved) return;
+        if (ym(portfolioAsOfSaved) === seen && ym(latest) > seen) {
+            setPortfolioAsOf(latest);
+            return;
+        }
+        if (!open.includes(portfolioAsOfSaved)) {
+            setPortfolioAsOf(open.find((m) => ym(m) === ym(portfolioAsOfSaved)) ?? '');
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [portfolio, portfolioAsOfSaved]);
@@ -1228,6 +1279,12 @@ function filterPillStyle(active: boolean): CSSProperties {
 
 // Сплит-коррекция позиций (splitAdjustPositions/nearestSplitRatio) и
 // formatSnapshotDate вынесены в components/funds/FundDetailModal.
+
+// "2026-09" → "2026-08"
+function prevYm(ym: string): string {
+    const [y, m] = ym.split('-').map(Number);
+    return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+}
 
 // "2026-04-30" → "Апрель 2026" / "April 2026" — для month-picker день не
 // показываем (у разных УК конец месяца разный: 27/28/30/31), важен только месяц.
