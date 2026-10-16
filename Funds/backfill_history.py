@@ -23,6 +23,8 @@ CBONDS_UA = "Cbonds.K/3.0.8 (ru.cbonds.cbonds; build:636; Android 9) OkHttp/4.12
 CBONDS_BASE = "https://rest2.cbonds.info"
 
 DRY_RUN = "--dry-run" in sys.argv  # если True — только показывает что будет скачано
+# Позиционные аргументы — тикеры: докачать только их (`backfill_history.py SBGB`).
+ONLY_TICKERS = {a for a in sys.argv[1:] if not a.startswith("--")}
 
 # --- DB ---
 import pg8000
@@ -108,6 +110,8 @@ def main():
     total_inserted = 0
 
     for fund_id, ticker, name, cbonds_share_id, first_data_in_db in funds:
+        if ONLY_TICKERS and ticker not in ONLY_TICKERS:
+            continue
         # Дата запуска из Cbonds
         launch = get_launch_date(cbonds_share_id)
         if not launch:
