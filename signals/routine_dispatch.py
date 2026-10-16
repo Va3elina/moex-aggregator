@@ -103,6 +103,25 @@ def _fire(routine: str, payload: str) -> str:
     return str(body.get("session_id") or body.get("id") or "")[:80]
 
 
+def _retry_after_sec(err: str) -> int | None:
+    """«Try again in 39m58s» / «in 1h2m» / «in 45s» → секунды."""
+    import re
+    m = re.search(r"try again in\s+((?:\d+\s*[hms]\s*)+)", err, re.I)
+    if not m:
+        return None
+    total = 0
+    for n, unit in re.findall(r"(\d+)\s*([hms])", m.group(1).lower()):
+        total += int(n) * {"h": 3600, "m": 60, "s": 1}[unit]
+    return total or None
+
+
+def _is_routine_rate_limit(err: str) -> bool:
+    """Предел частоты запусков ОДНОЙ рутины (16.10.2026: ~30 /fire в час на рутину) —
+    в отличие от исчерпанной подписки, другие рутины он не трогает."""
+    low = err.lower()
+    return "routine's fire rate limit" in low or "fire rate limit" in low
+
+
 def _is_quota(e: Exception) -> bool:
     resp = getattr(e, "response", None)
     if resp is not None and resp.status_code == 429:
@@ -151,7 +170,20 @@ def dispatch_one(eng) -> bool:
     except Exception as e:  # noqa: BLE001 — любая ошибка запуска разбирается ниже
         err = f"{type(e).__name__}: {e}"[:500]
         with eng.begin() as conn:
-            if _is_quota(e):
+            if _is_quota(e) and _is_routine_rate_limit(err):
+                # предел запусков ЭТОЙ рутины: откладываем только её задания, остальные заводы
+                # идут дальше (16.10: пауза всей очереди из-за справок держала посты до часа).
+                wait = _retry_after_sec(err) or QUOTA_PAUSE_MIN * 60
+                conn.execute(text("""
+                    UPDATE routine_queue SET status = 'queued', attempts = attempts - 1, last_error = :e
+                    WHERE id = :id
+                """), {"id": job.id, "e": err})
+                conn.execute(text("""
+                    UPDATE routine_queue SET not_before = GREATEST(not_before, now() + make_interval(secs => :w))
+                    WHERE routine = :r AND status = 'queued'
+                """), {"r": job.routine, "w": wait + 30})
+                log(f"#{job.id} {job.routine}: предел запусков рутины → её задания ждут {wait // 60} мин")
+            elif _is_quota(e):
                 # квота/лимит — не вина задания: попытку не тратим, ставим на паузу ВСЮ очередь
                 conn.execute(text("""
                     UPDATE routine_queue SET status = 'queued', attempts = attempts - 1, last_error = :e
