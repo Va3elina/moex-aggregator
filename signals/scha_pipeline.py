@@ -439,6 +439,7 @@ def _step_result(eng, job) -> None:
 
 
 DIGEST_MAX_WAIT_H = 3   # если одна справка застряла, остальным не ждать сводку дольше
+DIGEST_COMPACT_FROM = 20  # больше справок в пачке (заливка истории) — строка на фонд, а не на месяц
 
 
 def digest(eng) -> None:
@@ -487,6 +488,8 @@ def digest(eng) -> None:
             line = f"❌ {name} — не залито: {why} · {link(r.url)}"
         by_period.setdefault(r.period, []).append(line)
     parts = [f"<b>Справки СЧА · {month_ru(per)}</b>\n" + "\n".join(lines) for per, lines in by_period.items()]
+    if len(rows) > DIGEST_COMPACT_FROM:
+        parts = [_compact_digest(rows)]
     if os.environ.get("SCHA_DIGEST_DRY") == "1":   # посмотреть сводку, не отправляя и не отмечая
         print("\n\n".join(parts) or "(сообщения не будет)")
         return
@@ -497,6 +500,27 @@ def digest(eng) -> None:
         conn.execute(text("UPDATE scha_jobs SET notified_at = now() WHERE id = ANY(:ids)"),
                      {"ids": [r.id for r in rows]})
     log(f"сводка: {len(rows)} справок" + ("" if parts else " (без сообщения: только режим отчёта)"))
+
+
+def _compact_digest(rows) -> str:
+    """Пачка истории (сотни справок): по фонду — сколько месяцев залито и за какой период;
+    незалитые — отдельной строкой каждая, с причиной и ссылкой."""
+    def mm(per: str) -> str:
+        return f"{per[5:7]}.{per[:4]}"
+    ok: dict[str, list[str]] = {}
+    names: dict[str, str] = {}
+    bad: list[str] = []
+    for r in rows:
+        names[r.ticker] = f"{fund_icon(r.ticker, r.uk_id)} {esc(r.fund_name or r.ticker)}".strip()
+        if r.status == "imported":
+            ok.setdefault(r.ticker, []).append(r.period)
+        elif r.status in ("doubt", "failed"):
+            why = esc((r.last_error or "без пояснения")[:160])
+            bad.append(f"❌ {names[r.ticker]} · {mm(r.period)} — {why} · {link(r.url)}")
+    lines = [f"✅ {names[tk]} — {len(ps)} мес. ({mm(min(ps))}–{mm(max(ps))})" if len(ps) > 1
+             else f"✅ {names[tk]} — {mm(ps[0])}" for tk, ps in sorted(ok.items(), key=lambda x: names[x[0]])]
+    head = f"<b>Справки СЧА · залито {sum(len(v) for v in ok.values())}" + (f", не залито {len(bad)}" if bad else "") + "</b>"
+    return "\n".join([head, *lines, *bad])
 
 
 def _sweep_lost(eng) -> None:
