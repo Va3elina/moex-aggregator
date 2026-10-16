@@ -870,7 +870,8 @@ export default function PortfolioFundPicker({
     resetWhenLocked = false, compact = false, iconOnly = false,
 }: PortfolioFundPickerProps) {
     const { t } = useTranslation();
-    const modalTitle = title ?? t('Фонды акций');
+    // В списке есть облигации (секция «Облигации») — заголовок общий.
+    const modalTitle = title ?? (funds.some(isBondFund) ? t('Фонды') : t('Фонды акций'));
     const allLabelText = allLabel ?? t('Все фонды акций');
     const [open, setOpen] = useState(false);
 
