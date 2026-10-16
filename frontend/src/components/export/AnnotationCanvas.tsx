@@ -123,6 +123,8 @@ export interface AnnotationCanvasHandle {
     undo: () => void;
     redo: () => void;
     clear: () => void;
+    /** Удалить выделенные объекты. false — выделения не было, ничего не удалено. */
+    deleteSelected: () => boolean;
     exportToCanvas: () => HTMLCanvasElement | null;
     getObjectsCount: () => number;
     canUndo: () => boolean;
@@ -158,11 +160,13 @@ interface Props {
      * не срабатывало (нужно было ткнуть в соседнее и вернуться).
      */
     onSelectionStyle?: (style: { strokeWidth: number; color?: string }) => void;
+    /** Есть ли выделение. Кнопка корзины: выделено — удаляет его, нет — всё. */
+    onSelectionChange?: (hasSelection: boolean) => void;
 }
 
 const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
     ({ background, tool, color, strokeWidth, pixelScale, onHistoryChange, onShapeCreated,
-       colorPresets, onSelectionStyle }, ref) => {
+       colorPresets, onSelectionStyle, onSelectionChange }, ref) => {
         const canvasDpr = useCallback(
             () => pixelScale ?? fallbackCanvasDpr(),
             [pixelScale],
@@ -188,6 +192,8 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         const onHistoryChangeRef = useRef(onHistoryChange);
         const onSelectionStyleRef = useRef(onSelectionStyle);
         const colorPresetsRef = useRef(colorPresets);
+        const onSelectionChangeRef = useRef(onSelectionChange);
+        useEffect(() => { onSelectionChangeRef.current = onSelectionChange; }, [onSelectionChange]);
         useEffect(() => { toolRef.current = tool; }, [tool]);
         useEffect(() => { colorRef.current = color; }, [color]);
         useEffect(() => { strokeWidthRef.current = strokeWidth; }, [strokeWidth]);
@@ -232,6 +238,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             } finally {
                 restoringRef.current = false;
             }
+            onSelectionChangeRef.current?.(false);
             onHistoryChangeRef.current?.();
         }, [fabric]);
 
@@ -245,6 +252,22 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             fc.discardActiveObject();
             fc.requestRenderAll();
             saveSnapshot(); // очистка — тоже шаг истории, её можно отменить
+            onSelectionChangeRef.current?.(false);
+        }, [saveSnapshot]);
+
+        // Удаление выделенного (кнопка корзины и Delete/Backspace). getActiveObjects
+        // покрывает и мультивыделение рамкой; discard до remove, чтобы объекты
+        // вернулись из группы выделения в координаты холста.
+        const deleteSelected = useCallback(() => {
+            const fc = fabricRef.current;
+            const objs = fc?.getActiveObjects() ?? [];
+            if (!fc || objs.length === 0) return false;
+            fc.discardActiveObject();
+            fc.remove(...objs);
+            fc.requestRenderAll();
+            saveSnapshot();
+            onSelectionChangeRef.current?.(false);
+            return true;
         }, [saveSnapshot]);
 
         // Init fabric.Canvas один раз при загрузке fabric и DOM-ready.
@@ -369,9 +392,11 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             };
             const onSelectionEvent = (e: { selected?: FabricObject[] }) => {
                 reportSelectionStyle(e.selected?.[0]);
+                onSelectionChangeRef.current?.(true);
             };
             fc.on('selection:created', onSelectionEvent);
             fc.on('selection:updated', onSelectionEvent);
+            fc.on('selection:cleared', () => onSelectionChangeRef.current?.(false));
 
             fc.on('mouse:down', (opt) => {
                 if (toolRef.current === 'pen') return; // pen handled by PencilBrush
@@ -579,10 +604,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
 
                 if (e.key !== 'Delete' && e.key !== 'Backspace') return;
                 if (!active || editingText) return;
-                fcLocal.remove(active);
-                fcLocal.discardActiveObject();
-                fcLocal.requestRenderAll();
-                saveSnapshot();
+                deleteSelected();
                 e.preventDefault();
             };
             window.addEventListener('keydown', onKeyDown);
@@ -762,6 +784,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 undo,
                 redo,
                 clear: clearAll,
+                deleteSelected,
                 exportToCanvas: () => {
                     const fc = fabricRef.current;
                     if (!fc) return null;
@@ -776,7 +799,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 canUndo: () => historyIdxRef.current > 0,
                 canRedo: () => historyIdxRef.current < historyRef.current.length - 1,
             }),
-            [undo, redo, clearAll],
+            [undo, redo, clearAll, deleteSelected],
         );
 
         if (!fabric) {

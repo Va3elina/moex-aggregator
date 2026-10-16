@@ -40,6 +40,8 @@ interface Props {
     canUndo: boolean;
     canRedo: boolean;
     canClear: boolean;
+    /** Есть выделение — корзина удаляет его, а не всю разметку. */
+    hasSelection: boolean;
     onToolChange: (tool: AnnotationTool) => void;
     onColorChange: (color: string) => void;
     onStrokeWidthChange: (width: number) => void;
@@ -55,6 +57,7 @@ export default function AnnotationToolbar({
     canUndo,
     canRedo,
     canClear,
+    hasSelection,
     onToolChange,
     onColorChange,
     onStrokeWidthChange,
@@ -255,8 +258,8 @@ export default function AnnotationToolbar({
                 disabled={!canClear}
                 className="editorial-press rounded-lg p-3 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                 style={buttonStyle}
-                aria-label={t('Очистить всю разметку')}
-                title={t('Очистить всю разметку')}
+                aria-label={t(hasSelection ? 'Удалить выделенное' : 'Очистить всю разметку')}
+                title={t(hasSelection ? 'Удалить выделенное' : 'Очистить всю разметку')}
             >
                 <Trash2 size={20} />
             </button>
