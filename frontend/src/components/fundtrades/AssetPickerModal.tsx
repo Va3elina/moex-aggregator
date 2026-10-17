@@ -4,7 +4,7 @@ import ModalLayer from '../../components/ModalLayer';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { Search, X, Star, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import InstrumentIcon from '../InstrumentIcon';
-import { resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
+import { resolveFundTicker, fundAssetName, fundAssetColor, resolveFundIconTicker } from '../../config/fundConfig';
 import { formatCompact } from '../../utils/formatNumber';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 
@@ -217,6 +217,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
     // каноничное имя и фирменный цвет. Лого — через InstrumentIcon (тот же путь,
     // что в ОИ/Сезонности: STOCK_LOGO_OVERRIDE → стикерпак → /logos/<тикер>.png).
     const ticker = resolveFundTicker(asset.asset_name, asset.isin);
+    const iconTicker = resolveFundIconTicker(asset.asset_name, asset.isin);
     const color = fundAssetColor(asset.asset_name, asset.isin);
     const displayName = fundAssetName(asset.asset_name, asset.isin);
     const isFavorite = favorites.includes(asset.key);
@@ -231,13 +232,11 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         className="instrument-item flex items-center gap-3 px-3 py-1 rounded-lg transition-colors"
         style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
       >
-        {/* Лого: InstrumentIcon по резолвнутому тикеру (акция); ОФЗ — герб Минфина
-            (raw_152, как у индекса RGBI); иначе — цветная точка по фирменному
-            цвету бумаги (корпоблигации/денежный рынок без тикера). */}
-        {ticker ? (
-          <InstrumentIcon sectype={ticker} size={28} rounded="full" />
-        ) : isOfzBond(asset.asset_name) ? (
-          <InstrumentIcon sectype="RB" size={28} rounded="full" />
+        {/* Лого: resolveFundIconTicker — акция, гособлигация (герб) или лого
+            эмитента корпоблигации; иначе — цветная точка по фирменному цвету
+            бумаги (денежный рынок, эмитенты без лого). */}
+        {iconTicker ? (
+          <InstrumentIcon sectype={iconTicker} size={28} rounded="full" />
         ) : (
           <span
             className="flex-shrink-0 rounded-full"

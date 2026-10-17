@@ -49,7 +49,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 import { useGrowReveal } from '../../hooks/useGrowReveal';
-import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName, isOfzBond } from '../../config/fundConfig';
+import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName, resolveFundIconTicker } from '../../config/fundConfig';
 import InstrumentIcon from '../../components/InstrumentIcon';
 import Donut from '../../components/funds/Donut';
 import FundDetailModal, {
@@ -1526,12 +1526,11 @@ function MoversTab({
   );
 }
 
-// Лого бумаги в строке movers: ISIN → тикер → InstrumentIcon; ОФЗ → герб Минфина
-// (raw_152); иначе (корпоблигация без тикера) → цветная точка.
+// Лого бумаги в строке movers: resolveFundIconTicker → InstrumentIcon; гособлигация → герб
+// (OFZ_GERB), корпоблигация → лого эмитента; иначе → цветная точка.
 function MoverAssetMark({ name, isin, size = 20 }: { name: string; isin?: string | null; size?: number }) {
-  const ticker = resolveFundTicker(name, isin);
+  const ticker = resolveFundIconTicker(name, isin);
   if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
-  if (isOfzBond(name)) return <InstrumentIcon sectype="RB" size={size} rounded="full" />;
   const dot = fundAssetColor(name, isin) ?? 'var(--text-muted)';
   return (
     <span style={{ width: size, height: size, borderRadius: '50%', background: dot, flexShrink: 0, display: 'inline-block' }} />

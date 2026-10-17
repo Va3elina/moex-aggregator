@@ -19,7 +19,7 @@
 import { Fragment, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { t, getLang, monthGenitive, dateLocale } from '../../i18n';
-import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundTicker, isOfzBond } from '../../config/fundConfig';
+import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundTicker, resolveFundIconTicker } from '../../config/fundConfig';
 import Donut from '../funds/Donut';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
@@ -241,9 +241,8 @@ function fmtTotalRub(v: number): string {
 // Логотип бумаги: InstrumentIcon по резолвнутому тикеру (внутри свой фолбэк-круг),
 // иначе цветной круг с первой буквой.
 function AssetLogo({ h, size, color }: { h: FundPortfolioHolding; size: number; color: string }) {
-    const ticker = resolveFundTicker(h.asset_name, h.isin);
+    const ticker = resolveFundIconTicker(h.asset_name, h.isin);
     if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
-    if (isOfzBond(h.asset_name)) return <InstrumentIcon sectype="RB" size={size} rounded="full" />;
     return (
         <span style={{ width: size, height: size, borderRadius: '50%', background: color, color: '#fff', fontSize: Math.round(size * 0.42), fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, lineHeight: 1 }}>
             {(fundAssetName(h.asset_name, h.isin).trim().charAt(0) || '?').toUpperCase()}

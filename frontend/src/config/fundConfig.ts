@@ -1,5 +1,7 @@
 // Конфигурация фондов — общие константы для FundsMoneyPage и FundsCatalogPage
 
+import { BOND_GOV_ISINS, BOND_ISSUER_LOGO } from './bondIssuers.generated';
+
 // `img` (опц.) — путь к фирменному лого УК (рендерится круглым вместо буквы).
 // letter/bg/color остаются как fallback, если картинка не загрузится.
 export const UK_LOGOS: Record<string, { letter: string; bg: string; color: string; name: string; img?: string }> = {
@@ -561,4 +563,32 @@ export function fundAssetColor(name?: string | null, isin?: string | null): stri
  */
 export function isOfzBond(name?: string | null): boolean {
     return /^\s*ОФЗ(?:[\s\d-]|$)/i.test(name || '');
+}
+
+/**
+ * Гособлигация: ОФЗ, облигации субъектов РФ и муниципальные. По имени («ОФЗ …»)
+ * или по ISIN: справочник BOND_GOV_ISINS (ISS type ofz/subfederal/municipal) +
+ * префикс SU (его выдают только Минфину). Нужен ISIN, потому что у части строк
+ * агент-чтец СЧА не прочитал название и вместо имени стоит ISIN.
+ */
+export function isGovBond(name?: string | null, isin?: string | null): boolean {
+    if (isOfzBond(name)) return true;
+    if (!isin) return false;
+    return BOND_GOV_ISINS.has(isin) || /^SU\d{5}[A-Z]{4}\d$/.test(isin);
+}
+
+/**
+ * Иконка бумаги фонда — ОДНА логика на всех экранах /fund-trades и /funds:
+ * значение для <InstrumentIcon sectype>. Акция → её тикер (как раньше);
+ * гособлигация → 'RB' (герб, OFZ_GERB); корпоблигация → тикер акции эмитента
+ * (или ключ лого эмитента без акций). Иначе undefined — экран рисует свой кружок.
+ *
+ * Только для иконки: имя, цвет и график бумаги по-прежнему идут через
+ * resolveFundTicker — облигация не должна превращаться в акцию эмитента.
+ */
+export function resolveFundIconTicker(name?: string | null, isin?: string | null): string | undefined {
+    const stock = resolveFundTicker(name, isin);
+    if (stock) return stock;
+    if (isGovBond(name, isin)) return 'RB';
+    return isin ? BOND_ISSUER_LOGO[isin] : undefined;
 }
