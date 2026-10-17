@@ -41,7 +41,7 @@ import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../fundtrade
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import CompanyFlowsHistogram from '../fundtrades/CompanyFlowsHistogram';
 import { scaleOf, fmtSignedNum } from '../fundtrades/PortfolioMoversPanel';
-import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor, isOfzBond } from '../../config/fundConfig';
+import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor, resolveFundIconTicker } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import Donut from './Donut';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
@@ -129,12 +129,11 @@ function fmtVolShort(v: number): string {
     return tt('{{v}} тыс', { v: Math.round(v / 1e3) });
 }
 
-// Логотип бумаги: InstrumentIcon по резолвнутому тикеру; ОФЗ — иконка RB;
+// Логотип бумаги: resolveFundIconTicker (акция / герб гособлигации / эмитент);
 // иначе цветной круг (тот же фолбэк, что в таблице состава раньше).
 function HoldingLogo({ name, isin, idx, size }: { name: string; isin: string | null; idx: number; size: number }) {
-    const tk = resolveFundTicker(name, isin);
+    const tk = resolveFundIconTicker(name, isin);
     if (tk) return <InstrumentIcon sectype={tk} size={size} rounded="full" />;
-    if (isOfzBond(name)) return <InstrumentIcon sectype="RB" size={size} rounded="full" />;
     return (
         <span style={{
             width: size, height: size, borderRadius: '50%', flexShrink: 0, display: 'inline-block',
@@ -1177,10 +1176,9 @@ export function AssetHistoryModal({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                         {(() => {
                             // Лого актива по резолвнутому тикеру (как в Сезонности/ОИ).
-                            // ОФЗ — герб Минфина (raw_152), иначе без лого.
-                            const assetTk = resolveFundTicker(asset_name, isin);
+                            // Облигации — герб или лого эмитента, иначе без лого.
+                            const assetTk = resolveFundIconTicker(asset_name, isin);
                             if (assetTk) return <InstrumentIcon sectype={assetTk} size={isMobile ? 34 : 42} rounded="full" />;
-                            if (isOfzBond(asset_name)) return <InstrumentIcon sectype="RB" size={isMobile ? 34 : 42} rounded="full" />;
                             return null;
                         })()}
                         <div style={{ minWidth: 0 }}>
