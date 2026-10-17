@@ -416,7 +416,11 @@ def _step_result(eng, job) -> None:
     doubts = [str(d) for d in (a.get("doubts") or []) if d]
     bad_format = _format_problems(a, job.period) if job.agent_ok else []
     reason, import_result = None, None
-    if bad_format:
+    if job.agent_ok and not a.get("rows") and _num(a.get("gross_assets_rub")) > 0:
+        # Бумаг у фонда нет (только деньги/РЕПО/дебиторка) — агент так и прочитал. Заливать нечего,
+        # но это и не сомнение (16.10: WFLO в первый месяц, SAFE в годы «одного РЕПО»).
+        status, reason = "no_securities", None
+    elif bad_format:
         status, reason = "doubt", "ответ агента не в ожидаемом виде: " + "; ".join(bad_format)
     elif not job.agent_ok:
         status, reason = "doubt", "агент сомневается: " + (doubts[0] if doubts else "без пояснения")
@@ -457,12 +461,12 @@ def digest(eng) -> None:
                                WHERE f2.ticker = j.ticker AND h.source = ANY(:s)
                                  AND h.snapshot_date < CAST(j.period || '-01' AS date)) AS first_data
             FROM scha_jobs j LEFT JOIN funds f ON f.ticker = j.ticker
-            WHERE j.notified_at IS NULL AND j.status IN ('imported', 'report_only', 'doubt', 'failed')
+            WHERE j.notified_at IS NULL AND j.status IN ('imported', 'report_only', 'doubt', 'failed', 'no_securities')
             ORDER BY j.period, f.name
         """), {"s": list(MONTHLY_SOURCES)}).all()
         oldest_h = conn.execute(text("""
             SELECT extract(epoch FROM now() - min(updated_at)) / 3600 FROM scha_jobs
-            WHERE notified_at IS NULL AND status IN ('imported', 'report_only', 'doubt', 'failed')
+            WHERE notified_at IS NULL AND status IN ('imported', 'report_only', 'doubt', 'failed', 'no_securities')
         """)).scalar()
     if not rows or (busy and (oldest_h or 0) < DIGEST_MAX_WAIT_H):
         return
@@ -479,6 +483,8 @@ def digest(eng) -> None:
         stats = f"{n} бумаг, {num_ru(tot / g * 100, 1)} %" if g else f"{n} бумаг"
         if r.status == "imported":
             line = f"✅ {name} — {stats}"
+        elif r.status == "no_securities":
+            line = f"▫️ {name} — бумаг нет (только деньги и РЕПО), заливать нечего"
         elif r.status == "report_only":
             if not show_report:
                 continue
@@ -508,17 +514,22 @@ def _compact_digest(rows) -> str:
     def mm(per: str) -> str:
         return f"{per[5:7]}.{per[:4]}"
     ok: dict[str, list[str]] = {}
+    empty: dict[str, list[str]] = {}
     names: dict[str, str] = {}
     bad: list[str] = []
     for r in rows:
         names[r.ticker] = f"{fund_icon(r.ticker, r.uk_id)} {esc(r.fund_name or r.ticker)}".strip()
         if r.status == "imported":
             ok.setdefault(r.ticker, []).append(r.period)
+        elif r.status == "no_securities":
+            empty.setdefault(r.ticker, []).append(r.period)
         elif r.status in ("doubt", "failed"):
             why = esc((r.last_error or "без пояснения")[:160])
             bad.append(f"❌ {names[r.ticker]} · {mm(r.period)} — {why} · {link(r.url)}")
     lines = [f"✅ {names[tk]} — {len(ps)} мес. ({mm(min(ps))}–{mm(max(ps))})" if len(ps) > 1
              else f"✅ {names[tk]} — {mm(ps[0])}" for tk, ps in sorted(ok.items(), key=lambda x: names[x[0]])]
+    lines += [f"▫️ {names[tk]} — бумаг нет (деньги и РЕПО): {len(ps)} мес. ({mm(min(ps))}–{mm(max(ps))})" if len(ps) > 1
+              else f"▫️ {names[tk]} — бумаг нет (деньги и РЕПО): {mm(ps[0])}" for tk, ps in sorted(empty.items())]
     head = f"<b>Справки СЧА · залито {sum(len(v) for v in ok.values())}" + (f", не залито {len(bad)}" if bad else "") + "</b>"
     return "\n".join([head, *lines, *bad])
 
