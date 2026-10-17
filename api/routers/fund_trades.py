@@ -166,6 +166,9 @@ CF_MIN_GROSS_FLOW_3Y_RUB = 30_000_000  # 30 млн ₽ оборота за 3 г�
 # дырявые импорты и AKME 2021-24 (кэш ~30% — исключение консервативно: месяц
 # мостится, фантомов нет). Распределение по 473 снапшотам: 393 ≥ 90, 46 < 80.
 FT_COMPLETE_WSUM_MIN = 80
+# Месяцы, прочитанные агентом-чтецом (scha_jobs.status='imported'), — полные без этого порога:
+# агент сам сверяет строки с итогами справки, а у фондов облигаций в деньгах и РЕПО бывает
+# 20–97 % активов (SAFE 2024–2025: бумаг 3–30 %), и порог выкидывал бы честные месяцы (17.10.2026).
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1128,7 +1131,10 @@ def top_movers(
             WHERE source = ANY(:sources)
               AND snapshot_date >= :floor
             GROUP BY fund_id, snapshot_date
-            HAVING COALESCE(SUM(weight), 0) >= :wmin
+            HAVING (COALESCE(SUM(weight), 0) >= :wmin
+                OR EXISTS (SELECT 1 FROM scha_jobs sj JOIN funds sf ON sf.ticker = sj.ticker
+                           WHERE sf.fund_id = fund_holdings_history.fund_id AND sj.status = 'imported'
+                             AND sj.period = to_char(fund_holdings_history.snapshot_date, 'YYYY-MM')))
         ),
         anchor AS (
             -- Якорь = выбранный месяц (as_of) ТОЧНО, иначе — самый свежий месяц набора.
@@ -1321,7 +1327,10 @@ def top_movers(
             WHERE source = ANY(:sources)
               AND snapshot_date >= :floor
             GROUP BY fund_id, snapshot_date
-            HAVING COALESCE(SUM(weight), 0) >= :wmin
+            HAVING (COALESCE(SUM(weight), 0) >= :wmin
+                OR EXISTS (SELECT 1 FROM scha_jobs sj JOIN funds sf ON sf.ticker = sj.ticker
+                           WHERE sf.fund_id = fund_holdings_history.fund_id AND sj.status = 'imported'
+                             AND sj.period = to_char(fund_holdings_history.snapshot_date, 'YYYY-MM')))
         )
         SELECT MAX(h.snapshot_date) AS d
         FROM fund_holdings_history h
@@ -1345,7 +1354,10 @@ def top_movers(
             WHERE source = ANY(:sources)
               AND snapshot_date >= :floor
             GROUP BY fund_id, snapshot_date
-            HAVING COALESCE(SUM(weight), 0) >= :wmin
+            HAVING (COALESCE(SUM(weight), 0) >= :wmin
+                OR EXISTS (SELECT 1 FROM scha_jobs sj JOIN funds sf ON sf.ticker = sj.ticker
+                           WHERE sf.fund_id = fund_holdings_history.fund_id AND sj.status = 'imported'
+                             AND sj.period = to_char(fund_holdings_history.snapshot_date, 'YYYY-MM')))
         ),
         anchor AS (
             SELECT COALESCE(
@@ -2543,7 +2555,10 @@ def company_flows(
         WHERE fund_id = ANY(:fids) AND source = ANY(:sources)
           AND snapshot_date <= :cutoff AND snapshot_date >= :floor
         GROUP BY fund_id, snapshot_date
-        HAVING COALESCE(SUM(weight), 0) >= :wmin
+        HAVING (COALESCE(SUM(weight), 0) >= :wmin
+            OR EXISTS (SELECT 1 FROM scha_jobs sj JOIN funds sf ON sf.ticker = sj.ticker
+                       WHERE sf.fund_id = fund_holdings_history.fund_id AND sj.status = 'imported'
+                         AND sj.period = to_char(fund_holdings_history.snapshot_date, 'YYYY-MM')))
     """), {"fids": list(per_fund_rows.keys()), "sources": list(MONTHLY_SOURCES),
            "cutoff": cutoff, "wmin": FT_COMPLETE_WSUM_MIN, "floor": FT_HISTORY_FLOOR}).fetchall()
     fund_months_all = defaultdict(set)
@@ -2883,7 +2898,10 @@ def company_weights(
         WHERE fund_id = ANY(:fids) AND source = ANY(:sources)
           AND snapshot_date <= :cutoff AND snapshot_date >= :floor
         GROUP BY fund_id, snapshot_date
-        HAVING COALESCE(SUM(weight), 0) >= :wmin
+        HAVING (COALESCE(SUM(weight), 0) >= :wmin
+            OR EXISTS (SELECT 1 FROM scha_jobs sj JOIN funds sf ON sf.ticker = sj.ticker
+                       WHERE sf.fund_id = fund_holdings_history.fund_id AND sj.status = 'imported'
+                         AND sj.period = to_char(fund_holdings_history.snapshot_date, 'YYYY-MM')))
     """), {"fids": list(fund_meta.keys()), "sources": list(MONTHLY_SOURCES),
            "cutoff": cutoff, "wmin": FT_COMPLETE_WSUM_MIN,
            "floor": FT_HISTORY_FLOOR}).fetchall()
