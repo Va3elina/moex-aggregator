@@ -133,7 +133,10 @@ _FT_SQL = text("""
     WHERE source = ANY(:sources)
       AND snapshot_date >= :floor
     GROUP BY fund_id, snapshot_date
-    HAVING COALESCE(SUM(weight), 0) >= :wmin
+    HAVING (COALESCE(SUM(weight), 0) >= :wmin
+        OR EXISTS (SELECT 1 FROM scha_jobs sj JOIN funds sf ON sf.ticker = sj.ticker
+                   WHERE sf.fund_id = fund_holdings_history.fund_id AND sj.status = 'imported'
+                     AND sj.period = to_char(fund_holdings_history.snapshot_date, 'YYYY-MM')))
   ),
   last_months AS (
     SELECT DISTINCT date_trunc('month', snapshot_date)::date AS m
