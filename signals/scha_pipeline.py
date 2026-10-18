@@ -30,6 +30,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -150,6 +151,16 @@ def notify_once(conn, key: str, text_: str) -> None:
     """), {"k": key}).first()
     if fresh:
         notify(text_)
+
+
+def notify_first(conn, key: str, text_: str, silent: bool = False) -> None:
+    """Событие, о котором говорим один раз навсегда («все фонды за месяц загружены»)."""
+    fresh = conn.execute(text("""
+        INSERT INTO scha_notify_log (key, sent_at) VALUES (:k, now())
+        ON CONFLICT (key) DO NOTHING RETURNING key
+    """), {"k": key}).first()
+    if fresh:
+        notify(text_, silent=silent)
 
 
 def event(conn, job_id, ev: str, detail: str = "") -> None:
@@ -547,6 +558,102 @@ def _sweep_lost(eng) -> None:
         _fail(eng, job, f"агент не ответил: {job.q_error or 'очередь сдалась'}")
 
 
+# ── итог месяца по типу фондов ────────────────────────────────────────────
+# Вадим 18.10: «пусть приходит, что все фонды такого-то типа за такой-то месяц загружены;
+# и если что-то отвалилось — что именно и почему». Сводка пачки (digest) говорит о каждой
+# справке, а здесь — о месяце целиком: ✅ когда собраны все фонды типа, ⏳ если к LAG_DAYS
+# кого-то нет (молчание сканера тоже видно: фонд просто окажется в списке «нет»).
+
+CATEGORY_TITLE = {"stocks": "Фонды акций", "bonds": "Облигационные фонды"}
+LAG_DAYS = (20, 28)        # дни месяца, когда напоминаем про недостающих за прошлый месяц
+LAG_DRY = os.environ.get("SCHA_STATUS_DRY") == "1"   # посмотреть тексты, не отправляя и не отмечая
+
+
+def _prev_period(today: date, back: int = 1) -> str:
+    y, m = today.year, today.month - back
+    while m < 1:
+        y, m = y - 1, m + 12
+    return f"{y}-{m:02d}"
+
+
+def _site_down(conn, url: str) -> bool:
+    """Страница раскрытия УК не открывалась последние двое суток (ключ из _scan)."""
+    site = urllib.parse.urlsplit(url).hostname if "://" in url else None
+    if not site:
+        return False
+    return bool(conn.execute(text(
+        "SELECT 1 FROM scha_notify_log WHERE key = :k AND sent_at > now() - interval '2 days'"),
+        {"k": f"scha:site:{site}"}).first())
+
+
+def _month_status(conn, period: str) -> dict[str, list[dict]]:
+    """Фонды конвейера (col.SOURCES) по типу: загружен ли месяц и если нет — почему."""
+    start = f"{period}-01"
+    funds = conn.execute(text("""
+        SELECT f.ticker, f.name, f.uk_id, coalesce(f.category, 'other') AS category,
+               EXISTS (SELECT 1 FROM fund_holdings_history h
+                       WHERE h.fund_id = f.fund_id AND h.source = ANY(:s)
+                         AND h.snapshot_date >= CAST(:d AS date)
+                         AND h.snapshot_date < CAST(:d AS date) + interval '1 month') AS loaded,
+               (SELECT to_char(max(h.snapshot_date), 'YYYY-MM') FROM fund_holdings_history h
+                       WHERE h.fund_id = f.fund_id AND h.source = ANY(:s)) AS last_period
+        FROM funds f WHERE f.ticker = ANY(:t)
+    """), {"s": list(MONTHLY_SOURCES), "d": start, "t": list(col.SOURCES)}).mappings().all()
+    jobs = {r.ticker: r for r in conn.execute(text("""
+        SELECT DISTINCT ON (ticker) ticker, status, last_error, url, notified_at
+        FROM scha_jobs WHERE period = :p ORDER BY ticker, updated_at DESC
+    """), {"p": period}).all()}
+    out: dict[str, list[dict]] = {}
+    for f in funds:
+        j = jobs.get(f["ticker"])
+        st = dict(f, job=j, done=f["loaded"] or (j is not None and j.status == "no_securities"))
+        if not st["done"]:
+            if j is not None and j.status in ("new", "text_ready", "agent_wait", "agent_done"):
+                st["why"] = "⏳ справка найдена, агент читает"
+            elif j is not None and j.status in ("doubt", "failed"):
+                st["why"] = f"❌ не залито: {esc((j.last_error or 'без пояснения')[:160])} · {link(j.url)}"
+            elif j is not None and j.status == "report_only":
+                st["why"] = "🟢 прочитано, но не залито (режим отчёта)"
+            elif _site_down(conn, col.SOURCES[f["ticker"]][1]):
+                st["why"] = "⚠️ страница раскрытия УК не открывается"
+            else:
+                last = month_ru(f["last_period"]) if f["last_period"] else "нет"
+                st["why"] = f"на сайте УК справки ещё нет (в базе последняя: {last})"
+        out.setdefault(f["category"], []).append(st)
+    return out
+
+
+def month_status(eng, today: date | None = None) -> None:
+    """✅ «все фонды типа за месяц загружены» — один раз; ⏳ напоминание LAG_DAYS — один раз в каждый
+    такой день. Месяц — прошлый календарный; в первые 10 дней ещё и позапрошлый (поздние УК)."""
+    today = today or date.today()
+    periods = [_prev_period(today)] + ([_prev_period(today, 2)] if today.day <= 10 else [])
+    lag_day = max((d for d in LAG_DAYS if today.day >= d), default=None)
+    with eng.begin() as conn:
+        for period in periods:
+            for cat, funds in sorted(_month_status(conn, period).items()):
+                title = f"{CATEGORY_TITLE.get(cat, 'Фонды · ' + cat)} · {month_ru(period)}"
+                missing = [f for f in funds if not f["done"]]
+                if not missing:
+                    # итог — после сводки пачки, а не раньше неё
+                    if any(f["job"] is not None and f["job"].notified_at is None for f in funds):
+                        continue
+                    msg, key = (f"✅ <b>{title}</b>\nЗагружены все {len(funds)} фондов",
+                                f"scha:complete:{cat}:{period}")
+                elif lag_day and period == periods[0]:
+                    lines = [f"{fund_icon(f['ticker'], f['uk_id'])} {esc(f['name'] or f['ticker'])} — {f['why']}".strip()
+                             for f in sorted(missing, key=lambda x: x["name"] or x["ticker"])]
+                    msg = (f"⏳ <b>{title}</b> — загружено {len(funds) - len(missing)} из {len(funds)}\n"
+                           + "\n".join(lines))
+                    key = f"scha:lag:{cat}:{period}:{lag_day}"
+                else:
+                    continue
+                if LAG_DRY:
+                    print(f"[{key}]\n{msg}\n")
+                    continue
+                notify_first(conn, key, msg)
+
+
 STEPS = {"new": _step_text, "text_ready": _step_enqueue, "agent_done": _step_result}
 
 
@@ -563,6 +670,10 @@ def work() -> int:
         except Exception as e:  # noqa: BLE001 — InfraError и неизвестное: повтор с паузой и пределом
             _infra_fail(eng, job, e)
     digest(eng)
+    try:
+        month_status(eng)
+    except Exception as e:  # noqa: BLE001 — итог месяца не должен ронять конвейер
+        log(f"итог месяца: {e}")
     return 0
 
 
