@@ -213,6 +213,26 @@ def scan() -> int:
             lock.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LOCK_SCAN})
 
 
+SITE_RETRY_SEC = 30   # 18.10: t-capital-funds.ru разово отдал страницу без списка (TMOS), через минуту — норма
+
+
+def _list_docs(tk: str, kind: str, arg: str) -> dict:
+    """Справки на странице раскрытия; пустой ответ или сбой — ещё одна попытка, потом ошибка.
+    Разовый сбой сайта УК не должен будить Вадима (тревога шлётся только после второй неудачи)."""
+    for attempt in (1, 2):
+        try:
+            docs = col.one_per_month(col.ADAPTERS[kind](tk, arg))
+            if not docs:
+                raise RuntimeError("на странице не нашлось ни одной справки (сменили вёрстку?)")
+            return docs
+        except Exception as e:  # noqa: BLE001
+            if attempt == 2:
+                raise
+            log(f"{tk}: страница раскрытия — {e}; повтор через {SITE_RETRY_SEC} с")
+            time.sleep(SITE_RETRY_SEC)
+    raise AssertionError("unreachable")
+
+
 def _scan(eng) -> int:
     with eng.begin() as conn:
         latest = _latest_periods(conn)
@@ -220,9 +240,7 @@ def _scan(eng) -> int:
     found, failed = [], 0
     for tk, (kind, arg) in col.SOURCES.items():
         try:
-            docs = col.one_per_month(col.ADAPTERS[kind](tk, arg))
-            if not docs:
-                raise RuntimeError("на странице не нашлось ни одной справки (сменили вёрстку?)")
+            docs = _list_docs(tk, kind, arg)
         except Exception as e:  # noqa: BLE001 — один сайт не роняет остальные
             failed += 1
             log(f"{tk}: страница раскрытия — {e}")
