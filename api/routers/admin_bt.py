@@ -5,7 +5,7 @@ API ничего не считает: кладёт прогон в очеред�
 человек мышкой, агент делает вызовом (или `python -m backtest.cli` на сервере).
 Все ручки — обычные def (не async): SQLAlchemy синхронный, см. async_endpoints_blocking.
 """
-import csv, json, os
+import csv, json, os, re
 from datetime import date, timedelta
 from typing import Any, Optional
 
@@ -28,6 +28,8 @@ NAMES = {'AF': 'Аэрофлот', 'AK': 'АФК Система', 'BR': 'Brent',
          'SZ': 'Сегежа', 'Si': 'Доллар', 'TT': 'Татнефть', 'VB': 'ВТБ', 'CNYRUBF': 'Юань вечный',
          'USDRUBF': 'Доллар вечный', 'EURRUBF': 'Евро вечный', 'GLDRUBF': 'Золото вечное', 'IMOEXF': 'Индекс МосБиржи вечный',
          'SBERF': 'Сбербанк вечный', 'GAZPF': 'Газпром вечный'}
+STRATEGIES = {'screener_vb': 'Скринер VB: объёмный пробой лонг + шорт (акции TQBR, дневки)'}
+STOCK_RE = re.compile(r'^[A-Z][A-Z0-9]{0,11}$')         # тикер акции TQBR: график по дневным свечам candles (type='stock')
 TF = {5, 15, 60, 1440}
 MAX_DAYS = {5: 200, 15: 600, 60: 2500, 1440: 5000}     # потолок диапазона на запрос, чтобы не отдать 300 тыс. свечей
 
@@ -35,6 +37,7 @@ MAX_DAYS = {5: 200, 15: 600, 60: 2500, 1440: 5000}     # потолок диап
 class RunIn(BaseModel):
     rule: Any = Field(None, description="имя пресета или правило целиком (см. backtest/rules.py)")
     code: Optional[str] = Field(None, max_length=60_000, description="стратегия на Python (backtest/pyengine.py); исполняется в bt-sandbox")
+    strategy: Optional[str] = Field(None, description="готовая стратегия Стенда: screener_vb (backtest/screener_vb.py)")
     params: Optional[dict] = None
     name: Optional[str] = None
     exec: str = 'close'
@@ -119,9 +122,11 @@ def python_inspect(body: CodeIn, _admin: User = Depends(require_admin)):
 
 
 @router.get("/meta")
-def meta(_admin: User = Depends(require_admin)):
+def meta(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
     """Всё, из чего строится форма прогона: пресеты правил, бумаги, тарифы, режимы."""
-    return {'rules': [{'id': k, 'name': r['name'], 'frozen': bool(r.get('frozen')), 'universe': r['universe'],
+    stocks = cache.get_or_compute('bt:stocks:v1', lambda: _rows(db, """SELECT sec_id AS st, name FROM instruments
+        WHERE type = 'stock' AND name IS NOT NULL ORDER BY sec_id""", {}), 3600)
+    return {'strategies': [{'id': k, 'name': v} for k, v in STRATEGIES.items()], 'stocks': stocks, 'rules': [{'id': k, 'name': r['name'], 'frozen': bool(r.get('frozen')), 'universe': r['universe'],
                        'rule': r} for k, r in bt_rules.PRESETS.items()],
             'instruments': [{'st': s, 'name': NAMES.get(s, s)} for s in bt_store.UNIVERSE_ALL],
             'tariffs': {k: v[-1][1] for k, v in bt_costs.TARIFFS.items()}, 'tariff_labels': bt_costs.TARIFF_LABELS,
@@ -138,7 +143,9 @@ def meta(_admin: User = Depends(require_admin)):
 @router.post("/runs")
 def create_run(body: RunIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     spec = json.loads(body.model_dump_json())
-    if body.code:                                          # здесь код только РАЗБИРАЕТСЯ (ast), не исполняется
+    if body.strategy:                                      # готовая стратегия: правила в коде Стенда, проверять нечего
+        if body.strategy not in STRATEGIES: raise HTTPException(422, f'стратегия: {", ".join(STRATEGIES)}')
+    elif body.code:                                          # здесь код только РАЗБИРАЕТСЯ (ast), не исполняется
         info = _inspect(body.code)
         if info['error']: raise HTTPException(422, info['error'])
         if body.sweep: raise HTTPException(422, 'перебор параметров для стратегий на Python пока не поддержан')
@@ -245,6 +252,16 @@ def _candles(db, st, tf, a, b):
             'v': [float(r.volume or 0) for r in rows], 'secid': secids}
 
 
+def _candles_stock(db, st, a, b):
+    """Акция: дневные свечи TQBR как есть (с выходными сессиями) — бумаги стратегий на акциях (screener_vb)."""
+    rows = db.execute(text("""SELECT extract(epoch from date_trunc('day', begin_time))::bigint AS time, open, high, low, close, volume
+        FROM candles WHERE secid = :st AND interval = 24 AND type = 'stock' AND begin_time >= :a AND begin_time < :b
+        ORDER BY begin_time"""), {'st': st, 'a': a, 'b': b + timedelta(days=1)}).fetchall()
+    return {'st': st, 'tf': 1440, 'from': a.isoformat(), 'to': b.isoformat(), 't': [r.time for r in rows],
+            'o': [float(r.open) for r in rows], 'h': [float(r.high) for r in rows], 'l': [float(r.low) for r in rows],
+            'c': [float(r.close) for r in rows], 'v': [float(r.volume or 0) for r in rows], 'secid': [[0, st]] if rows else []}
+
+
 @router.get("/candles")
 def candles(st: str, tf: int = 5, date_from: Optional[date] = Query(None, alias='from'),
             date_to: Optional[date] = Query(None, alias='to'), db: Session = Depends(get_db),
@@ -253,9 +270,13 @@ def candles(st: str, tf: int = 5, date_from: Optional[date] = Query(None, alias=
     time — секунды «как будто МСК = UTC»: график показывает московское время без пересчёта поясов.
     Страница просит куски по календарным границам (месяц / квартал / год) — поэтому ответ кэшируется в Redis:
     прошлое — на сутки, кусок с сегодняшним днём — на 2 минуты."""
-    if tf not in TF or st not in bt_store.UNIVERSE_ALL:
-        raise HTTPException(422, 'tf: 5 | 15 | 60 | 1440; st — тип фьючерса из /meta')
+    if tf not in TF or (st not in bt_store.UNIVERSE_ALL and not STOCK_RE.match(st)):
+        raise HTTPException(422, 'tf: 5 | 15 | 60 | 1440; st — тип фьючерса из /meta или тикер акции')
     b = date_to or date.today()
+    if st not in bt_store.UNIVERSE_ALL:                    # акция: только дневные свечи, любой запрошенный кусок
+        a = max(date_from or (b - timedelta(days=MAX_DAYS[1440])), b - timedelta(days=MAX_DAYS[1440]))
+        ttl = 120 if b >= date.today() else 86400
+        return cache.get_or_compute(f'bt:candles:stock:v1:{st}:{a}:{b}', lambda: _candles_stock(db, st, a, b), ttl)
     a = max(date_from or (b - timedelta(days=90 if tf == 5 else MAX_DAYS[tf])), b - timedelta(days=MAX_DAYS[tf]))
     ttl = 120 if b >= date.today() else 86400
     return cache.get_or_compute(f'bt:candles:v2:{st}:{tf}:{a}:{b}', lambda: _candles(db, st, tf, a, b), ttl)

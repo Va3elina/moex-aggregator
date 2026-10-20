@@ -1,10 +1,10 @@
 // Стенд: мелкие кирпичи интерфейса — логотип бумаги, выпадающее меню, столбики.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { LOGO, num } from './lib';
+import { GROUP, LOGO, num } from './lib';
 
 export function Logo({ st, size = 20 }: { st: string; size?: number }) {
   const [step, setStep] = useState(0);
-  const t = LOGO[st];
+  const t = LOGO[st] ?? (GROUP[st] ? undefined : st);   // не тип фьючерса — значит тикер акции: у неё свой логотип
   if (!t || step > 1) return <span className="bt-logo-fb" style={{ width: size, height: size, fontSize: size * 0.42 }}>{st}</span>;
   return <img className="bt-logo-img" alt="" width={size} height={size} loading="lazy" src={step === 0 ? `/logos/sm/${t}.png` : `/logos/${t}.png`} onError={() => setStep(s => s + 1)} />;
 }

@@ -93,10 +93,14 @@ export default function BacktestPage() {
     return () => { dead = true; };
   }, [prefs.compareRunId]);
 
-  const names = useMemo(() => new Map(meta?.instruments.map(i => [i.st, i.name]) ?? []), [meta]);
+  const names = useMemo(() => new Map([...(meta?.stocks ?? []), ...(meta?.instruments ?? [])].map(i => [i.st, i.name])), [meta]);
+  // акция (стратегии на акциях): у неё только дневные свечи — график всегда «Д», выбор таймфрейма не действует
+  const futures = useMemo(() => new Set(meta?.instruments.map(i => i.st) ?? []), [meta]);
+  const tfOf = useCallback((c: Prefs['cells'][number]) => meta && !futures.has(c.st) ? 1440 : c.tf, [meta, futures]);
   const tradesBySt = useMemo(() => { const m = new Map<string, BtTrade[]>(); for (const t of trades) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [trades]);
   const liveBySt = useMemo(() => { const m = new Map<string, BtLiveTrade[]>(); for (const t of live) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [live]);
-  const symRows: SymRow[] = useMemo(() => (meta?.instruments ?? []).map(i => ({ st: i.st, name: i.name })), [meta]);
+  const symRows: SymRow[] = useMemo(() => [...(meta?.instruments ?? []).map(i => ({ st: i.st, name: i.name })),
+    ...(meta?.stocks ?? []).filter(i => !futures.has(i.st)).map(i => ({ st: i.st, name: i.name, stock: true }))], [meta, futures]);
 
   const pickSymbol = (st: string) => { setCell(active, { st }); set(p => ({ recent: [st, ...p.recent.filter(x => x !== st)].slice(0, 8) })); setSearch(false); setSelKey(null); };
   const pickTrade = (t: BtTrade) => { setSelKey(tradeKey(t)); if (t.st !== cell.st) setCell(active, { st: t.st }); setFocus({ d: t.d, dOut: t.d_out, nonce: Date.now() }); if (prefs.panel === 'max') set({ panel: 'open' }); };
@@ -106,7 +110,7 @@ export default function BacktestPage() {
   const applySettings = (spec: any) => {
     const next = { ...spec, auto: true, checks: false, refresh: false }; const uni = JSON.stringify(next.universe ?? null); const day = new Date().toDateString();
     const ed = prefs.editor; const props = { ...(ed?.props ?? {}), capital: next.capital, perDay: next.slots, leverage: next.leverage, go_mult: next.go_mult, tariff: next.tariff, spread: next.spread, go: next.go, exec: next.exec, since: next.since ?? '', until: next.until ?? '', extra: (next.universe ?? []).filter((x: string) => x !== cell.st) };
-    set({ editor: next.code ? { code: ed?.code ?? '', ...ed, props, lang: 'python', py: next.code, pyParams: next.params ?? {} } : { ...ed, props, lang: 'rule', code: pretty(next.rule) } });
+    if (!next.strategy) set({ editor: next.code ? { code: ed?.code ?? '', ...ed, props, lang: 'python', py: next.code, pyParams: next.params ?? {} } : { ...ed, props, lang: 'rule', code: pretty(next.rule) } });
     const hit = runs.find(r => r.kind !== 'sweep' && r.status !== 'error' && JSON.stringify(r.spec?.universe ?? null) === uni && new Date(r.created_at).toDateString() === day && sameSpecKey(r.spec) === sameSpecKey(next));
     if (hit) { followRun.current = hit.id; set({ runId: hit.id }); return; }
     startRun(next, true);
@@ -154,7 +158,7 @@ export default function BacktestPage() {
       <div className="bt-toolbar">
         <button className="bt-tb sym" onClick={() => setSearch(true)} title="Выбрать инструмент (или просто начни печатать)"><Logo st={cell.st} size={20} /><b>{cell.st}</b><span className="bt-dim">{names.get(cell.st) ?? ''}</span></button>
         <i className="sep" />
-        <Menu label={<><b>{tfLabel(cell.tf)}</b> ▾</>} title="Таймфрейм">{close => <>{TFS.map(([v, , full]) => <MenuItem key={v} on={cell.tf === v} onClick={() => { setCell(active, { tf: v }); close(); }}>{full}</MenuItem>)}</>}</Menu>
+        <Menu label={<><b>{tfLabel(tfOf(cell))}</b> ▾</>} title="Таймфрейм">{close => <>{TFS.map(([v, , full]) => <MenuItem key={v} on={cell.tf === v} onClick={() => { setCell(active, { tf: v }); close(); }}>{full}</MenuItem>)}</>}</Menu>
         <i className="sep" />
         <Menu label={<>Индикаторы{inds.list.length ? <sup>{inds.list.length}</sup> : null}</>}>{close => <div data-theme="editorial-dark" className="bt-indmenu"><AddIndicatorMenu api={inds} hasVolume onDone={close} /></div>}</Menu>
         <button className={`bt-tb ${editor ? 'on' : ''}`} onClick={() => setEditor(e => !e)} title="Редактор стратегии: код правила, свойства счёта, запуск">{'{ }'} Стратегия</button>
@@ -176,7 +180,7 @@ export default function BacktestPage() {
           {prefs.panel !== 'max' && (
             <div className={`bt-grid l${prefs.layout}`}>
               {prefs.cells.slice(0, nCells).map((c, i) => (
-                <ChartCell key={i} st={c.st} tf={c.tf} active={i === active} multi={nCells > 1} rule={rule}
+                <ChartCell key={i} st={c.st} tf={tfOf(c)} active={i === active} multi={nCells > 1} rule={rule}
                   trades={tradesBySt.get(c.st) ?? EMPTY_T} live={liveBySt.get(c.st) ?? EMPTY_L} show={prefs.show} inds={inds}
                   focus={i === active ? focus : null} onActivate={() => { if (i !== active) set({ active: i }); }} />
               ))}

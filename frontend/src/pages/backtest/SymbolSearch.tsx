@@ -3,16 +3,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { GROUP } from './lib';
 import { Logo } from './ui';
 
-export interface SymRow { st: string; name: string }
+export interface SymRow { st: string; name: string; stock?: boolean }
+const groupOf = (r: SymRow) => r.stock ? 'Акции TQBR' : GROUP[r.st] ?? 'Другое';
 
 export default function SymbolSearch({ rows, current, recent, onPick, onClose }: { rows: SymRow[]; current: string; recent: string[]; onPick: (st: string) => void; onClose: () => void }) {
   const [q, setQ] = useState(''); const [grp, setGrp] = useState('Все'); const [idx, setIdx] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus(); }, []);
-  const groups = ['Все', ...new Set(rows.map(r => GROUP[r.st] ?? 'Другое'))];
+  const groups = ['Все', ...new Set(rows.map(groupOf))];
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
-    const f = rows.filter(r => (grp === 'Все' || GROUP[r.st] === grp) && (!s || r.st.toLowerCase().includes(s) || r.name.toLowerCase().includes(s)));
+    const f = rows.filter(r => (grp === 'Все' || groupOf(r) === grp) && (!s || r.st.toLowerCase().includes(s) || r.name.toLowerCase().includes(s)));
     return s ? f : [...f].sort((a, b) => (recent.indexOf(a.st) + 1 || 99) - (recent.indexOf(b.st) + 1 || 99));
   }, [rows, q, grp, recent]);
   const key = (e: React.KeyboardEvent) => {
@@ -30,7 +31,7 @@ export default function SymbolSearch({ rows, current, recent, onPick, onClose }:
         <div className="bt-symlist">
           {list.map((r, i) => (
             <button key={r.st} className={`bt-symrow ${i === idx ? 'hover' : ''} ${r.st === current ? 'on' : ''}`} onMouseEnter={() => setIdx(i)} onClick={() => onPick(r.st)}>
-              <Logo st={r.st} size={26} /><b>{r.st}</b><span>{r.name}<small>фьючерс · {GROUP[r.st] ?? ''} · MOEX</small></span>
+              <Logo st={r.st} size={26} /><b>{r.st}</b><span>{r.name}<small>{r.stock ? 'акция · TQBR · дневные свечи' : `фьючерс · ${GROUP[r.st] ?? ''} · MOEX`}</small></span>
             </button>
           ))}
           {!list.length && <div className="bt-nodata">Ничего не найдено</div>}

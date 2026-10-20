@@ -153,6 +153,7 @@
 /* настройки стратегии в шапке тестера: кнопки-чипы с формой */
 .bt-pop.up { top: auto; bottom: calc(100% + 4px); }
 .bt-thead .bt-menu.chip > .bt-tb { color: var(--dim); padding: 3px 10px; border: 1px solid var(--border); border-radius: 14px; white-space: nowrap; font-size: 12px; max-width: 360px; background: none; transition: color .12s, border-color .12s; }
+.bt-thead .bt-chip-static { color: var(--dim); padding: 3px 10px; border: 1px dashed var(--border); border-radius: 14px; white-space: nowrap; font-size: 12px; }
 .bt-thead .bt-menu.chip > .bt-tb:hover, .bt-thead .bt-menu.chip > .bt-tb.on { color: var(--text); border-color: var(--accent); }
 .bt-set { width: 400px; padding: 12px; gap: 11px; } .bt-set.wide { width: 470px; } .bt-set .bt-form-h { padding-top: 9px; }
 .bt-set-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); position: sticky; bottom: -5px; background: #1c1e23; padding-bottom: 5px; }

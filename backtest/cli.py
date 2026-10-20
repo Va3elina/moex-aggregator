@@ -6,6 +6,8 @@
     docker compose exec bt-worker python -m backtest.cli runs
     docker compose exec bt-worker python -m backtest.cli show 12 [--trades SS] [--last 10]
     docker compose exec bt-worker python -m backtest.cli data status | pull
+    docker compose exec bt-worker python -m backtest.cli data stocks-iss          # разово: акции TQBR, которых нет в БД (для скринера)
+    docker compose exec bt-worker python -m backtest.cli submit --strategy screener_vb --capital 10000000 --slots 10 --from 2012-01-01
 Локально, без БД (результат в файлы <BT_DATA>/runs/<имя>/):
     python -m backtest.cli run --rule algozavr --universe SS,Si --capital 1000000
     python -m backtest.cli rules
@@ -18,6 +20,8 @@ pd.set_option('display.width', 220); pd.set_option('display.max_columns', 40)
 
 
 def _spec(a):
+    if getattr(a, 'strategy', None):             # готовая стратегия Стенда (backtest/screener_vb.py): правила внутри
+        return {'strategy': a.strategy, 'name': a.name, 'capital': a.capital, 'slots': a.slots, 'since': a.since, 'until': a.until}
     base = {'name': a.name, 'exec': a.exec, 'universe': a.universe.split(',') if a.universe else None,
             'since': a.since, 'until': a.until, 'tariff': a.tariff, 'spread': a.spread, 'capital': a.capital,
             'slots': a.slots, 'go': a.go, 'go_limit': a.go_limit}
@@ -38,11 +42,12 @@ def _db():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest='cmd', required=True)
-    p = sp.add_parser('data'); p.add_argument('what', choices=['status', 'pull'])
+    p = sp.add_parser('data'); p.add_argument('what', choices=['status', 'pull', 'stocks-iss'])
     sp.add_parser('rules'); sp.add_parser('runs')
     for c in ('run', 'submit'):
         p = sp.add_parser(c); p.add_argument('--rule', help='пресет или путь к JSON правила')
         p.add_argument('--code', help='стратегия на Python: путь к файлу или «-» (stdin)'); p.add_argument('--params', help='PARAMS JSON')
+        p.add_argument('--strategy', choices=['screener_vb'], help='готовая стратегия: screener_vb — скринер объёмного пробоя на акциях TQBR')
         p.add_argument('--exec', default='close', choices=list(runner.EXEC))
         p.add_argument('--universe'); p.add_argument('--from', dest='since'); p.add_argument('--to', dest='until')
         p.add_argument('--tariff', default='trader', choices=list(costs.TARIFFS)); p.add_argument('--spread', default='c3')
@@ -54,7 +59,11 @@ def main():
     a = ap.parse_args()
 
     if a.cmd == 'data':
-        print(json.dumps(store.refresh() if a.what == 'pull' else store.status(), ensure_ascii=False, indent=1))
+        if a.what == 'stocks-iss':
+            from . import screener_vb
+            print(json.dumps(screener_vb.fetch_iss_extra(), ensure_ascii=False, indent=1))
+        else:
+            print(json.dumps(store.refresh() if a.what == 'pull' else store.status(), ensure_ascii=False, indent=1))
     elif a.cmd == 'rules':
         for k, r in R.PRESETS.items(): print(f"{k:14} {r['name']}")
     elif a.cmd == 'run':
@@ -69,7 +78,7 @@ def main():
             if r.get('orders'): info['orders'] = r['orders']
             py = (pybridge.to_frame(r['trades']), info)
         s, res, S, T, A, K, E = runner.execute(spec, py_trades=py)
-        name = a.name or f"{s['rule']['id']}_{a.exec}_{dt.datetime.now():%m%d_%H%M%S}"
+        name = a.name or f"{s['rule']['id']}_{s['exec']}_{dt.datetime.now():%m%d_%H%M%S}"
         out = store.DATA / 'runs' / name; out.mkdir(parents=True, exist_ok=True)
         if S is not None: S.to_csv(out / 'signals.csv', index=False)
         T.to_csv(out / 'trades.csv', index=False)
