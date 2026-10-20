@@ -31,6 +31,9 @@ def normalize(spec):
 
 def execute(spec, progress=None, py_trades=None):
     """py_trades — (сделки, сведения) стратегии на Python, уже посчитанные песочницей (см. pybridge / pyengine)."""
+    if spec.get('strategy') == 'screener_vb':              # готовая стратегия на акциях TQBR: свои данные и свой счёт
+        from . import screener_vb
+        return screener_vb.execute(spec, progress)
     s = normalize(spec)
     if spec.get('code') and isinstance(py_trades[1], dict) and py_trades[1].get('orders'):
         return _execute_orders(s, *py_trades)

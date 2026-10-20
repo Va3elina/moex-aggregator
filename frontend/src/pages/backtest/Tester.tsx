@@ -85,7 +85,7 @@ export default function Tester({ runs, run, trades, equity, st: chartSt, name: c
           : run.status !== 'done' ? <div className="bt-nodata big"><div className="bt-spinner" />{run.kind === 'sweep' ? `Перебор считается… ${run.progress ?? 0}%` : 'Прогон считается… обычно 20–30 секунд.'}</div>
           : run.result?.kind === 'sweep' ? <Sweep run={run} onOpenVariant={onOpenVariant} />
           : prefs.view === 'trades' ? <TradesList rows={scoped} money={money_} names={names} symbol={symbol} selKey={selKey} onPick={onPickTrade} onlyExec={prefs.tradesOnlyExecuted} setOnlyExec={x => set({ tradesOnlyExecuted: x })} />
-          : prefs.view === 'signals' ? (run.result?.python ? <div className="bt-nodata big">Журнал решений есть у стратегий-правил. У стратегии на Python решения — это сами сделки: смотри «Список сделок».</div> : <Signals runId={run.id} st={st} name={name} />)
+          : prefs.view === 'signals' ? (run.result?.kind === 'screener' ? <div className="bt-nodata big">У готовой стратегии журнал решений не пишется: решения — это сами сделки, смотри «Список сделок» (причина выхода и нога — в колонке выхода).</div> : run.result?.python ? <div className="bt-nodata big">Журнал решений есть у стратегий-правил. У стратегии на Python решения — это сами сделки: смотри «Список сделок».</div> : <Signals runId={run.id} st={st} name={name} />)
           : prefs.view === 'checks' ? <Checks run={run} onRun={onRunChecks} busy={false} />
           : prefs.view === 'robot' ? <RobotReport live={live} trades={trades} names={names} onPick={onPickTrade} />
           : <>
@@ -118,7 +118,7 @@ export default function Tester({ runs, run, trades, equity, st: chartSt, name: c
               </>}
               {prefs.resultTab === 'cmp' && <Comparison S={S} run={run} compare={compare} st={st} name={name} symbol={symbol} money={money_} />}
               {prefs.resultTab === 'margin' && <Margin equity={equity} acc={acc} symbol={symbol} S={S} />}
-              {prefs.resultTab === 'real' && <Realism st={st} name={name} run={run} />}
+              {prefs.resultTab === 'real' && (run.spec_full?.strategy ? <div className="bt-nodata big">Реализм (ГО, стоимость пункта, спред стакана) считается для фьючерсов. Для акций издержки заложены в стратегии: комиссия 0,05 % и проскальзывание 0,1 % за сторону, у шорта — заём по RUSFAR + 3 п.п.</div> : <Realism st={st} name={name} run={run} />)}
               {prefs.resultTab === 'dd' && <>
                 <div className="bt-metrics"><Metric label="Средняя продолжительность роста">{S.avgUpDays != null ? num(S.avgUpDays) + ' дн.' : '—'}</Metric><Metric label="Средняя продолжительность просадки">{S.avgDdDays != null ? num(S.avgDdDays) + ' дн.' : '—'}</Metric>
                   <Metric label="Макс. просадка" c="bt-down" sub={S.maxDdDate ? 'дно ' + fmtDate(S.maxDdDate) : ''}>{money_ ? money(-S.maxDd) : pct(-S.maxDd)}</Metric><Metric label="Макс. просадка, % от пика" c="bt-down">{money_ ? pct(-S.maxDdPct) : '—'}</Metric></div>
@@ -257,8 +257,15 @@ function Comparison({ S, run, compare, st, name, symbol, money }: { S: Stats; ru
 }
 
 function Conditions({ run, S, money }: { run: BtRun; S: Stats; money: boolean }) {
-  const s = run.spec_full ?? {}; const r = s.rule ?? {}; const acc = run.result?.account;
-  const rows: [string, ReactNode][] = r.python ? [['Стратегия', r.orders ? `${r.name} (код на Python, заявки: рыночные — по открытию следующей свечи, лимитные и стоп — по своей цене внутри свечи)` : `${r.name} (код на Python, свеча за свечой, исполнение по открытию следующей свечи)`],
+  const s = run.spec_full ?? {}; const r = s.rule ?? {}; const acc = run.result?.account; const sc = run.result?.screener;
+  const rows: [string, ReactNode][] = s.strategy ? [['Стратегия', r.name ?? s.strategy],
+    ['Правила', 'всплеск объёма акции (≥ 2,94× среднего за 60 будней) по тренду MA50 → лонг по закрытию T+1 с подтверждением объёмом, шорт по открытию T+1; трейлинг, кат-стоп 17 %, выход до отсечки; тренд-ноги по режиму IMOEX'],
+    ['Счёт', `${num(s.capital / 1e6, 2)} млн ₽ · идея = капитал ÷ ${s.slots} · в позициях не больше капитала, лишняя идея пропускается · без реинвеста`],
+    ['Издержки', `${s.tariff} · шорт: заём RUSFAR + 3 п.п. по дням`], ['Бумаг в данных / с сделками', `${num(run.result?.['бумаг'])} / ${num((s.universe ?? []).length)}`],
+    ['Данные по', String(run.result?.data_until ?? '').slice(0, 16)], ['Сигналов', num(run.result?.signals)],
+    ...(sc ? [['Как в скринере: 1 млн на идею без лимита', <span className={cls(sc['как_скринер_1млн_на_идею_руб'])}>{signed(sc['как_скринер_1млн_на_идею_руб'], 0)} ₽</span>] as [string, ReactNode],
+      ...Object.entries(sc['ноги'] ?? {}).map(([k, v]: [string, any]) => [`  ${k}`, <span className={cls(v['руб_на_1млн'])}>{num(v['сделок'])} сд. · {signed(v['руб_на_1млн'], 0)} ₽</span>] as [string, ReactNode])] : [])]
+   : r.python ? [['Стратегия', r.orders ? `${r.name} (код на Python, заявки: рыночные — по открытию следующей свечи, лимитные и стоп — по своей цене внутри свечи)` : `${r.name} (код на Python, свеча за свечой, исполнение по открытию следующей свечи)`],
     ['Тариф / спред / ГО', `${s.tariff} / ${s.spread} / ${s.go}`], ['Бумаги', (s.universe ?? []).join(', ') + (r.orders && (s.universe ?? []).length > 1 ? ' — портфель: каждой бумаге равная доля капитала' : '')], ['Данные по', String(run.result?.data_until ?? '').slice(0, 16)], ['Сделок', num(run.result?.per_trade?.['сделок'])],
     ...(r.orders && acc ? [['Фандинг, ₽', <span className={cls(-(acc['фандинг_руб'] ?? 0))}>{acc['фандинг_руб'] ? signed(-acc['фандинг_руб'], 0) : '0'}</span>], ['Принудительных закрытий', num(acc['принудительных_закрытий'] ?? acc['маржин_коллов'])]] as [string, ReactNode][] : [])]
    : [['Стратегия', r.name ?? r.id], ['Сигнал', `ход ${r.signal?.from} → ${r.signal?.to}`], ['Вход / выход', `${r.entry?.price === 'next_open' ? 'открытие следующей свечи' : 'закрытие свечи'}, задержка ${r.entry?.delay_min ?? 0} / ${r.exit?.delay_min ?? 0} мин; выход в ${r.exit?.at}`],
