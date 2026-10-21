@@ -26,6 +26,7 @@ import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import Skeleton from '../Skeleton';
+import ChartWatermark from '../ChartWatermark';
 import PortfolioTreemap, { TREEMAP_TOP, TM_H_BUDGET, type TreemapItem } from './PortfolioTreemap';
 import type { FundPortfolio, FundPortfolioHolding, FundReturns } from '../../services/api';
 
@@ -392,9 +393,12 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
     // фона, чтобы не выглядела полноценной кнопкой.
     // marginTop:auto — прижимает футер к низу колонки-таблицы (десктоп, flex-col).
     // На мобилке (обычный поток) auto схлопывается в 0 и просто идёт под списком.
-    const restBtn = sorted.length > LIST_PREVIEW && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9 }}>
-            <button
+    // Слева в той же строке — вотермарк «Фрейм»: низом вровень со строкой
+    // «Прочие бумаги», не ниже неё (строка рендерится и без кнопки — ради него).
+    const restBtn = (
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9, minHeight: 33 }}>
+            <ChartWatermark left={0} bottom={3} size={24} minSize={18} />
+            {sorted.length > LIST_PREVIEW && <button
                 onClick={() => setModalOpen(true)}
                 onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
@@ -403,7 +407,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
             >
                 {t('Прочие бумаги · ещё {{n}}', { n: rest.length })} <span style={{ fontSize: '0.85em' }}>↓</span>
-            </button>
+            </button>}
         </div>
     );
 
