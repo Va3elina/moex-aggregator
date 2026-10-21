@@ -67,6 +67,28 @@ PARENT_BY_INN = {
     '7826087713': 'OKEY',   # О'КЕЙ
 }
 
+# Эмитенты БЕЗ акций на бирже со своим логотипом в frontend/public/logos/<КЛЮЧ>.png
+# (21.10.2026: топ-15 по объёму в облигационных фондах; ИНН и картинки проверены).
+# Дочки под брендом группы — знак группы (ФПК → РЖД, Атомэнергопром → Росатом,
+# ЕвразХолдинг Финанс → Евраз, Гидромашсервис → Группа ГМС).
+ISSUER_LOGO_BY_INN = {
+    '7750004150': 'VEBRF',          # ВЭБ.РФ
+    '7708503727': 'RZD',            # РЖД
+    '7708709686': 'RZD',            # ФПК (дочка РЖД, знак РЖД)
+    '7720261827': 'GTLK',           # ГТЛК
+    '7705392230': 'METALLOINVEST',  # ХК «Металлоинвест»
+    '7706664260': 'ROSATOM',        # Атомэнергопром (холдинг Росатома)
+    '7707710865': 'EVRAZ',          # ЕвразХолдинг Финанс
+    '7728168971': 'ALFA',           # Альфа-Банк
+    '7812014560': 'MEGAFON',        # МегаФон
+    '7725114488': 'RSHB',           # Россельхозбанк
+    '4205119220': 'NOVOTRANS',      # ХК «Новотранс»
+    '7744000912': 'PSB',            # Банк ПСБ
+    '5503067018': 'AFBANK',         # Авто Финанс Банк
+    '7733015025': 'HMS',            # Гидромашсервис (Группа ГМС)
+    '7810245481': 'SETL',           # Сэтл Групп
+}
+
 # Тикер без своего PNG, но знак есть в стикерпаке (raw_NNN).
 LOGO_BY_TICKER = {
     'SLAV': 'raw_149',   # Славнефть (тот же знак, что JNOS/MFGS)
@@ -191,7 +213,8 @@ def main() -> None:
         if r['type'] in GOV_TYPES or r['emitent_inn'] == MINFIN_INN:
             gov.append(isin)
             continue
-        ticker = PARENT_BY_INN.get(r['emitent_inn'] or '') or by_emitent.get(r['emitent_id'])
+        inn = r['emitent_inn'] or ''
+        ticker = PARENT_BY_INN.get(inn) or ISSUER_LOGO_BY_INN.get(inn) or by_emitent.get(r['emitent_id'])
         key = LOGO_BY_TICKER.get(ticker or '', ticker)
         if key and key in has_logo:
             issuer[isin] = key
