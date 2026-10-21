@@ -64,7 +64,7 @@ import PortfolioFundPicker, { defaultPortfolioTickers, indexFundTickers } from '
 import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
 import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
 import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../../components/fundtrades/MonthRangePicker';
-import CompanyFlowsTab, { type CompanyFlowsMobileSummary } from '../../components/fundtrades/CompanyFlowsTab';
+import CompanyFlowsTab, { COMPANY_ASSET_PARAM, type CompanyFlowsMobileSummary } from '../../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../../components/DelayedDataBadge';
 import LockedSnapshotTeaser from '../../components/fundtrades/LockedSnapshotTeaser';
 import MobileLayout from '../../components/mobile/MobileLayout';
@@ -317,6 +317,8 @@ export default function MobileFundTradesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     const qTab = searchParams.get('tab');
+    // Ссылка на бумагу (?asset=SBER) открывает «По бумаге» (параметр держит CompanyFlowsTab).
+    if (searchParams.get(COMPANY_ASSET_PARAM)) setTab('company');
     if (!qTab && !searchParams.get('month')) return;
     if (qTab === 'funds' || qTab === 'portfolio' || qTab === 'company') setTab(qTab);
     const next = new URLSearchParams(searchParams);
@@ -824,6 +826,7 @@ export default function MobileFundTradesPage() {
         <CompanyFlowsTab
           presetAsset={companyPreset}
           onPresetConsumed={() => setCompanyPreset(null)}
+          syncUrl
           mobile={{
             assetOpen: companyAssetOpen,
             timeOpen: timeSheetOpen,

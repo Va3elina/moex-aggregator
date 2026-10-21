@@ -58,7 +58,7 @@ import SegmentedControl from '../components/SegmentedControl';
 import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName, resolveFundIconTicker } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import InstrumentIcon from '../components/InstrumentIcon';
-import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
+import CompanyFlowsTab, { COMPANY_ASSET_PARAM } from '../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../components/DelayedDataBadge';
 import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
@@ -327,6 +327,9 @@ export default function FundTradesPage() {
     useEffect(() => {
         const qTab = searchParams.get('tab');
         const qMonth = searchParams.get('month');
+        // Ссылка на бумагу (?asset=SBER) открывает «По бумаге»; сам параметр
+        // не одноразовый — его читает и держит в актуальном виде CompanyFlowsTab.
+        if (searchParams.get(COMPANY_ASSET_PARAM)) setTab('company');
         if (!qTab && !qMonth) return;
         if (qTab === 'funds' || qTab === 'portfolio' || qTab === 'company') setTab(qTab);
         if (qMonth && /^\d{4}-\d{2}$/.test(qMonth)) pendingMonthRef.current = qMonth;
@@ -1154,6 +1157,7 @@ export default function FundTradesPage() {
                         presetAsset={companyPreset}
                         onPresetConsumed={() => setCompanyPreset(null)}
                         showChartActions
+                        syncUrl
                     />
                 </div>
             )}
