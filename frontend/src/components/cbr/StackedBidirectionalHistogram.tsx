@@ -25,6 +25,7 @@ import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { chartFontScale, axisPadding } from '../chart/chartTypography';
 import ChartLegend, { type ChartLegendItem } from '../chart/ChartLegend';
 import ChartDatePill from '../chart/ChartDatePill';
+import ChartWatermark from '../ChartWatermark';
 import { TOOLTIP, ANIMATION } from '../../config/chartTheme';
 import { resampleVals } from '../../utils/chartAnimation';
 import { useNoChartAnim } from '../chart/chartAnim';
@@ -806,9 +807,9 @@ const StackedBidirectionalHistogram = forwardRef<StackedBidirectionalHistogramHa
         </div>
 
 
-        {/* Вотермарк намеренно убран (Вадим) — на плотном stacked-графике с
-            категориями у нулевой линии он перекрывал данные; на остальных
-            графиках сайта ChartWatermark остаётся штатно. */}
+        {/* Вотермарк в левом нижнем углу chart-area — как на остальных графиках. */}
+        <ChartWatermark left={pad.left + 5} bottom="calc(var(--chart-pad-bottom, 50px) + 5px)" />
+
 
         {/* Плавающая дата над графиком — единый стиль/позиция со всеми чартами
             (ChartDatePill: прозрачный текст, низ прижат к верхней грид-линии,
