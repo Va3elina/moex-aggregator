@@ -205,6 +205,24 @@ export interface CompanyFlowsTabProps {
      *  Sheet'ы ОТКРЫВАЕТ страница (у неё MobileLayout), а рисует этот таб —
      *  чтобы state выбора не дублировать. */
     mobile?: CompanyFlowsMobileProps | null;
+    /** Держать выбранную бумагу в адресе (?asset=SBER), чтобы скопированная
+     *  ссылка открывала ровно её. Только сайт и мобилка, не эмбед. */
+    syncUrl?: boolean;
+}
+
+/** Параметр адреса с выбранной бумагой во вкладке «По бумаге». */
+export const COMPANY_ASSET_PARAM = 'asset';
+
+/** Значение ?asset= для бумаги: тикер, если он есть (читаемая ссылка), иначе ISIN/ключ. */
+function assetUrlValue(a: FundTradeAsset): string {
+    return resolveFundTicker(a.asset_name, a.isin) ?? a.isin ?? a.key;
+}
+
+/** Бумага по значению ?asset=: тикер (без учёта регистра), ISIN или ключ. */
+function findAssetByUrl(assets: FundTradeAsset[], q: string): FundTradeAsset | undefined {
+    const up = q.toUpperCase();
+    return assets.find(a => a.key === q || a.isin?.toUpperCase() === up)
+        ?? assets.find(a => resolveFundTicker(a.asset_name, a.isin)?.toUpperCase() === up);
 }
 
 /** Сводка выбора для рейла и шапки мобильной страницы (MobileLayout). */
@@ -256,9 +274,14 @@ const MOBILE_SHEET_HINT = {
 
 export default function CompanyFlowsTab({
     presetAsset, onPresetConsumed, showChartActions = false, embedded = false, controlsTarget = null,
-    mobile = null,
+    mobile = null, syncUrl = false,
 }: CompanyFlowsTabProps = {}) {
     const { t } = useTranslation();
+    // Бумага из ссылки (?asset=) — читаем один раз на маунте; применяется при
+    // загрузке списка и перебивает сохранённый выбор (но не presetAsset).
+    const urlAssetRef = useRef<string | null>(
+        syncUrl ? new URLSearchParams(window.location.search).get(COMPANY_ASSET_PARAM) : null,
+    );
     // Высота графика «под экран» — anchor на обёртке чарта (как в «Деньги в фондах»).
     // min = 475: карточка графика = chartHeight + ~39px (padding + легенда/навигатор),
     // то есть floor даёт блок ~514px — ровно фиксированный размер блока в «Силе рынка»
@@ -394,9 +417,12 @@ export default function CompanyFlowsTab({
                 if (cancelled) return;
                 setAssets(resp.assets);
                 if (resp.assets.length > 0 && !presetAsset) {
+                    const fromUrl = urlAssetRef.current ? findAssetByUrl(resp.assets, urlAssetRef.current) : undefined;
                     setSelectedKey(prev =>
-                        prev && resp.assets.some(a => a.key === prev) ? prev : resp.assets[0].key);
+                        fromUrl ? fromUrl.key
+                            : prev && resp.assets.some(a => a.key === prev) ? prev : resp.assets[0].key);
                 }
+                urlAssetRef.current = null;
                 setAssetsError(null);
             })
             .catch(err => {
@@ -428,6 +454,29 @@ export default function CompanyFlowsTab({
         () => assets.find(a => a.key === selectedKey) ?? null,
         [assets, selectedKey],
     );
+
+    // Выбранная бумага → ?asset= в адресе. history.replaceState напрямую, мимо
+    // роутера: страница не перерисовывается, а уход на другой роут не получит
+    // хвост ?asset= (снимаем только пока путь тот же). state роутера сохраняем.
+    useEffect(() => {
+        if (!syncUrl || !selectedAsset) return;
+        const url = new URL(window.location.href);
+        const value = assetUrlValue(selectedAsset);
+        if (url.searchParams.get(COMPANY_ASSET_PARAM) === value) return;
+        url.searchParams.set(COMPANY_ASSET_PARAM, value);
+        window.history.replaceState(window.history.state, '', url);
+    }, [syncUrl, selectedAsset]);
+    useEffect(() => {
+        if (!syncUrl) return;
+        const path = window.location.pathname;
+        return () => {
+            if (window.location.pathname !== path) return;
+            const url = new URL(window.location.href);
+            if (!url.searchParams.has(COMPANY_ASSET_PARAM)) return;
+            url.searchParams.delete(COMPANY_ASSET_PARAM);
+            window.history.replaceState(window.history.state, '', url);
+        };
+    }, [syncUrl]);
 
     // Какую бумагу и в каком режиме смотрят во вкладке «По бумаге». Идёт тем же
     // типом, что и остальные снимки «Сделок фондов»: вкладка — их часть, и в
