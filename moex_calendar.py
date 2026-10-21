@@ -11,6 +11,8 @@
     from moex_calendar import is_trading_day, is_trading_hours, get_moscow_time
 """
 
+import os
+import time as _time
 from datetime import datetime, date, timedelta
 from typing import Tuple, List
 
@@ -126,6 +128,69 @@ STOCK_HOLIDAYS = {d for d in ISS_STOCK_CLOSED if d.weekday() < 5} | _legacy_othe
 FUTURES_HOLIDAYS = {d for d in ISS_FUTURES_CLOSED if d.weekday() < 5} | _legacy_other_years
 MOEX_HOLIDAYS = (STOCK_HOLIDAYS & FUTURES_HOLIDAYS) | _legacy_other_years
 
+# ── Пополнение из базы ──────────────────────────────────────────────────────
+# Свежий календарь — таблица moex_trading_calendar (раз в день пишет signals/moex_calendar_sync.py).
+# Читаем ЛЕНИВО (при первом вызове функций ниже, не при импорте) и раз в _DB_TTL_S; сбой базы →
+# остаются уже загруженные даты (на старте — блок в коде), повтор через _DB_RETRY_S. Множества
+# обновляем НА МЕСТЕ: main_orchestrator импортирует MOEX_HOLIDAYS напрямую.
+_DB_TTL_S, _DB_RETRY_S = 6 * 3600, 600
+_DB_MAX_CLOSED_WEEKDAYS = 30          # больше нерабочих будней в году — данные странные, год не берём
+_db_next_try = 0.0
+
+
+def _apply_db_rows(rows) -> List[int]:
+    """rows: (tradedate, stock_workday, futures_workday). Годы из базы заменяют блок/ручной список."""
+    by_year: dict = {}
+    for d, st, fu in rows:
+        by_year.setdefault(d.year, []).append((d, st, fu))
+    stock, fut, years = set(), set(), []
+    for y, items in by_year.items():
+        st_c = {d for d, st, _ in items if st == 0 and d.weekday() < 5}
+        fu_c = {d for d, _, fu in items if fu == 0 and d.weekday() < 5}
+        if len(st_c) > _DB_MAX_CLOSED_WEEKDAYS or len(fu_c) > _DB_MAX_CLOSED_WEEKDAYS:
+            continue
+        stock |= st_c
+        fut |= fu_c
+        years.append(y)
+    if not years:
+        return []
+    keep = lambda S: {d for d in S if d.year not in years}  # noqa: E731
+    new_stock, new_fut = keep(STOCK_HOLIDAYS) | stock, keep(FUTURES_HOLIDAYS) | fut
+    new_all = keep(MOEX_HOLIDAYS) | (stock & fut)
+    for target, value in ((STOCK_HOLIDAYS, new_stock), (FUTURES_HOLIDAYS, new_fut), (MOEX_HOLIDAYS, new_all)):
+        target.clear()
+        target.update(value)
+    return sorted(years)
+
+
+def _refresh_from_db() -> None:
+    global _db_next_try
+    now = _time.monotonic()
+    if now < _db_next_try:
+        return
+    _db_next_try = now + _DB_RETRY_S
+    url = os.environ.get("DB_URL")
+    if not url:
+        return
+    if not os.path.exists("/.dockerenv"):
+        url = url.replace("@db:", "@127.0.0.1:")      # хостовые скрипты: в .env адрес контейнера
+    try:
+        from sqlalchemy import create_engine, text
+        try:
+            eng = create_engine(url, connect_args={"timeout": 3})
+        except Exception:  # noqa: BLE001 — драйвер без timeout
+            eng = create_engine(url)
+        try:
+            with eng.connect() as c:
+                rows = c.execute(text(
+                    "SELECT tradedate, stock_workday, futures_workday FROM moex_trading_calendar")).all()
+        finally:
+            eng.dispose()
+        _apply_db_rows([tuple(r) for r in rows])
+        _db_next_try = now + _DB_TTL_S
+    except Exception:  # noqa: BLE001 — нет таблицы/базы/драйвера → блок в коде
+        pass
+
 # Торговые часы (МСК)
 TRADING_START_HOUR = 7
 TRADING_END_HOUR = 24
@@ -163,6 +228,7 @@ def is_holiday(check_date: date = None, market: str = None) -> bool:
     Returns:
         True если праздник, False если рабочий день
     """
+    _refresh_from_db()
     if check_date is None:
         check_date = get_moscow_time().date()
 
@@ -199,6 +265,7 @@ def is_trading_day(check_date: date = None) -> Tuple[bool, str]:
     Returns:
         (is_trading, reason) — кортеж (торговый день?, причина)
     """
+    _refresh_from_db()
     if check_date is None:
         check_date = get_moscow_time().date()
 
@@ -254,6 +321,7 @@ def is_weekend_session(check_time: datetime = None) -> Tuple[bool, str]:
     июль 2026), поэтому берём ШИРОКОЕ окно (TRADING_START_HOUR..TRADING_END_HOUR).
     Это безопасно: вне реальной сессии ISS/Algopack отдают пустой ответ → no-op.
     """
+    _refresh_from_db()
     if check_time is None:
         check_time = get_moscow_time()
     d = check_time.date()

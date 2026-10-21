@@ -29,3 +29,23 @@ def test_weekends_unchanged_and_markets_differ():
     assert C.is_holiday(date(2027, 11, 4), "futures") and not C.is_holiday(date(2027, 11, 4), "stock")
     assert not C.is_holiday(date(2027, 11, 4))
     assert C.get_previous_trading_day(date(2026, 2, 24)) == date(2026, 2, 23)
+
+
+def test_db_rows_override_block_for_their_years_only():
+    import importlib
+    m = importlib.reload(C)
+    # база: 2026-11-04 стал праздником для обоих рынков, остальное как в блоке
+    rows = [(d, 0, 0) for d in m.ISS_STOCK_CLOSED if d.year == 2026] + [(date(2026, 11, 4), 0, 0)]
+    assert m._apply_db_rows(rows) == [2026]
+    assert m.is_holiday(date(2026, 11, 4)) and date(2026, 11, 4) in m.MOEX_HOLIDAYS   # то же множество (на месте)
+    assert m.is_holiday(date(2024, 3, 8))                                             # другие годы — из блока
+    importlib.reload(C)
+
+
+def test_db_year_with_strange_data_is_ignored():
+    import importlib
+    m = importlib.reload(C)
+    rows = [(date(2026, 1, 1) + __import__("datetime").timedelta(days=i), 0, 0) for i in range(200)]
+    assert m._apply_db_rows(rows) == []
+    assert m.is_trading_day(date(2026, 11, 4))[0]
+    importlib.reload(C)
