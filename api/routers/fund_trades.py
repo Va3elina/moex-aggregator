@@ -2370,7 +2370,7 @@ def list_fund_trade_assets(
             FROM fund_holdings_history h
             JOIN funds f ON f.fund_id = h.fund_id
             LEFT JOIN securities_ref sr ON sr.isin = h.isin
-            WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
+            WHERE f.ticker = ANY(:tickers) AND f.category IN ('stocks', 'bonds')
               AND h.source = ANY(:sources)
         ),
         names AS (
@@ -2518,7 +2518,7 @@ def company_flows(
         FROM fund_holdings_history h
         JOIN funds f ON f.fund_id = h.fund_id
         LEFT JOIN names n ON n.isin = h.isin
-        WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
+        WHERE f.ticker = ANY(:tickers) AND f.category IN ('stocks', 'bonds')
           AND h.source = ANY(:sources)
           AND h.snapshot_date <= :cutoff AND h.snapshot_date >= :floor
           AND {match_sql}
@@ -2690,7 +2690,7 @@ def company_flows(
         SELECT MAX(h.snapshot_date)
         FROM fund_holdings_history h
         JOIN funds f ON f.fund_id = h.fund_id
-        WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
+        WHERE f.ticker = ANY(:tickers) AND f.category IN ('stocks', 'bonds')
           AND h.source = ANY(:sources)
           AND h.snapshot_date <= :cutoff
     """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES),
@@ -2866,7 +2866,7 @@ def company_weights(
                MAX(h.isin) AS isin
         FROM fund_holdings_history h
         JOIN funds f ON f.fund_id = h.fund_id
-        WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
+        WHERE f.ticker = ANY(:tickers) AND f.category IN ('stocks', 'bonds')
           AND h.source = ANY(:sources)
           AND h.snapshot_date <= :cutoff AND h.snapshot_date >= :floor
           AND {match_sql}

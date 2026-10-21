@@ -221,6 +221,7 @@ function PickerModal({
     onApply,
     onClose,
     locked = false,
+    bondsInAll = false,
 }: {
     funds: FundWithHistory[];
     selected: Set<string>;
@@ -234,10 +235,13 @@ function PickerModal({
      *  но любая попытка изменить набор показывает апселл на Basic; закрытие
      *  ничего не применяет (2026-08-10; блюр убран — гейтим действия). */
     locked?: boolean;
+    bondsInAll?: boolean;
 }) {
     const { t } = useTranslation();
     // «Все» = все фонды АКЦИЙ; облигационные — своя секция, по умолчанию не выбрана.
-    const allTickers = useMemo(() => funds.filter((f) => !isBondFund(f)).map((f) => f.ticker), [funds]);
+    // bondsInAll («По бумаге»): облигационные фонды входят в «все» — там важны держатели бумаги.
+    const allTickers = useMemo(
+        () => funds.filter((f) => bondsInAll || !isBondFund(f)).map((f) => f.ticker), [funds, bondsInAll]);
     const bondTickers = useMemo(() => funds.filter(isBondFund).map((f) => f.ticker), [funds]);
     const stockFunds = useMemo(() => funds.filter((f) => !isBondFund(f)), [funds]);
     // Черновик: пусто в persisted-наборе = все выбраны. У запертого тира
@@ -275,7 +279,7 @@ function PickerModal({
         // «через ноль» (снял все → вернулись все 19, включая индексные).
         const effective = draft.size === 0 ? new Set(pool) : draft;
         const covered = effective.size === 0
-            || (allTickers.every((t) => effective.has(t)) && !bondTickers.some((t) => effective.has(t)));
+            || (allTickers.every((t) => effective.has(t)) && (bondsInAll || !bondTickers.some((t) => effective.has(t))));
         onApply(covered ? new Set() : new Set(effective));
         onClose();
     };
@@ -482,7 +486,7 @@ function PickerModal({
                             тут не пишем: об этом говорят сама прожатая таблетка и плашка
                             поверх размытой группы. */}
                         <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                            {t('выбрано {{n}} из {{total}}', { n: draft.size, total: allTickers.length - (indexOff ? idxTickers.length : 0) + bondTickers.length })}
+                            {t('выбрано {{n}} из {{total}}', { n: draft.size, total: allTickers.length - (indexOff ? idxTickers.length : 0) + (bondsInAll ? 0 : bondTickers.length) })}
                         </span>
                         {/* Таблетка-тумблер «Без индексных фондов» прямо в шапке, следом за
                             счётчиком: прожата — три индексных фонда сняты (счётчик сразу
@@ -567,10 +571,10 @@ function PickerModal({
                                         </div>
                                     </td>
                                     <td className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAll}>
-                                        <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{bondTickers.length ? t('Все фонды акций') : t('Выбрать все')}</span>
+                                        <span className="font-bold" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{bondTickers.length && !bondsInAll ? t('Все фонды акций') : t('Выбрать все')}</span>
                                     </td>
                                     <td className="px-2 py-1 text-right cursor-pointer select-none" style={NUM_STYLE} onClick={toggleAll}>
-                                        {navSumBln(stockFunds).toFixed(2)}
+                                        {navSumBln(bondsInAll ? funds : stockFunds).toFixed(2)}
                                     </td>
                                     <td className="cursor-pointer select-none" onClick={toggleAll} />
                                 </tr>
@@ -862,12 +866,15 @@ export interface PortfolioFundPickerProps {
     compact?: boolean;
     /** Совсем узкий тулбар — вместо подписи только иконка кошелька. */
     iconOnly?: boolean;
+    /** «По бумаге»: облигационные фонды входят в «все фонды» (по умолчанию включены),
+     *  а не отдельная выключенная секция, как в «Общем портфеле». */
+    bondsInAll?: boolean;
 }
 
 export default function PortfolioFundPicker({
     funds, selected, onChange, targetMonth, excludedTickers, absentTickers,
     title, allLabel,
-    resetWhenLocked = false, compact = false, iconOnly = false,
+    resetWhenLocked = false, compact = false, iconOnly = false, bondsInAll = false,
 }: PortfolioFundPickerProps) {
     const { t } = useTranslation();
     // В списке есть облигации (секция «Облигации») — заголовок общий.
@@ -901,12 +908,12 @@ export default function PortfolioFundPicker({
     const indexOff = idxTickers.length > 0 && idxTickers.every((t) => !selected.has(t));
     const bondSet = useMemo(() => new Set(funds.filter(isBondFund).map((f) => f.ticker)), [funds]);
     const bondsSelected = Array.from(selected).filter((t) => bondSet.has(t)).length;
-    const pool = funds.length - bondSet.size - (indexOff ? idxTickers.length : 0);
-    const allActive = selected.size === 0 || (bondsSelected === 0 && selected.size === pool);
+    const pool = funds.length - (bondsInAll ? 0 : bondSet.size) - (indexOff ? idxTickers.length : 0);
+    const allActive = selected.size === 0 || ((bondsInAll || bondsSelected === 0) && selected.size === pool);
     // Заперт → таблетка всегда в «нейтральном» виде: акцентная заливка означает
     // «фильтр применён», а у locked-тира он не применён и применён быть не может.
     const active = !allActive && canPick;
-    const label = allActive || !canPick ? allLabelText : t('{{n}} из {{total}} фондов', { n: selected.size, total: pool + bondSet.size });
+    const label = allActive || !canPick ? allLabelText : t('{{n}} из {{total}} фондов', { n: selected.size, total: pool + (bondsInAll ? 0 : bondSet.size) });
 
     return (
         <div style={{ display: 'inline-flex', minWidth: 0 }}>
@@ -968,6 +975,7 @@ export default function PortfolioFundPicker({
                     absentTickers={absentTickers}
                     title={modalTitle}
                     locked={!canPick}
+                    bondsInAll={bondsInAll}
                     onApply={onChange}
                     onClose={() => setOpen(false)}
                 />
