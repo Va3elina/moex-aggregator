@@ -18,10 +18,11 @@ from typing import Tuple, List
 #                    ПРАЗДНИКИ MOEX 2024-2026
 # ======================================================================
 
-# Официальные нерабочие дни Московской биржи
-# Источник: https://www.moex.com/s2532
-
-MOEX_HOLIDAYS = {
+# ⚠️ Ручной список ниже ОКАЗАЛСЯ НЕВЕРНЫМ (сверка с календарём ISS 21.10.2026): биржа торгует в
+# большинство государственных праздников (в 2026 — 5, 6, 8.01, 23.02, 9.03, 1.05, 11.05, 12.06, 4.11),
+# и загрузчики в эти дни ничего не собирали (ОИ за 7 дней 2026 потерян). Теперь для лет из календаря
+# ISS (блок ниже) берутся его даты; ручной список — только запасной для лет вне блока.
+_LEGACY_HOLIDAYS = {
     # 2024
     date(2024, 1, 1),  # Новогодние каникулы
     date(2024, 1, 2),
@@ -70,6 +71,61 @@ MOEX_HOLIDAYS = {
     date(2026, 12, 31),  # Новогодние каникулы
 }
 
+# >>> ISS CALENDAR (генерирует scripts/moex_calendar_refresh.py — руками не править)
+# Обновлено 2026-10-21 из apim.moex.com/iss/calendars.json (off_days).
+ISS_CALENDAR_YEARS = {2024, 2025, 2026, 2027}
+ISS_STOCK_CLOSED = {
+    date(2024, 1, 1), date(2024, 1, 2), date(2024, 2, 23), date(2024, 3, 8), date(2024, 5, 1), date(2024, 5, 9),
+    date(2024, 6, 12), date(2024, 11, 4), date(2024, 12, 31),
+    date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 7), date(2025, 5, 1), date(2025, 5, 9), date(2025, 6, 12),
+    date(2025, 11, 4), date(2025, 12, 31),
+    date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 7), date(2026, 12, 31),
+    date(2027, 1, 2), date(2027, 1, 3), date(2027, 1, 9), date(2027, 1, 10), date(2027, 1, 16), date(2027, 1, 17),
+    date(2027, 1, 23), date(2027, 1, 24), date(2027, 1, 30), date(2027, 1, 31), date(2027, 2, 6), date(2027, 2, 7),
+    date(2027, 2, 13), date(2027, 2, 14), date(2027, 2, 21), date(2027, 2, 27), date(2027, 2, 28), date(2027, 3, 6),
+    date(2027, 3, 7), date(2027, 3, 13), date(2027, 3, 14), date(2027, 3, 20), date(2027, 3, 21), date(2027, 3, 27),
+    date(2027, 3, 28), date(2027, 4, 3), date(2027, 4, 4), date(2027, 4, 10), date(2027, 4, 11), date(2027, 4, 17),
+    date(2027, 4, 18), date(2027, 4, 24), date(2027, 4, 25), date(2027, 5, 1), date(2027, 5, 2), date(2027, 5, 8),
+    date(2027, 5, 9), date(2027, 5, 15), date(2027, 5, 16), date(2027, 5, 22), date(2027, 5, 23), date(2027, 5, 29),
+    date(2027, 5, 30), date(2027, 6, 5), date(2027, 6, 6), date(2027, 6, 12), date(2027, 6, 13), date(2027, 6, 19),
+    date(2027, 6, 20), date(2027, 6, 26), date(2027, 6, 27), date(2027, 7, 3), date(2027, 7, 4), date(2027, 7, 10),
+    date(2027, 7, 11), date(2027, 7, 17), date(2027, 7, 18), date(2027, 7, 24), date(2027, 7, 25), date(2027, 7, 31),
+    date(2027, 8, 1), date(2027, 8, 7), date(2027, 8, 8), date(2027, 8, 14), date(2027, 8, 15), date(2027, 8, 21),
+    date(2027, 8, 22), date(2027, 8, 28), date(2027, 8, 29), date(2027, 9, 4), date(2027, 9, 5), date(2027, 9, 11),
+    date(2027, 9, 12), date(2027, 9, 18), date(2027, 9, 19), date(2027, 9, 25), date(2027, 9, 26), date(2027, 10, 2),
+    date(2027, 10, 3), date(2027, 10, 9), date(2027, 10, 10), date(2027, 10, 16), date(2027, 10, 17), date(2027, 10, 23),
+    date(2027, 10, 24), date(2027, 10, 30), date(2027, 10, 31), date(2027, 11, 6), date(2027, 11, 7), date(2027, 11, 13),
+    date(2027, 11, 14), date(2027, 11, 20), date(2027, 11, 21), date(2027, 11, 27), date(2027, 11, 28), date(2027, 12, 4),
+    date(2027, 12, 5), date(2027, 12, 11), date(2027, 12, 12), date(2027, 12, 18), date(2027, 12, 19), date(2027, 12, 25),
+    date(2027, 12, 26), date(2027, 12, 31),
+}
+ISS_FUTURES_CLOSED = {
+    date(2024, 1, 1), date(2024, 1, 2), date(2024, 2, 23), date(2024, 3, 8), date(2024, 5, 1), date(2024, 5, 9),
+    date(2024, 6, 12), date(2024, 11, 4), date(2024, 12, 31),
+    date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 7), date(2025, 3, 1), date(2025, 3, 2), date(2025, 3, 15),
+    date(2025, 3, 16), date(2025, 3, 29), date(2025, 3, 30), date(2025, 4, 5), date(2025, 4, 6), date(2025, 4, 12),
+    date(2025, 4, 13), date(2025, 4, 26), date(2025, 4, 27), date(2025, 5, 1), date(2025, 5, 3), date(2025, 5, 4),
+    date(2025, 5, 9), date(2025, 5, 10), date(2025, 5, 11), date(2025, 5, 17), date(2025, 5, 18), date(2025, 5, 31),
+    date(2025, 6, 1), date(2025, 6, 7), date(2025, 6, 8), date(2025, 6, 12), date(2025, 6, 14), date(2025, 6, 15),
+    date(2025, 6, 28), date(2025, 6, 29), date(2025, 7, 5), date(2025, 7, 6), date(2025, 7, 12), date(2025, 7, 13),
+    date(2025, 7, 19), date(2025, 7, 20), date(2025, 7, 26), date(2025, 7, 27), date(2025, 11, 4), date(2025, 12, 31),
+    date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 7), date(2026, 12, 31),
+    date(2027, 1, 1), date(2027, 2, 23), date(2027, 3, 8), date(2027, 11, 4),
+}
+# <<< ISS CALENDAR
+
+# Праздник = НЕ торгуют ни акции, ни фьючерсы. Пересечение, а не объединение: если календарь
+# неточен (например, предварительный следующего года), загрузчик лишний раз сходит за пустыми
+# данными, но торговый день не пропустит. Рынки различаются редко (4.11.2027: фьючерсы закрыты,
+# акции торгуют) — для них STOCK_HOLIDAYS / FUTURES_HOLIDAYS.
+# Только БУДНИ: выходные обрабатываются отдельно (is_weekend_session), и их поведение не меняем —
+# ручной список выходных никогда не содержал, а блок ISS перечисляет и закрытые субботы/воскресенья.
+_ISS_YEARS = {int(y) for y in ISS_CALENDAR_YEARS}
+_legacy_other_years = {d for d in _LEGACY_HOLIDAYS if d.year not in _ISS_YEARS}
+STOCK_HOLIDAYS = {d for d in ISS_STOCK_CLOSED if d.weekday() < 5} | _legacy_other_years
+FUTURES_HOLIDAYS = {d for d in ISS_FUTURES_CLOSED if d.weekday() < 5} | _legacy_other_years
+MOEX_HOLIDAYS = (STOCK_HOLIDAYS & FUTURES_HOLIDAYS) | _legacy_other_years
+
 # Торговые часы (МСК)
 TRADING_START_HOUR = 7
 TRADING_END_HOUR = 24
@@ -96,12 +152,13 @@ def get_moscow_time() -> datetime:
 #                    ПРОВЕРКИ ТОРГОВЫХ ДНЕЙ
 # ======================================================================
 
-def is_holiday(check_date: date = None) -> bool:
+def is_holiday(check_date: date = None, market: str = None) -> bool:
     """
     Проверяет, является ли дата праздником MOEX.
 
     Args:
         check_date: Дата для проверки (по умолчанию — сегодня по МСК)
+        market: None — закрыты оба рынка; 'stock' / 'futures' — конкретный рынок
 
     Returns:
         True если праздник, False если рабочий день
@@ -109,6 +166,10 @@ def is_holiday(check_date: date = None) -> bool:
     if check_date is None:
         check_date = get_moscow_time().date()
 
+    if market == "stock":
+        return check_date in STOCK_HOLIDAYS
+    if market == "futures":
+        return check_date in FUTURES_HOLIDAYS
     return check_date in MOEX_HOLIDAYS
 
 
