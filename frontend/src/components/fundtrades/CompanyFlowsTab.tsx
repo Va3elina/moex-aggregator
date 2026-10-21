@@ -420,7 +420,10 @@ export default function CompanyFlowsTab({
                     const fromUrl = urlAssetRef.current ? findAssetByUrl(resp.assets, urlAssetRef.current) : undefined;
                     setSelectedKey(prev =>
                         fromUrl ? fromUrl.key
-                            : prev && resp.assets.some(a => a.key === prev) ? prev : resp.assets[0].key);
+                            : prev && resp.assets.some(a => a.key === prev) ? prev
+                            // По умолчанию — самая крупная АКЦИЯ: с облигационными фондами в списке
+                            // первой по оборотам стала ОФЗ (21.10.2026), а вкладка — про компании.
+                            : (resp.assets.find(a => a.category === 'share') ?? resp.assets[0]).key);
                 }
                 urlAssetRef.current = null;
                 setAssetsError(null);
@@ -826,11 +829,16 @@ export default function CompanyFlowsTab({
         () => priceLoading || turnoverAll.some(v => v != null),
         [priceLoading, turnoverAll],
     );
+    // «Сделки» рисуются на цене акции: у бумаги без тикера акции на Мосбирже (облигация,
+    // ОФЗ) режима нет — показываем «Позицию», пункт прячем, сохранённый выбор не трогаем.
+    const mapAvailable = !selectedAsset || !!selectedTicker;
     const effectiveMode: ChartMode =
-        (mode === 'cap' && !capAvailable) || (mode === 'overhang' && !overhangAvailable) ? 'rub' : mode;
+        (mode === 'cap' && !capAvailable) || (mode === 'overhang' && !overhangAvailable)
+        || (mode === 'map' && !mapAvailable) ? 'rub' : mode;
     const visibleModes = useMemo(
-        () => CF_MODES.filter(m => (m !== 'cap' || capAvailable) && (m !== 'overhang' || overhangAvailable)),
-        [capAvailable, overhangAvailable],
+        () => CF_MODES.filter(m => (m !== 'cap' || capAvailable) && (m !== 'overhang' || overhangAvailable)
+            && (m !== 'map' || mapAvailable)),
+        [capAvailable, overhangAvailable, mapAvailable],
     );
 
     // Подпись набора фондов для экспорта: до пяти держателей перечисляем тикерами.
