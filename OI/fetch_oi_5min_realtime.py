@@ -22,7 +22,7 @@ import json
 import aiohttp
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
-from typing import Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple
 import logging
 import sys
 from pathlib import Path
@@ -216,6 +216,13 @@ class AlgopackOIFetcher:
             elapsed = _time.time() - t_start
             log.info(f"  [{ticker}] {len(all_records)} records, {(d_till - d_from).days + 1} days ({elapsed:.1f}s)")
         return all_records if all_records else None
+
+    async def fetch_latest_all(self, session: aiohttp.ClientSession) -> Optional[List[dict]]:
+        """Последний 5-минутный срез по ВСЕМ тикерам одним запросом (`futoi/securities.json?latest=1`,
+        21.10.2026). Вместо ~150 запросов по тикерам каждые 5 минут. None — запрос не удался
+        (вызывающий падает на прежнюю загрузку по тикерам)."""
+        today = get_moscow_time().strftime('%Y-%m-%d')
+        return await self._fetch_oi_single(session, "ALL", f"{self.BASE_URL}.json", today, today, latest=True)
 
     async def _fetch_oi_single(
         self,
@@ -609,9 +616,40 @@ class OI5minUpdater:
 
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_BACKFILL)
 
+        # Обычный прогон оркестратора (без from_date): сначала ОДИН общий запрос последнего среза.
+        # Тикер, у которого в базе есть предыдущий срез, пишем из него; дыра (утро, сорвавшийся
+        # прогон, простой) и тикеры, которых нет в общем ответе (CH, NK), — прежней загрузкой по
+        # тикеру от последней записи. Общий запрос не удался → всё как раньше, по всем тикерам.
+        bulk_by_ticker: Dict[str, List[dict]] = {}
+        if from_date is None:
+            bulk = await self.fetcher.fetch_latest_all(session)
+            for r in bulk or []:
+                bulk_by_ticker.setdefault(r.get('ticker'), []).append(r)
+        bulk_used = 0
+
+        def _slot(r):
+            return datetime.strptime(f"{r['tradedate']} {r['tradetime']}", '%Y-%m-%d %H:%M:%S')
+
         async def process(ticker):
+            nonlocal bulk_used
             async with semaphore:
+                recs = bulk_by_ticker.get(ticker)
+                if recs:
+                    slot = max(_slot(r) for r in recs)
+                    last_dt = await asyncio.to_thread(self.get_last_datetime, ticker)
+                    if last_dt and last_dt >= slot:
+                        bulk_used += 1
+                        return 0, 0                      # этот срез уже в базе
+                    if last_dt and slot - last_dt <= timedelta(minutes=5):
+                        bulk_used += 1                   # предыдущий срез есть — дыры нет
+                        return await asyncio.to_thread(self.save_records, recs)
                 # Определяем from_date для каждого тикера
+                if from_date is None and bulk_by_ticker and ticker not in bulk_by_ticker:
+                    # Тикера нет в общем ответе (CH — не торгуется с 19.06.2026, NK — 5-минуток нет):
+                    # только сегодняшний день. Прежде загрузка от последней записи качала CH по дням
+                    # со 2026-06 — 126 запросов каждые 5 минут впустую. Начнёт торговаться — появится
+                    # в общем ответе, и дыру закроет ветка ниже (от последней записи).
+                    return await self.update_ticker(session, ticker, till_date, till_date)
                 if from_date:
                     ticker_from = from_date
                 else:
@@ -633,6 +671,9 @@ class OI5minUpdater:
             elif isinstance(r, Exception):
                 log.error(f"Ошибка: {r}")
 
+        if from_date is None:
+            log.info(f"  общий срез: {len(bulk_by_ticker)} тикеров в ответе, из него записано {bulk_used}, "
+                     f"по тикерам догружено {len(self.tickers) - bulk_used}; запросов к API: {self.fetcher.stats['requests']}")
         self.session_stats['records_saved'] += total_inserted
         return total_attempted, total_inserted
 
