@@ -160,9 +160,18 @@ def chart_url(x: dict) -> str:
     return f"{SITE}/oi?" + urllib.parse.urlencode(p)
 
 
+def mark(w: str) -> str:
+    """Метка окна (Вадим 26.10): 3 месяца — без эмодзи, дальше по красному кружку на каждое следующее окно
+    (полгода — один, 5 лет — пять), за всё время — огонёк."""
+    if w == "за всё время":
+        return "🔥 "
+    n = len(WINDOWS) - RANK[w]
+    return "🔴" * n + " " if n else ""
+
+
 def message(x: dict, close_day=None) -> str:
     tail = f" · по закрытию {pd.Timestamp(close_day):%d.%m}" if close_day is not None else ""
-    return (f"🔺 <b>{html.escape(x['name'])}</b>\n{LEGS[x['leg']]}\nРекорд {x['window']}{tail}\n"
+    return (f"{mark(x['window'])}<b>{html.escape(x['name'])}</b>\n{LEGS[x['leg']]}\nРекорд {x['window']}{tail}\n"
             f'<a href="{html.escape(chart_url(x))}">График →</a>')
 
 
