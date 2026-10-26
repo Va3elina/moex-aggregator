@@ -563,38 +563,13 @@ def detect_buffett(out):
                     ratio=round(float(arr[i]), 1))
 
 
-def detect_seasonality(out, idx, usd):
-    series = {"MIX": ("индекс Мосбиржи", idx["IMOEX"].dropna()), "Si": ("доллар", usd)}
-    days = pd.date_range(out.since, out.until, freq="B")
-    for code, (label, s) in series.items():
-        for t in days:
-            for n in (20, 40):
-                rets = []
-                for y in range(1, 11):
-                    start = t - pd.DateOffset(years=y)
-                    j = s.index.searchsorted(start)
-                    if j + n >= len(s) or s.index[j] > start + pd.Timedelta(days=7):
-                        continue
-                    rets.append(s.iloc[j + n] / s.iloc[j] - 1)
-                if len(rets) < 8:
-                    continue
-                share, med = np.mean(np.array(rets) > 0), float(np.median(rets))
-                if (share >= 0.75 or share <= 0.25) and abs(med) >= 0.01:
-                    verb = "рос" if share >= 0.75 else "падал"
-                    k = int(round(share * len(rets))) if share >= 0.75 else int(round((1 - share) * len(rets)))
-                    out.add(t, "сезонность", code, "сезонность", 4 + abs(share - 0.5) * 6 + min(abs(med), 0.08) * 20,
-                            f"Сезонность: в ближайшие ~{n} торговых дней {label} исторически {verb} в {k} из {len(rets)} лет (медиана {med:+.1%})",
-                            horizon=n, share=round(float(share), 2), median=round(med, 4))
-
-
 def detect_seasonality_all(out, assets=None):
     """Сезонность по всем активам, правило витрины /hot (signals/insights/season.py): находка в день входа в условие,
     не чаще раза в 30 дней на актив. Пауза считается с запасом до окна — находки до него тоже держат паузу.
-    Индекс Мосбиржи и доллар — у прежних детекторов (season.SKIP)."""
+    Индекс Мосбиржи и доллар — здесь же: прежние детекторы по ним (ход 20/40 дней, кривая без тренда) убраны, такой
+    сезонности на сайте нет."""
     from signals.insights import season
     for code, name, s in (assets if assets is not None else season.assets()):
-        if code in season.SKIP:
-            continue
         for d, c in season.entries(s, out.since - pd.Timedelta(days=4 * season.COOLDOWN), out.until):
             if d < out.since:
                 continue
@@ -640,44 +615,6 @@ def turning_points(c, half=45, min_move=0.025) -> list:
         if nk != kind and abs(c[nd] - c[d]) >= min_move:
             res.append((d, kind, nd, float(c[nd] - c[d])))
     return res
-
-
-def detect_seasonal_curve(out, idx, usd):
-    series = {"Si": ("доллар", usd), "MIX": ("индекс Мосбиржи", idx["IMOEX"].dropna())}
-    days = pd.date_range(out.since, out.until, freq="B")
-    on = lambda d: (pd.Timestamp(2001, 1, 1) + pd.Timedelta(days=int(d))).strftime("%d.%m")  # noqa: E731
-    for code, (label, s) in series.items():
-        cache = {}
-        for t in days:
-            if t.year not in cache:
-                c = seasonal_curve(s, t.year)
-                if c is None:
-                    cache[t.year] = None
-                else:
-                    fwd = np.array([c[(k + 30) % 366] - c[k] for k in range(366)])
-                    cache[t.year] = (c, turning_points(c), fwd, float(np.quantile(np.abs(fwd), 0.85)))
-            if cache[t.year] is None:
-                continue
-            c, tps, fwd, q85 = cache[t.year]
-            d0 = t.dayofyear - 1
-            ytd = s[(s.index.year == t.year) & (s.index <= t)]
-            corr = 0.0
-            if len(ytd) >= 60:
-                corr = float(np.corrcoef(np.log(ytd / ytd.iloc[0]).values, c[ytd.index.dayofyear.values - 1])[0, 1])
-            cs = f"; путь этого года повторяет сезонный (корреляция {corr:.2f})" if corr >= 0.7 else ""
-            for d, kind, nd, move in tps:
-                delta = (d - d0 + 183) % 366 - 183
-                if -10 <= delta <= 20:
-                    out.add(t, "сезонность", code, "сезонность", 4.5 + min(abs(move), 0.1) * 30 + max(corr, 0) * 1.5,
-                            f"Сезонность: {label} в окне сезонного {'дна' if kind == 'дно' else 'пика'} "
-                            f"(исторически ~{on(d)}); дальше в среднем {'рост' if move > 0 else 'снижение'} "
-                            f"на {abs(move):.0%} до ~{on(nd)}{cs}", anchor=f"{kind}{d}", leg="curve", corr=round(corr, 2))
-            f30 = fwd[d0]
-            if abs(f30) >= 0.02 and abs(f30) >= q85:
-                out.add(t, "сезонность", code, "сезонность", 4 + min(abs(f30), 0.06) * 50 + max(corr, 0),
-                        f"Сезонность: впереди один из сильнейших сезонных месяцев — {label} за 30 дней в среднем "
-                        f"{'растёт' if f30 > 0 else 'снижается'} на {abs(f30):.1%}{cs}", anchor="seg", leg="curve",
-                        corr=round(corr, 2))
 
 
 # ── сделки фондов и цена ────────────────────────────────────────────────────────
@@ -859,8 +796,6 @@ def main():
     out.ctx = {}
     detect_breadth(out)
     detect_buffett(out)
-    detect_seasonality(out, idx, usd)
-    detect_seasonal_curve(out, idx, usd)
     detect_seasonality_all(out)
     detect_fund_trades(out)
     detect_prices(out, idx, stk, perp, usd)

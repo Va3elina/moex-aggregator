@@ -559,7 +559,7 @@ def leg_spec(leg: dict) -> dict | None:
     if leg["family"] == "фонды":
         cat = f.get("cat") or leg["instrument"].replace("funds:", "")
         return {"kind": "funds", "cat": cat} if cat in cards.FUND else None
-    if leg["family"] == "сезонность" and leg["instrument"] in ("Si", "MIX"):
+    if leg["family"] == "сезонность" and leg["instrument"] in ("IMOEX", "USD000UTSTOM", *cards.SEASON_CODE):
         return {"kind": "seasonality", "code": leg["instrument"]}
     return None
 
