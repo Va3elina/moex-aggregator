@@ -21,61 +21,8 @@ from api.security.access_control import enforce_guest_limits, enforce_tier_limit
 router = APIRouter(prefix="/api/funds", tags=["funds"])
 log = get_logger()
 
-# Маппинг category → отображаемое имя и индекс-бенчмарк
-# min_date — нижняя граница истории. У money_market и gold реально доступная
-# история до 2022 содержит шум (мало эмитентов / низкие объёмы / неточные NAV),
-# поэтому отрезаем до 2022-01-09 чтобы не вводить пользователей в заблуждение.
-CATEGORY_INDEX_MAP = {
-    "money_market": {"name": "Денежный рынок", "index": "RUSFAR3M", "min_date": "2022-01-09"},
-    "stocks": {"name": "Акции", "index": "IMOEX", "min_date": "1997-05-26"},
-    "bonds": {"name": "Облигации", "index": "RGBITR", "min_date": "1997-03-24"},
-    "gold": {"name": "Золото", "index": "GLDRUB_TOM", "min_date": "2022-01-09"},
-    # Юаневые фонды (раздел «Юань»). Бенчмарк — валютная пара CNYRUB_TOM
-    # (курс юаня к рублю, board CETS): NAV юаневых фондов хранится в ₽, поэтому
-    # курс — более понятный ориентир, чем юаневая ставка RUSFAR CNY.
-    # CNY — в fund_data.nav_cny/pay_cny. min_date=2024-07: до этого юаневая
-    # ликвидность на MOEX была мала/нестабильна — часть фондов имеет точки
-    # с 2023, но осмысленный ряд начинается с лета-2024.
-    "yuan": {"name": "Юань", "index": "CNYRUB_TOM", "min_date": "2024-07-01"},
-}
-
-
-def load_fund_categories() -> dict:
-    """Загрузка категорий фондов из БД. Возвращает структуру аналогичную старой FUND_CATEGORIES."""
-    engine = get_engine()
-    with engine.connect() as conn:
-        # Фильтр «>=2 точки NAV»: фонд с одной (или нулём) точек СЧА не может
-        # показать ни линию динамики, ни приток/отток (нет «изменения») —
-        # выглядит как мусор. Скрываем такие фонды из «Денег в фондах», пока
-        # фетчер не накопит историю (новый фонд → появится после backfill).
-        # subcategory='Авторские' в облигациях (стратегия «Рублёвые перспективы»)
-        # скрыта из «Денег в фондах» — по запросу продукта, фонд-стратегия не
-        # сопоставим с остальными группами по дюрации. Авторские фонды АКЦИЙ
-        # (блогерские фонды Альфа-Капитал и др.) под этот запрет не подпадали
-        # изначально — фильтр был написан без учёта category и скрывал их тоже;
-        # ограничиваем исключение категорией bonds.
-        rows = conn.execute(text(
-            "SELECT fund_id, ticker, name, category, subcategory, uk_id FROM funds f "
-            "WHERE (SELECT count(*) FROM fund_data fd WHERE fd.fund_id = f.fund_id AND fd.nav IS NOT NULL) >= 2 "
-            "AND NOT (category = 'bonds' AND subcategory = 'Авторские') "
-            "ORDER BY category, subcategory_order, ticker"
-        )).fetchall()
-
-    categories = {}
-    for row in rows:
-        fund_id, ticker, name, cat, subcat, uk_id = row[0], row[1], row[2], row[3], row[4], row[5]
-        if cat not in CATEGORY_INDEX_MAP:
-            continue
-        if cat not in categories:
-            meta = CATEGORY_INDEX_MAP[cat]
-            categories[cat] = {
-                "name": meta["name"],
-                "index": meta["index"],
-                "funds": {}
-            }
-        categories[cat]["funds"][fund_id] = {"ticker": ticker, "name": name, "subcategory": subcat, "uk_id": uk_id}
-
-    return categories
+# Категории (имя, индекс-бенчмарк, min_date) и состав — api/services/fund_flows: их же берёт бот рекордных потоков.
+from api.services.fund_flows import CATEGORY_INDEX_MAP, load_fund_categories  # noqa: E402,F401
 
 # Периоды
 PERIODS = {
@@ -649,7 +596,7 @@ FlowTimeframeType = Literal["1d", "1w", "1m", "3m", "1y"]
 # этому индикатору; алерты по потокам фондов это не затрагивает.
 # Таблица — в api/services/fund_reorg.py: её же применяет движок находок (signals/insights),
 # иначе он видел «отток» там, где на графике его нет.
-from api.services.fund_reorg import FLOW_REORG_CORRECTIONS  # noqa: E402
+from api.services import fund_flows  # noqa: E402
 
 
 @router.get("/flows")
@@ -750,18 +697,6 @@ def get_funds_flows(
 
     engine = get_engine()
 
-    def get_period_key(d):
-        if timeframe == "1w":
-            return d.isocalendar()[:2]
-        elif timeframe == "1m":
-            return (d.year, d.month)
-        elif timeframe == "3m":
-            return (d.year, (d.month - 1) // 3)
-        elif timeframe == "1y":
-            return (d.year,)
-        else:
-            return d.isocalendar()[:2]
-
     try:
         with engine.connect() as conn:
             # Получаем данные per-fund с forward-fill (не агрегируем в SQL —
@@ -810,165 +745,10 @@ def get_funds_flows(
             for row in result:
                 fund_series[row[0]].append((row[1], float(row[2]), float(row[3] or 0)))
 
-            # Поправки на технические реорганизации (FLOW_REORG_CORRECTIONS):
-            # находим день скачка net_flow затронутого фонда (max |net_flow| в окне
-            # ±10 дней от даты события — устойчиво к лагу/нерабочим дням) и копим
-            # знаковую поправку в рублях по ключу (fund_id, день_скачка). Фонд,
-            # снятый пользователем, отсутствует в fund_series → поправка не применится.
-            ticker_to_fid = {
-                finfo.get("ticker"): fid
-                for fid, finfo in cat_config["funds"].items()
-            }
-            corrections: dict = {}
-            for ev_ticker, ev_date_str, impact_bln in FLOW_REORG_CORRECTIONS.get(category, []):
-                fid = ticker_to_fid.get(ev_ticker)
-                if fid is None or fid not in fund_series:
-                    continue
-                ev_date = date.fromisoformat(ev_date_str)
-                series = fund_series[fid]
-                best_day = None
-                best_mag = -1.0
-                for j in range(1, len(series)):
-                    d_prev, nav_prev, pay_prev = series[j - 1]
-                    d_curr, nav_curr, pay_curr = series[j]
-                    if abs((d_curr - ev_date).days) > 10:
-                        continue
-                    tf = nav_curr - nav_prev
-                    if pay_prev > 0 and pay_curr > 0:
-                        nf = tf - nav_prev * (pay_curr - pay_prev) / pay_prev
-                    else:
-                        nf = tf
-                    if abs(nf) > best_mag:
-                        best_mag = abs(nf)
-                        best_day = d_curr
-                if best_day is not None:
-                    corrections[(fid, best_day)] = corrections.get((fid, best_day), 0.0) + impact_bln * 1e9
-
-            # Дневные чистые потоки в рублях — базовая, самая точная
-            # дискретизация: поток = ΔСЧА − переоценка, где переоценка берётся
-            # от СЧА на начало ШАГА. На крупном слоте (неделя/месяц) переоценка
-            # считается от СЧА начала слота и занижается, если СЧА росла внутри
-            # него, поэтому величина НЕ складывается из подпериодов. Отсюда же
-            # считается скользящая сумма (см. rolling ниже).
-            def compute_daily_rows():
-                fund_date_map: dict = {
-                    fid: {d: (nav, pay) for d, nav, pay in rows}
-                    for fid, rows in fund_series.items()
-                }
-                all_dates = sorted(set(d for rows in fund_series.values() for d, _, _ in rows))
-                out = []
-                for i in range(1, len(all_dates)):
-                    prev_d = all_dates[i - 1]
-                    curr_d = all_dates[i]
-                    total_net = 0.0
-                    gross_in = 0.0
-                    gross_out = 0.0
-                    prev_total = 0.0
-
-                    for fid, date_map in fund_date_map.items():
-                        if prev_d not in date_map or curr_d not in date_map:
-                            continue  # фонд отсутствует в одном из дней — пропускаем
-                        prev_nav, prev_pay = date_map[prev_d]
-                        curr_nav, curr_pay = date_map[curr_d]
-                        prev_total += prev_nav
-                        total_flow = curr_nav - prev_nav
-                        if prev_pay > 0 and curr_pay > 0:
-                            market_change = prev_nav * (curr_pay - prev_pay) / prev_pay
-                            net_flow = total_flow - market_change
-                        else:
-                            net_flow = total_flow
-                        corr = corrections.get((fid, curr_d))
-                        if corr:
-                            net_flow -= corr
-                        total_net += net_flow
-                        if net_flow >= 0:
-                            gross_in += net_flow
-                        else:
-                            gross_out += net_flow
-
-                    out.append((prev_d, curr_d, total_net, gross_in, gross_out, prev_total))
-                return out
-
-            flows = []
-
-            if timeframe == "1d":
-                for prev_d, curr_d, total_net, gross_in, gross_out, prev_total in compute_daily_rows():
-                    flows.append({
-                        "period_start": prev_d.isoformat(),
-                        "period_end": curr_d.isoformat(),
-                        "flow": round(total_net / 1e9, 4),
-                        "gross_in": round(gross_in / 1e9, 4),
-                        "gross_out": round(gross_out / 1e9, 4),
-                        "flow_pct": round((total_net / prev_total) * 100, 2) if prev_total > 0 else 0
-                    })
-            else:
-                # Группируем каждый фонд по периодам отдельно
-                fund_period: dict = {}
-                for fid, rows in fund_series.items():
-                    periods: dict = defaultdict(list)
-                    for d, nav, pay in rows:
-                        periods[get_period_key(d)].append((d, nav, pay))
-                    fund_period[fid] = dict(periods)
-
-                all_period_keys = sorted(
-                    set(pk for fp in fund_period.values() for pk in fp.keys())
-                )
-
-                for i in range(1, len(all_period_keys)):
-                    pk = all_period_keys[i]
-                    ppk = all_period_keys[i - 1]
-                    total_net = 0.0
-                    gross_in = 0.0
-                    gross_out = 0.0
-                    prev_total = 0.0
-                    period_start = None
-                    period_end = None
-
-                    for fid, fp in fund_period.items():
-                        curr_pts = fp.get(pk)
-                        if not curr_pts:
-                            continue
-                        curr_pts_s = sorted(curr_pts, key=lambda x: x[0])
-                        start_d = curr_pts_s[0][0]
-                        end_d, end_nav, end_pay = curr_pts_s[-1]
-
-                        if period_start is None or start_d < period_start:
-                            period_start = start_d
-                        if period_end is None or end_d > period_end:
-                            period_end = end_d
-
-                        prev_pts = fp.get(ppk)
-                        if not prev_pts:
-                            # Фонд появился впервые — пропускаем (структурное изменение, не поток)
-                            continue
-
-                        prev_nav = sorted(prev_pts, key=lambda x: x[0])[-1][1]
-                        prev_pay = sorted(prev_pts, key=lambda x: x[0])[-1][2]
-                        prev_total += prev_nav
-                        total_flow = end_nav - prev_nav
-                        if prev_pay > 0 and end_pay > 0:
-                            market_change = prev_nav * (end_pay - prev_pay) / prev_pay
-                            net_flow = total_flow - market_change
-                        else:
-                            net_flow = total_flow
-                        for (c_fid, c_day), c_val in corrections.items():
-                            if c_fid == fid and start_d <= c_day <= end_d:
-                                net_flow -= c_val
-                        total_net += net_flow
-                        if net_flow >= 0:
-                            gross_in += net_flow
-                        else:
-                            gross_out += net_flow
-
-                    if period_start is not None:
-                        flows.append({
-                            "period_start": period_start.isoformat(),
-                            "period_end": period_end.isoformat(),
-                            "flow": round(total_net / 1e9, 4),
-                            "gross_in": round(gross_in / 1e9, 4),
-                            "gross_out": round(gross_out / 1e9, 4),
-                            "flow_pct": round((total_net / prev_total) * 100, 2) if prev_total > 0 else 0
-                        })
+            # Поправки на реорганизации, дневные шаги и календарные слоты — api/services/fund_flows: тот же
+            # расчёт видит бот рекордных потоков (signals/funds_flow_notify.py).
+            corrections = fund_flows.corrections(category, cat_config["funds"], fund_series)
+            flows = fund_flows.slot_flows(fund_series, corrections, timeframe)
 
             # Скользящая сумма за 3 месяца. Считается ВСЕГДА по ДНЕВНЫМ потокам
             # за настоящие 92 дня до даты столбца; таймфрейм остаётся только
@@ -980,7 +760,7 @@ def get_funds_flows(
             # flow_pct — доля от суммарной СЧА фондов на начало окна.
             if rolling == "3m" and flows:
                 win = timedelta(days=92)
-                daily = compute_daily_rows()
+                daily = fund_flows.daily_rows(fund_series, corrections)
                 d_ends = [r[1] for r in daily]
                 pref_net, pref_in, pref_out = [0.0], [0.0], [0.0]
                 for r in daily:
