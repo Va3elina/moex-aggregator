@@ -577,46 +577,6 @@ def detect_seasonality_all(out, assets=None):
                     share=round(float(c["share"]), 2), median=round(c["med"], 1), years=c["n"], name=name)
 
 
-def seasonal_curve(s: pd.Series, year: int):
-    """Средний путь года без тренда по десяти прошлым годам: 366 значений, [0] — 1 января.
-    Тренд снят у каждого года отдельно (год начинается и кончается в нуле), иначе
-    девальвация 2014–2024 превращает любое окно в «доллар обычно растёт»."""
-    curves = []
-    for y in range(year - 10, year):
-        p = s[s.index.year == y]
-        if len(p) < 200:
-            continue
-        lr = np.log(p / p.iloc[0]).values
-        doy = p.index.dayofyear.values
-        det = lr - (doy / 365.0) * lr[-1]
-        curves.append(pd.Series(det, index=doy).groupby(level=0).last()
-                      .reindex(range(1, 367)).interpolate().bfill().ffill())
-    if len(curves) < 8:
-        return None
-    c = pd.concat(curves, axis=1).mean(axis=1).values
-    ext = np.concatenate([c[-30:], c, c[:30]])            # декабрь переходит в январь
-    return pd.Series(ext).rolling(15, center=True, min_periods=1).mean().values[30:-30]
-
-
-def turning_points(c, half=45, min_move=0.025) -> list:
-    """Сезонные дно и пик: экстремум в окне ±half дней, до следующего противоположного
-    экстремума кривая проходит не меньше min_move."""
-    n = len(c)
-    pts = []
-    for d in range(n):
-        win = c[[(d + k) % n for k in range(-half, half + 1)]]
-        if c[d] == win.min():
-            pts.append((d, "дно"))
-        elif c[d] == win.max():
-            pts.append((d, "пик"))
-    res = []
-    for j, (d, kind) in enumerate(pts):
-        nd, nk = pts[(j + 1) % len(pts)]
-        if nk != kind and abs(c[nd] - c[d]) >= min_move:
-            res.append((d, kind, nd, float(c[nd] - c[d])))
-    return res
-
-
 # ── сделки фондов и цена ────────────────────────────────────────────────────────
 def detect_fund_trades(out):
     ev = data.read("brain_events")
