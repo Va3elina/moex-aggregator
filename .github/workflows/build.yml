@@ -70,4 +70,4 @@ jobs:
       - name: Brain and content factory tests
         env:
           DB_URL: postgresql+pg8000://ci:ci@127.0.0.1:1/ci
-        run: python -m pytest -q research/brain research/content_pipeline_v2
+        run: python -m pytest -q research/brain research/content_pipeline_v2 tests/test_funds_flow_notify.py

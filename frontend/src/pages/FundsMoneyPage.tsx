@@ -180,6 +180,26 @@ export default function FundsMoneyPage() {
         }
     };
 
+    // Диплинк из уведомления о рекордном потоке (signals/funds_flow_notify.py): ?tf= открывает «Притоки-Оттоки»
+    // на этом таймфрейме без сглаживания, ?period= — период (только допустимый для ТФ, иначе минимальный).
+    // Применив, убираем tf/period из адреса — иначе смена раздела (она пишет ?category=) снова сбрасывала бы
+    // выбранный пользователем ТФ на тот, что пришёл в ссылке.
+    useEffect(() => {
+        const tf = searchParams.get('tf') as FlowTimeframe | null;
+        if (!tf || !(tf in FLOW_MIN_PERIODS)) return;
+        const allowed = FLOW_MIN_PERIODS[tf];
+        const p = searchParams.get('period') as Period | null;
+        setViewMode('flows');
+        setFlowRolling('none');
+        setFlowTimeframeRaw(tf);
+        setPeriod(p && allowed.includes(p) ? p : allowed[0]);
+        const next = new URLSearchParams(searchParams);
+        next.delete('tf');
+        next.delete('period');
+        setSearchParams(next, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
+
     // Smart default: для Free '1d' недоступен → переключаем на '1w'
     const defaultTfSwitchedRef = useRef(false);
     useEffect(() => {
