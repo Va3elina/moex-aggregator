@@ -89,8 +89,6 @@ def detect_window(until: pd.Timestamp) -> list:
     out.ctx = {}
     det.detect_breadth(out)
     det.detect_buffett(out)
-    det.detect_seasonality(out, idx, usd)
-    det.detect_seasonal_curve(out, idx, usd)
     det.detect_seasonality_all(out)
     det.detect_fund_trades(out)
     det.detect_prices(out, idx, stk, perp, usd)
@@ -191,8 +189,8 @@ def pick(items: list, log=print, until=None) -> list:
         if kind == "funds":
             pool = [x for x in pool if (x.get("facts") or {}).get("cat")]
         if kind == "seasonality":
-            # индекс и доллар — прежние детекторы; остальные активы — правило витрины /hot (leg «3m», season.py)
-            pool = [x for x in pool if x["instrument"] in ("Si", "MIX") or (x.get("facts") or {}).get("leg") == "3m"]
+            # все активы, включая индекс и доллар, — правило витрины /hot (leg «3m», season.py)
+            pool = [x for x in pool if (x.get("facts") or {}).get("leg") == "3m"]
         if not pool:
             continue
         last = max(x["date"] for x in pool)
@@ -268,8 +266,6 @@ def _inst_rx(spec):
     if kind == "funds":
         return FUND_INST.get(spec["cat"], r"фонд"), False
     if kind == "seasonality":
-        if spec["code"] in ("Si", "MIX"):
-            return (r"доллар|валют" if spec["code"] == "Si" else r"индекс\w* мосбирж|IMOEX|акци"), False
         if spec["code"] in SEASON_RX:
             return SEASON_RX[spec["code"]], False
         from signals.insights import season

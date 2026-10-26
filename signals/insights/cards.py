@@ -1378,106 +1378,15 @@ def season3m_card(code, as_of) -> dict:
             "hashtag": HASHTAG["seasonality"]}
 
 
+# индекс и доллар по прежним кодам находок (MIX, Si) — тот же ряд, что на витрине /hot
+SEASON_CODE = {"MIX": "IMOEX", "Si": "USD000UTSTOM"}
+
+
 def seasonality_card(code, as_of) -> dict:
-    if code not in ("Si", "MIX"):
-        return season3m_card(code, as_of)     # остальные активы — правило витрины /hot
-    P, names, groups, to_stock, idx, stk, perp, usd = data()
-    label, full = ("доллар", usd) if code == "Si" else ("индекс Мосбиржи", idx["IMOEX"].dropna())
-    s = upto(full, as_of)
-    t = s.index[-1]
-    C = det.seasonal_curve(s, t.year)
-    tps = det.turning_points(C)
-    d0 = t.dayofyear - 1
-    lo, hi = int(np.argmin(C)), int(np.argmax(C))
-    y0, y1 = t.year - 10, t.year - 1
-    facts = [f"сезонный путь {'доллара' if code == 'Si' else 'индекса Мосбиржи'} по годам {y0}-{y1} "
-             f"(средний, без годового тренда): дно года - около {dm_ru(lo)}, пик - около {dm_ru(hi)}, "
-             f"размах {p_ru(C[hi] - C[lo], False)}"]
-    ahead = min(tps, key=lambda tp: (tp[0] - d0) % 366)
-    behind = min(tps, key=lambda tp: (d0 - tp[0]) % 366)
-    KIND = {"дно": ("сезонное дно", "сезонного дна"), "пик": ("сезонный пик", "сезонного пика")}
-    days = lambda n: f"{n} {plural(n, ('день', 'дня', 'дней'))}"  # noqa: E731
-    grow = lambda m: "растёт" if m > 0 else "снижается"  # noqa: E731
-    d_b, kind_b, nd_b, move_b = behind
-    d_, kind, nd, move = ahead
-    fwd_move = float(C[d_] - C[d0])
-    days_to, back = (d_ - d0) % 366, (d0 - d_b) % 366
-    # фаза года одной строкой — она же заголовок карточки
-    if back <= 2:
-        phase = (f"{KIND[kind_b][0]} приходится на эти дни (около {dm_ru(d_b)}); дальше до ~{dm_ru(nd_b)} "
-                 f"кривая в среднем {grow(move_b)} на {p_ru(abs(move_b), False)}")
-    elif days_to <= 45:
-        phase = (f"до {KIND[kind][1]} (около {dm_ru(d_)}) - {days(days_to)}; до него кривая в среднем "
-                 f"{grow(fwd_move)} на {p_ru(abs(fwd_move), False)}, после - {'рост' if move > 0 else 'снижение'} "
-                 f"на {p_ru(abs(move), False)} до ~{dm_ru(nd)}")
-    elif back <= 30:
-        phase = (f"{KIND[kind_b][0]} (около {dm_ru(d_b)}) было {days(back)} назад; дальше до ~{dm_ru(nd_b)} "
-                 f"кривая в среднем {grow(move_b)} на {p_ru(abs(move_b), False)}")
-    else:
-        phase = (f"сейчас отрезок сезонного {'роста' if fwd_move > 0 else 'снижения'}: от {KIND[kind_b][1]} "
-                 f"(около {dm_ru(d_b)}) до {KIND[kind][1]} (около {dm_ru(d_)}); до его конца кривая в среднем "
-                 f"{grow(fwd_move)} ещё на {p_ru(abs(fwd_move), False)}")
-    facts.append(phase)
-    # по годам: от этого календарного дня до даты следующей сезонной точки
-    target = ahead if days_to >= 10 else (ahead[2], None, None, None)
-    tdoy = target[0]
-    outs = []
-    for y in range(y0, y1 + 1):
-        a = pd.Timestamp(y, 1, 1) + pd.Timedelta(days=d0)
-        b = pd.Timestamp(y, 1, 1) + pd.Timedelta(days=tdoy) + (pd.DateOffset(years=1) if tdoy <= d0 else pd.Timedelta(0))
-        ja, jb = full.index.searchsorted(a), full.index.searchsorted(b)
-        if jb < len(full) and full.index[jb] <= t and ja < jb:
-            outs.append((y, float(full.iloc[jb] / full.iloc[ja] - 1)))
-    after = []
-    if outs:
-        k = sum(r > 0 for _, r in outs)
-        after.append(f"от {dm_ru(d0)} до {dm_ru(tdoy)} по годам: "
-                     + ", ".join(f"{y}: {p_ru(r)}" for y, r in outs))
-        after.append(f"рост в {k} годах из {len(outs)}, медиана {p_ru(float(np.median([r for _, r in outs])))} "
-                     f"(это без снятия тренда - как видел бы инвестор)")
-    for n in (20, 40):
-        rets = []
-        for y in range(1, 11):
-            a = t - pd.DateOffset(years=y)
-            j = full.index.searchsorted(a)
-            if j + n < len(full) and full.index[j + n] <= t:
-                rets.append(full.iloc[j + n] / full.iloc[j] - 1)
-        if len(rets) >= 8:
-            k = int(sum(r > 0 for r in rets))
-            after.append(f"следующие {n} торговых дней: {label} рос в {k} годах из {len(rets)}, медиана "
-                         f"{p_ru(float(np.median(rets)))}")
-    ytd = s[s.index.year == t.year]
-    price = [f"{label} - {px_ru(s.iloc[-1], label)} на {d_ru(t, t)}; с начала года {p_ru(ytd.iloc[-1] / ytd.iloc[0] - 1)}"]
-    if len(ytd) >= 60:
-        corr = float(np.corrcoef(np.log(ytd / ytd.iloc[0]).values, C[ytd.index.dayofyear.values - 1])[0, 1])
-        if corr >= 0.5:
-            price.append(f"путь этого года похож на сезонный: корреляция {f'{corr:.2f}'.replace('.', ',')} "
-                         f"(1 - полное совпадение формы)")
-    for hi_ in (False, True):
-        pu, py = since(s.values, s.index, len(s) - 1, hi_)
-        stx = status_ru(pu, py, s.index, hi_, t)
-        if stx and py >= 0.5:
-            price.append(f"{label} на {stx}".replace("на максимум", "на максимуме").replace("на минимум", "на минимуме"))
-    y52 = s[s.index > t - pd.Timedelta(days=365)]
-    price.append(f"за год: минимум {px_ru(y52.min(), label)} ({d_ru(y52.idxmin(), t)}), максимум "
-                 f"{px_ru(y52.max(), label)} ({d_ru(y52.idxmax(), t)})")
-    limits = [NO_FORECAST,
-              "сезонность - среднее за 10 лет: в отдельные годы было иначе, это видно в строке по годам",
-              "сезонная кривая без годового тренда: у доллара тренд за 10 лет вверх, поэтому по годам "
-              "рост встречается чаще, чем по кривой" if code == "Si" else
-              "сезонная кривая без годового тренда; строки по годам - с трендом"]
-    xs = pd.date_range(pd.Timestamp(t.year, 1, 1), periods=366, freq="D")
-    chart = {"type": "season", "title": f"Сезонность: {label}, средний путь {y0}-{y1} и {t.year} год",
-             "x": xs, "y": C * 100, "x2": ytd.index, "y2": (ytd / ytd.iloc[0] - 1).values * 100,
-             "now": t, "y_label": "средний путь, %", "y2_label": f"{t.year}, % с начала года",
-             "marks": [(xs[d_], C[d_] * 100) for d_, *_ in tps]}
-    return {"kind": "seasonality", "spec": {"code": code}, "as_of": t,
-            "headline": f"Сезонность: {label} - {phase}",
-            "facts": facts, "after": after, "analogy": [], "price": price, "context": [],
-            "limits": limits, "chart": chart,
-            "chart_note": [f"на графике - средний сезонный путь ({y0}-{y1}, оранжевая линия, без тренда) "
-                           f"и путь {t.year} года с начала года (серая); точки - сезонные дно и пик"],
-            "hashtag": HASHTAG["seasonality"]}
+    # Сезонность для поста — только то, что читатель видит на сайте: правило витрины /hot по любому активу. Прежняя
+    # карточка индекса и доллара строилась на кривой без годового тренда, которой на сайте нет: пост 23.10 «сезонный
+    # подъём к февралю» не сходился с графиком сезонности (Вадим 26.10).
+    return season3m_card(SEASON_CODE.get(code, code), as_of)
 
 
 def _sql(query: str, params: dict) -> pd.DataFrame:

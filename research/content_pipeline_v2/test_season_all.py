@@ -58,8 +58,9 @@ def test_detector_emits_entry_with_hot_style_title():
     out = det.Out("2026-06-01", "2026-10-07")
     det.detect_seasonality_all(out, assets=[("GMKN", "Норильский никель", s), ("IMOEX", "Индекс МосБиржи", s)])
     items = out.items
-    assert len(items) == 1, "один вход за окно; индекс Мосбиржи — у прежних детекторов"
-    x = items[0]
+    # индекс Мосбиржи — по тому же правилу /hot: прежние детекторы по кривой без тренда убраны (на сайте её нет)
+    assert sorted(x["instrument"] for x in items) == ["GMKN", "IMOEX"], "один вход за окно на актив"
+    x = next(x for x in items if x["instrument"] == "GMKN")
     assert x["instrument"] == "GMKN" and x["facts"]["leg"] == "3m"
     assert x["title"].startswith("Сезонность: Норильский никель — следующие 3 месяца рос в ")
     assert " из " in x["title"] and "обычно +" in x["title"]
