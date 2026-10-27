@@ -8,7 +8,8 @@
  *  - «Сделки» — CompanyFlowsPriceMap: недельная линия цены акции с кругляшами
  *    месячных нетто-сделок (площадь ∝ |нетто|) — видно, на каких уровнях цены
  *    фонды покупали и продавали. Цена — /price-weekly по тикеру
- *    (resolveFundTicker); нет тикера или истории → empty-state внутри чарта.
+ *    (resolveFundTicker), у облигаций — по ISIN в % от номинала; нет ни того
+ *    ни другого или истории → empty-state внутри чарта.
  *  - «Позиция» — CompanyShareChart: бары абсолютной позиции фондов в ₽
  *    (Σ СЧА×доля из /company-weights).
  *  - «% в обращении» — тот же чарт, бары в % от free-float капы компании
@@ -20,7 +21,8 @@
  *    медиана шумит на порядок сильнее числителя, а выходные торги МосБиржи
  *    исключены, так как ПИФы в них не участвуют — см. price_weekly). Пункт
  *    скрыт, если оборота нет (не акция / нет истории в candles).
- * Нет цены (облигация/ОФЗ) → гистограмма во всю высоту.
+ * Облигации/ОФЗ: цена по ISIN в % от номинала (bond_history), «Навеса» и
+ * «% в обращении» у них нет. Нет цены вовсе → гистограмма во всю высоту.
  *
  * Прежний двухуровневый выбор («Сделки/Позиция» + субтумблер веса) сплющен в
  * один ряд, вес «По доле» (среднее долей по фондам) убран — решение владельца
@@ -501,6 +503,12 @@ export default function CompanyFlowsTab({
         [selectedAsset],
     );
 
+    // Чем запрашивать цену: тикер акции, а у облигации/ОФЗ (тикера нет) — ISIN,
+    // цена тогда в % от номинала. Нет ни того ни другого (денежный рынок,
+    // валюта) → цены нет. Совпадает с price.ticker, поэтому служит и ключом кэша.
+    const bondIsin = !selectedTicker && selectedAsset?.category === 'bond' ? selectedAsset.isin ?? undefined : undefined;
+    const priceRef = selectedTicker ?? bondIsin;
+
     // ITEM 2 (cross-tab) — применить presetAsset: выбрать бумагу по isin || name.
     // Ждём загрузки assets, затем матчим и сразу «потребляем» preset.
     useEffect(() => {
@@ -547,19 +555,19 @@ export default function CompanyFlowsTab({
     }, [selectedAsset, metric]);
 
     // Цена для «Карты сделок» и «Доли»: грузим при входе в режим / смене бумаги.
-    // Кэш — сам price (тикер совпал → не перезапрашиваем). Нет тикера (облигация,
-    // ОФЗ, денежный рынок) → сразу «нет истории», без похода на бэкенд.
+    // Кэш — сам price (ключ совпал → не перезапрашиваем). Нет ни тикера, ни ISIN
+    // облигации (денежный рынок, валюта) → сразу «нет истории», без похода на бэкенд.
     useEffect(() => {
-        if (!selectedTicker) {
+        if (!priceRef) {
             setPrice(null);
             setPriceError('NO_PRICE_HISTORY');
             return;
         }
-        if (price?.ticker === selectedTicker) return;
+        if (price?.ticker === priceRef) return;
         let cancelled = false;
         setPriceLoading(true);
         setPriceError(null);
-        getCompanyPriceWeekly(selectedTicker)
+        getCompanyPriceWeekly(priceRef, priceRef === bondIsin)
             .then(resp => {
                 if (cancelled) return;
                 setPrice(resp);
@@ -576,7 +584,7 @@ export default function CompanyFlowsTab({
             cancelled = true;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mode, selectedTicker, price]);
+    }, [mode, priceRef, price]);
 
     // История позиции: грузим при смене бумаги, независимо от режима (ffcap
     // нужен ряду режимов, см. выше).
@@ -800,14 +808,14 @@ export default function CompanyFlowsTab({
     const turnoverAll = useMemo<(number | null)[]>(() => {
         if (!weightsData) return [];
         const byMonth = new Map<string, number>();
-        if (price && price.ticker === selectedTicker && price.turnover_months && price.med_turnover) {
+        if (price && price.ticker === priceRef && price.turnover_months && price.med_turnover) {
             price.turnover_months.forEach((m, i) => {
                 const v = price.med_turnover![i];
                 if (v != null && v > 0) byMonth.set(m, v);
             });
         }
         return weightsData.months.map(m => byMonth.get(m) ?? null);
-    }, [weightsData, price, selectedTicker]);
+    }, [weightsData, price, priceRef]);
     const visibleTurnover = useMemo(
         () => turnoverAll.slice(sharePeriodStart),
         [turnoverAll, sharePeriodStart],
@@ -829,9 +837,10 @@ export default function CompanyFlowsTab({
         () => priceLoading || turnoverAll.some(v => v != null),
         [priceLoading, turnoverAll],
     );
-    // «Сделки» рисуются на цене акции: у бумаги без тикера акции на Мосбирже (облигация,
-    // ОФЗ) режима нет — показываем «Позицию», пункт прячем, сохранённый выбор не трогаем.
-    const mapAvailable = !selectedAsset || !!selectedTicker;
+    // «Сделки» рисуются на цене: акции — по тикеру, облигации/ОФЗ — по ISIN (в % от
+    // номинала). Без цены (денежный рынок, валюта) режима нет — показываем «Позицию»,
+    // пункт прячем, сохранённый выбор не трогаем.
+    const mapAvailable = !selectedAsset || !!priceRef;
     const effectiveMode: ChartMode =
         (mode === 'cap' && !capAvailable) || (mode === 'overhang' && !overhangAvailable)
         || (mode === 'map' && !mapAvailable) ? 'rub' : mode;
@@ -871,7 +880,7 @@ export default function CompanyFlowsTab({
     // и до прихода новой цены гистограмма растягивалась во всю высоту холста.
     // Тот же кадр со stale priceError показывал «Нет истории цены» при
     // переходе облигация → акция.
-    const priceStale = !!selectedTicker && price?.ticker !== selectedTicker;
+    const priceStale = !!priceRef && price?.ticker !== priceRef;
     const weightsStale = !!selectedAsset && weightsKey !== selectedAsset.key;
     const priceMissing = !priceLoading && !priceStale && priceError === 'NO_PRICE_HISTORY';
 
@@ -1358,6 +1367,7 @@ export default function CompanyFlowsTab({
                         series={visibleSeries}
                         weeks={price?.weeks ?? []}
                         closes={price?.closes ?? []}
+                        priceUnit={price?.unit}
                         assetName={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
                         height={chartHeight}
                         loading={flowsLoading || priceLoading || priceStale}
@@ -1374,6 +1384,7 @@ export default function CompanyFlowsTab({
                         turnover={visibleTurnover}
                         weeks={price?.weeks ?? []}
                         closes={price?.closes ?? []}
+                        priceUnit={price?.unit}
                         shareMode={effectiveMode as ShareMode}
                         assetName={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
                         height={chartHeight}

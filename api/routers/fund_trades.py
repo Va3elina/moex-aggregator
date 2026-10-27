@@ -24,6 +24,7 @@ WHITELIST (beta): сейчас показываем только 6 ВИМ-фон
 остальные УК (Первая, Альфа, Т-Капитал) через тот же НРД-парсер.
 """
 import math
+import re
 from datetime import date, timedelta
 
 from typing import Optional
@@ -3046,10 +3047,58 @@ REDOMICILE_RATIO: dict[str, float] = {
 }
 
 
+# Режимы, где цена не рыночная: адресные сделки, аукционы размещения и выкупа.
+# Их close/value — это цена и объём одной договорённости, а не торгов.
+BOND_SKIP_BOARDS = ("PACT", "AUCT", "AUBB", "SPOB")
+_BOND_SKIP_SQL = "(" + ", ".join(f"'{b}'" for b in BOND_SKIP_BOARDS) + ")"
+
+
+def bond_price_weekly(isin: str, db: Session) -> dict:
+    """Недельная цена облигации в % от номинала из bond_history (ISS, по ISIN).
+
+    Один день — одна строка: у бумаги бывает несколько режимов (рублёвый TQCB и
+    долларовый TQOD у замещающих, старые EQOB/EQNO у ОФЗ). Берём рублёвый с
+    наибольшим оборотом; цена — close, в день без сделок — legalcloseprice
+    (официальная цена закрытия). В % от номинала, поэтому амортизация и смена
+    номинала линию не ломают, а с ценой акций её не путаем: unit='pct'.
+
+    Оборот для «Навеса» не отдаём: у облигаций половина дней без сделок, и
+    медиана по дням со сделками завышала бы ликвидность в разы.
+    История за день T приходит с прогоном T+1, поэтому деления на публичную
+    и живую версию, как у акций, нет.
+    """
+    cache_key = f"fund_trades:price_weekly:bond:v1:{isin}:{date.today()}"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+    rows = db.execute(text("""
+        SELECT DISTINCT ON (trade_date) trade_date, COALESCE(close, legalcloseprice) AS px
+        FROM bond_history
+        WHERE isin = :isin AND boardid NOT IN %s
+          AND COALESCE(close, legalcloseprice) > 0
+        ORDER BY trade_date, (currencyid = 'SUR') DESC, value DESC NULLS LAST
+    """ % _BOND_SKIP_SQL), {"isin": isin}).all()
+    by_week: dict = {}
+    for d, px in rows:
+        by_week[d - timedelta(days=d.weekday())] = float(px)
+    if not by_week:
+        raise HTTPException(status_code=404, detail="Нет истории цены по этой бумаге")
+    weeks = sorted(by_week)
+    out = {
+        "ticker": isin,
+        "unit": "pct",
+        "weeks": [w.isoformat() for w in weeks],
+        "closes": [by_week[w] for w in weeks],
+    }
+    get_or_set(cache_key, out, ttl=4 * 3600)
+    return out
+
+
 @router.get("/price-weekly")
 def price_weekly(
     request: Request,
-    ticker: str = Query(..., description="Тикер акции (secid MOEX)"),
+    ticker: Optional[str] = Query(None, description="Тикер акции (secid MOEX)"),
+    isin: Optional[str] = Query(None, description="ISIN облигации, если тикера нет"),
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(get_current_user_optional),
 ):
@@ -3081,7 +3130,14 @@ def price_weekly(
 
     Без тирного гейта: дневная цена публична (гостям /api/candles отдаёт
     interval=24), задержка снапшотов сделок к цене отношения не имеет.
+
+    Облигации и ОФЗ тикера не имеют — приходят с isin и идут в bond_price_weekly
+    (цена в % от номинала, unit='pct').
     """
+    if not ticker:
+        if not isin or not re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin):
+            raise HTTPException(status_code=400, detail="Нужен ticker или корректный isin")
+        return bond_price_weekly(isin, db)
     from api.schemas.validators import validate_safe_id
     try:
         ticker = validate_safe_id(ticker, "ticker")

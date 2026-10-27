@@ -2586,7 +2586,10 @@ export async function getCompanyWeights(
 // 404 (не акция / нет истории в candles) пробрасываем отдельной ошибкой: фронт
 // показывает empty-state, а не тост сетевой ошибки.
 export interface CompanyPriceWeeklyResponse {
+    /** Тикер акции или ISIN облигации — тем, чем запрашивали. */
     ticker: string;
+    /** 'pct' — облигация: цена в % от номинала, а не в ₽ за штуку. */
+    unit?: 'pct';
     /** ISO-даты понедельников недель, ASC. */
     weeks: string[];
     /** Закрытие недели (последняя дневная свеча), выровнено с weeks. */
@@ -2602,8 +2605,9 @@ export interface CompanyPriceWeeklyResponse {
     med_turnover?: number[];
 }
 
-export async function getCompanyPriceWeekly(ticker: string): Promise<CompanyPriceWeeklyResponse> {
-    const resp = await apiFetch(`${API_BASE}/api/fund-trades/price-weekly?ticker=${encodeURIComponent(ticker)}`);
+/** ref — тикер акции; у облигаций и ОФЗ тикера нет, они идут по ISIN (byIsin). */
+export async function getCompanyPriceWeekly(ref: string, byIsin = false): Promise<CompanyPriceWeeklyResponse> {
+    const resp = await apiFetch(`${API_BASE}/api/fund-trades/price-weekly?${byIsin ? 'isin' : 'ticker'}=${encodeURIComponent(ref)}`);
     if (resp.status === 404) throw new Error('NO_PRICE_HISTORY');
     if (!resp.ok) throw new Error(t('Не удалось загрузить историю цены'));
     return resp.json();
