@@ -313,15 +313,17 @@ export const STOCK_LOGO_OVERRIDE: Record<string, string> = {
 /**
  * Извлекает «базу» из sectype:
  * - Perpetual: SBERF, USDRUBF, IMOEXF — оставляем целиком (мапятся как есть)
- * - Квартальный (3 буквы): SRH → SR, GZM → GZ, BRZ → BR
+ * - Квартальный (3 буквы, третья — месяц): SRH → SR, GZM → GZ, BRZ → BR; RZD, PSB — как есть
  * - Микро/мини: W4F → W4, NRH → NR, MMU → MM (первые 2 char)
  * - Уже база: остаётся
  */
 export function extractBase(sectype: string): string {
   // Perpetual ends with F, length > 4
   if (sectype.length > 4 && sectype.endsWith('F')) return sectype;
-  // 3 chars = quarterly future или micro/mini → first 2
-  if (sectype.length === 3) return sectype.slice(0, 2);
+  // 3 chars = quarterly future или micro/mini → first 2. Только если третья
+  // буква — код месяца FORTS: иначе это ключ лого из трёх букв (RZD, PSB у
+  // облигаций), и RZD превращался в «RZ» — фьючерс Русагро.
+  if (sectype.length === 3 && /[FGHJKMNQUVXZ]$/.test(sectype)) return sectype.slice(0, 2);
   return sectype;
 }
 
