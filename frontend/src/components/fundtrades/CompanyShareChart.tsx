@@ -98,6 +98,8 @@ interface CompanyShareChartProps {
     shareMode: ShareMode;
     /** Имя бумаги для легенды — подпись линии цены. */
     assetName?: string;
+    /** 'pct' — облигация: цена в % от номинала (подписи «%» вместо «₽»). */
+    priceUnit?: 'pct';
     height?: number;
     loading?: boolean;
     /** Все фонды сняты пользователем — empty-state. */
@@ -160,6 +162,7 @@ export default function CompanyShareChart({
     closes: closesAll,
     shareMode,
     assetName,
+    priceUnit,
     height = 420,
     loading = false,
     noFundsSelected = false,
@@ -738,7 +741,7 @@ export default function CompanyShareChart({
                         <div className="pb-1 border-b border-theme relative overflow-hidden" style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)' }}>
                             <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                                 <ChartLegend
-                                    items={[{ color: PRICE_LINE_COLOR, label: assetName || t('Цена') }]}
+                                    items={[{ color: PRICE_LINE_COLOR, label: priceUnit === 'pct' ? `${assetName || t('Цена')}, ${t('% от номинала')}` : assetName || t('Цена') }]}
                                     fontWeight={600}
                                     style={{ color: 'var(--text-primary)' }}
                                 />
@@ -921,7 +924,7 @@ export default function CompanyShareChart({
                                         <TooltipRow
                                             color={PRICE_LINE_COLOR}
                                             label={assetName || t('Цена')}
-                                            value={`${fmtPrice(hoverPrice)} ₽`}
+                                            value={priceUnit === 'pct' ? `${fmtPrice(hoverPrice)}%` : `${fmtPrice(hoverPrice)} ₽`}
                                             labelClass="font-bold"
                                             labelColor="var(--text-primary)"
                                             valueColor="var(--text-primary)"

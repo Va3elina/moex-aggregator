@@ -100,6 +100,8 @@ interface CompanyFlowsPriceMapProps {
     closes: number[];
     /** Имя бумаги для легенды («Полюс») — подпись линии цены. */
     assetName?: string;
+    /** 'pct' — облигация: цена в % от номинала (подписи «%» вместо «₽»). */
+    priceUnit?: 'pct';
     height?: number;
     loading?: boolean;
     /** Все фонды сняты пользователем — empty-state (как в гистограмме). */
@@ -139,6 +141,7 @@ export default function CompanyFlowsPriceMap({
     weeks: weeksAll,
     closes: closesAll,
     assetName,
+    priceUnit,
     height = 420,
     loading = false,
     noFundsSelected = false,
@@ -571,7 +574,7 @@ export default function CompanyFlowsPriceMap({
                     <div style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>
                         <ChartLegend
                             items={[
-                                { color: PRICE_LINE_COLOR, label: assetName || t('Цена'), marker: 'dot' },
+                                { color: PRICE_LINE_COLOR, label: priceUnit === 'pct' ? `${assetName || t('Цена')}, ${t('% от номинала')}` : assetName || t('Цена'), marker: 'dot' },
                                 {
                                     color: 'var(--funds-flow-negative)',
                                     colorRight: 'var(--funds-flow-positive)',
@@ -742,7 +745,7 @@ export default function CompanyFlowsPriceMap({
                                         <TooltipRow
                                             color={PRICE_LINE_COLOR}
                                             label={assetName || t('Цена')}
-                                            value={`${fmtPrice(price)} ₽`}
+                                            value={priceUnit === 'pct' ? `${fmtPrice(price)}%` : `${fmtPrice(price)} ₽`}
                                             labelClass="font-bold"
                                             labelColor="var(--text-primary)"
                                             valueColor="var(--text-primary)"
