@@ -124,20 +124,30 @@ def sync(engine, max_n: int) -> dict:
                 SELECT isin, secid, shortname, matdate, TRUE FROM bond_ref WHERE matdate IS NOT NULL
                 ON CONFLICT (isin) DO NOTHING
             """)).rowcount
-        # Новые ISIN первыми, свежие (по последней справке) раньше старых.
+        # Порядок: новые ISIN раньше перепроверок; среди них первыми бумаги, ПРОПАВШИЕ
+        # из справки какого-то фонда (только их исчезновение дифф может принять за
+        # продажу), дальше свежие по последней справке раньше старых.
         cands = conn.execute(text("""
-            WITH h AS (
-                SELECT isin, MAX(snapshot_date) AS last_seen
+            WITH fi AS (
+                SELECT fund_id, isin, MAX(snapshot_date) AS d
                 FROM fund_holdings_history
                 WHERE COALESCE(isin, '') <> ''
-                GROUP BY isin
+                GROUP BY fund_id, isin
+            ),
+            fl AS (
+                SELECT fund_id, MAX(snapshot_date) AS d FROM fund_holdings_history GROUP BY fund_id
+            ),
+            h AS (
+                SELECT fi.isin, MAX(fi.d) AS last_seen, bool_or(fi.d < fl.d) AS vanished
+                FROM fi JOIN fl ON fl.fund_id = fi.fund_id
+                GROUP BY fi.isin
             )
             SELECT h.isin
             FROM h LEFT JOIN bond_maturity b ON b.isin = h.isin
             WHERE b.isin IS NULL
                OR (b.is_bond IS NOT FALSE AND b.matdate IS NULL
                    AND b.checked_at < now() - make_interval(days => :recheck))
-            ORDER BY (b.isin IS NULL) DESC, h.last_seen DESC
+            ORDER BY (b.isin IS NULL) DESC, h.vanished DESC, h.last_seen DESC
         """), {"recheck": RECHECK_DAYS}).scalars().all()
     cands = [i for i in cands if _ISIN_RE.match(i)]
     todo = cands[:max_n]
