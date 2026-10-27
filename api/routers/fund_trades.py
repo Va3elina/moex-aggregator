@@ -311,6 +311,37 @@ def _nearest_split_ratio(observed: float) -> float:
     return min(cands, key=lambda c: abs(math.log(observed) - math.log(c)))
 
 
+def _bond_matdates(db, isins) -> dict:
+    """{isin: дата погашения} для облигаций из списка (bond_maturity, синк из ISS).
+
+    Погашение — не сделка: облигация исчезает из справки, потому что эмитент её
+    выкупил по номиналу, а не потому что фонд её продал. Без этой проверки дифф
+    рисовал полную распродажу (РусГидро БО-П06, погашена 15.09.2026: −720.8 млн ₽
+    в «Чистых продажах» за сентябрь). Таблицу наполняет Funds/sync_bond_maturities.py
+    (шаг оркестратора bond_maturity_daily), каркас создаёт api/main.py на старте.
+    """
+    isins = list({i for i in isins if i})
+    if not isins:
+        return {}
+    rows = db.execute(text("""
+        SELECT isin, matdate FROM bond_maturity
+        WHERE isin = ANY(:isins) AND matdate IS NOT NULL
+    """), {"isins": isins}).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+def _is_redeemed(matdates: dict, isin, curr_date) -> bool:
+    """Бумага, пропавшая из справки на curr_date, погашена (а не продана)?
+
+    Достаточно «дата погашения не позже текущей справки»: после неё бумаги нет
+    в обращении, и её исчезновение — погашение (или списание дефолтной), но
+    никогда не решение управляющего продать. Частичный выкуп по оферте сюда не
+    попадает: позиция остаётся в справке и считается обычной дельтой.
+    """
+    m = matdates.get(isin) if isin else None
+    return m is not None and curr_date is not None and m <= curr_date
+
+
 def _position_flow_rub(curr_pos, prev_pos, curr_amt, prev_amt) -> float:
     """₽-поток по ОДНОМУ инструменту между двумя снапшотами: Δ позиций × цена.
 
@@ -944,8 +975,12 @@ def fund_trades_detail(
 
     diff = []
     summary = {"new": 0, "sold_out": 0, "accumulated": 0, "reduced": 0}
+    matdates = _bond_matdates(db, [r["isin"] for r in diff_rows if r["change_type"] == "sold_out"])
     for r in diff_rows:
         change = r["change_type"]
+        # Погашенная облигация пропала из справки — это не продажа (см. _bond_matdates).
+        if change == "sold_out" and _is_redeemed(matdates, r["isin"], current_date):
+            continue
         if change in summary:
             summary[change] += 1
         diff.append({
@@ -1245,6 +1280,8 @@ def top_movers(
             SELECT
                 COALESCE(c.fund_id, p.fund_id) AS fund_id,
                 COALESCE(c.akey, p.akey) AS akey,
+                COALESCE(c.ikey, p.ikey) AS ikey,
+                (c.akey IS NULL) AS vanished,
                 COALESCE(c.asset_name, p.asset_name) AS asset_name,
                 COALESCE(c.weight, 0) - COALESCE(p.weight, 0) AS delta_weight,
                 c.amount_rub AS curr_amount,
@@ -1255,12 +1292,20 @@ def top_movers(
             FULL OUTER JOIN prev_h p
                 ON p.fund_id = c.fund_id AND p.akey = c.akey AND p.ikey = c.ikey
         )
-        SELECT d.fund_id, d.akey, d.asset_name, sr.short_name,
+        SELECT d.fund_id, d.akey, d.ikey, d.vanished, d.asset_name, sr.short_name,
                d.delta_weight, d.curr_amount, d.prev_amount,
-               d.curr_positions, d.prev_positions
+               d.curr_positions, d.prev_positions, fd.curr_date
         FROM per_fund_diff d
+        JOIN fund_dates fd ON fd.fund_id = d.fund_id
         LEFT JOIN securities_ref sr ON sr.isin = d.akey
     """), params).mappings().all()
+
+    # Погашение облигации — не продажа: строку, пропавшую из справки после даты
+    # погашения, выкидываем целиком (и ₽-поток, и дельту доли).
+    matdates = _bond_matdates(db, [r["ikey"] for r in rows if r["vanished"]])
+    if matdates:
+        rows = [r for r in rows
+                if not (r["vanished"] and _is_redeemed(matdates, r["ikey"], r["curr_date"]))]
 
     # Свод в Python: per (fund, akey) складываем ₽-потоки по каждому ISIN, потом
     # агрегируем по akey. Порог `delta_weight <> 0` остался на уровне (fund, asset),
@@ -2115,6 +2160,7 @@ def snapshot_review(
 
     added, reduced, new_pos, sold_out = [], [], [], []
     current_holdings = []
+    matdates = _bond_matdates(db, [r["isin"] for r in diff_rows if r["curr_pos"] is None])
 
     for r in diff_rows:
         curr_pos = int(r["curr_pos"]) if r["curr_pos"] is not None else None
@@ -2166,8 +2212,9 @@ def snapshot_review(
             # Новая позиция
             new_pos.append(row_data)
         elif curr_pos is None and prev_pos is not None:
-            # Полностью вышел
-            sold_out.append(row_data)
+            # Полностью вышел. Погашенная облигация — не продажа (см. _bond_matdates).
+            if not _is_redeemed(matdates, r["isin"], current_date):
+                sold_out.append(row_data)
         elif curr_pos is not None and adj_prev_pos is not None:
             if curr_pos > adj_prev_pos:
                 added.append(row_data)
@@ -2565,6 +2612,10 @@ def company_flows(
     for _fid, _d in fund_snap_rows:
         fund_months_all[_fid].add(_d.strftime("%Y-%m"))
 
+    # Месяц погашения облигаций: исчезновение бумаги в этом месяце или позже —
+    # погашение, не распродажа (см. _bond_matdates).
+    mat_month = {i: d.strftime("%Y-%m") for i, d in _bond_matdates(db, [r["isin"] for r in rows]).items()}
+
     all_months = set()
     # fund_id -> { "YYYY-MM": value|None }
     fund_month_val = {}
@@ -2605,7 +2656,7 @@ def company_flows(
                     gap = [m for m in fund_months if prev_month < m < month]
                     if gap:
                         out_val = prev_amt if metric == "amount" else prev_weight
-                        if out_val is not None:
+                        if out_val is not None and not (_key in mat_month and mat_month[_key] <= gap[0]):
                             gm = gap[0]
                             all_months.add(gm)
                             month_val[gm] = (month_val.get(gm) or 0.0) - out_val
@@ -2674,7 +2725,7 @@ def company_flows(
             if prev_month is not None:
                 tail = [m for m in fund_months if m > prev_month]
                 out_val = prev_amt if metric == "amount" else prev_weight
-                if tail and out_val is not None:
+                if tail and out_val is not None and not (_key in mat_month and mat_month[_key] <= tail[0]):
                     tm = tail[0]
                     all_months.add(tm)
                     month_val[tm] = (month_val.get(tm) or 0.0) - out_val
