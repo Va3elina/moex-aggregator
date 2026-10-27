@@ -117,10 +117,17 @@ def _update_fwd_sql(col: str):
 # судьбу поста, пишет в fwd_3 (см. docstring выше, было fwd_15→fwd_8). Нужен
 # msg_text (для headline/raw_text кандидата), поэтому отдельный SELECT, не через хелпер.
 _SELECT_PENDING_DECISION = text("""
-    SELECT message_id, posted_at, msg_text FROM tg_channel_watch
+    SELECT message_id, posted_at, msg_text, promoted FROM tg_channel_watch
     WHERE channel = :channel AND fwd_3 IS NULL
       AND posted_at <= :cutoff_min AND posted_at > :cutoff_max
 """)
+# Посты с огоньком (MTP_HYPE_FIRE_CHANNELS) уходят в канал без порога, не дожидаясь
+# +3мин. Окно since, чтобы после деплоя не вытащить огоньки за все 2 часа.
+_SELECT_FIRE_PENDING = text("""
+    SELECT message_id, posted_at, msg_text FROM tg_channel_watch
+    WHERE channel = :channel AND NOT promoted AND fwd_3 IS NULL AND posted_at > :since
+""")
+FIRE_EMOJI = "\U0001F525"
 _UPDATE_FWD_DECISION = _update_fwd_sql("fwd_3")
 _MARK_PROMOTED = text(
     "UPDATE tg_channel_watch SET promoted = TRUE WHERE channel = :channel AND message_id = :id"
@@ -210,6 +217,27 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
             summary["new_watched"] += 1
     db.commit()
 
+    # ── 1б. Огонёк в посте = публикуем сразу, без порога репостов (Вадим 27.10.2026) ──
+    # fwd_3 не трогаем: его позже запишет decision-чекпоинт для baseline, а promoted
+    # не даст опубликовать второй раз.
+    if channel in config.MTP_HYPE_FIRE_CHANNELS:
+        fire_rows = db.execute(_SELECT_FIRE_PENDING, {
+            "channel": channel, "since": now - timedelta(minutes=config.MTP_HYPE_FIRE_WINDOW_MIN),
+        }).mappings().all()
+        for row in fire_rows:
+            if FIRE_EMOJI not in (row["msg_text"] or ""):
+                continue
+            try:
+                fresh = client.get_messages(entity, ids=row["message_id"])
+                fwd = (fresh.forwards or 0) if fresh else 0
+                summary["fire_promoted"] += 1
+                _promote(client, db, channel, row, fresh, now, fwd, can_fire, token_a,
+                         can_fire_hype, internal_token, summary)
+            except Exception as e:
+                summary["errors"] += 1
+                print(f"[tg_hype_scan] {channel}: fire promote failed for {row['message_id']}: "
+                      f"{type(e).__name__}: {e}")
+
     # ── 2. Измерительные чекпоинты (5/6/7/8мин) — ТОЛЬКО измерение, ни на что не влияют ──
     for col, minutes, tolerance, summary_key in MEASURE_CHECKPOINTS:
         cutoff_min = now - timedelta(minutes=minutes)
@@ -242,6 +270,8 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
             db.execute(_UPDATE_FWD_DECISION, {"channel": channel, "id": row["message_id"], "fwd": fwd})
             db.commit()
             summary["checked_decision"] += 1
+            if row["promoted"]:
+                continue  # уже ушёл в канал по огоньку (шаг 1б), fwd_3 записан для baseline
 
             baseline_vals = [r[0] for r in db.execute(
                 _RECENT_FWD_DECISION, {"channel": channel, "n": config.MTP_BASELINE_WINDOW}
@@ -253,89 +283,96 @@ def _scan_channel(client, db, channel: str, now: datetime, can_fire: bool, token
                 continue
             if fwd < config.MTP_HYPE_MIN_FWD.get(channel, 0):
                 continue  # см. MTP_HYPE_MIN_FWD: ×3 к медиане 1 = 3 репоста
-
-            # Проверки дублей по заголовку больше нет (Вадим 15.09.2026): заголовком
-            # у markettwits выходила строка тегов («⚠️🇺🇸🇷🇺#санкции #россия»), и все
-            # посты с теми же тегами молча отбрасывались. Повторной вставки одного
-            # поста нет и без неё: решение принимается один раз (fwd_3 IS NULL).
-            # Дубль ищется по всему тексту, а не по заголовку (13.10.2026): та же
-            # новость из другого канала в канал не идёт, promoted не ставим.
-            dup = _find_promoted_duplicate(db, now, channel, row["msg_text"])
-            if dup:
-                summary["dup_skipped"] += 1
-                print(f"[tg_hype_scan] {channel}/{row['message_id']}: дубль {dup[0]} "
-                      f"(score {dup[1]:.2f}, fwd_3 {fwd}), не публикуем")
-                continue
-            headline = _headline_from_text(row["msg_text"])
-
-            media_filename = None
-            if getattr(fresh, "photo", None):
-                candidate_filename = f"{channel}_{row['message_id']}.jpg"
-                try:
-                    client.download_media(fresh, file=os.path.join(MEDIA_DIR, candidate_filename))
-                    media_filename = candidate_filename
-                except Exception as e:
-                    print(f"[tg_hype_scan] {channel}: photo download failed for "
-                          f"{row['message_id']}: {type(e).__name__}: {e}")
-
-            new_id = db.execute(_INSERT_CANDIDATE, {
-                "channel": channel, "headline": headline, "raw_text": row["msg_text"] or headline,
-                "source_url": f"https://t.me/{channel}/{row['message_id']}",
-                "media_filename": media_filename,
-            }).scalar()
-            db.execute(_MARK_PROMOTED, {"channel": channel, "id": row["message_id"]})
-            db.commit()
-            summary["promoted"] += 1
-
-            if can_fire:
-                try:
-                    known_tickers = _known_tickers_line(db)
-                    кандидат = {"id": new_id, "source": channel, "headline": headline,
-                                "raw_text": row["msg_text"] or headline}
-                    # ⚠️ Подсказка второго мозга — и в этом, событийном, пути тоже.
-                    # Найдено 08.09.2026 на кандидате 1886 (ПИК, делистинг): Шаг А
-                    # написал «подсказка второго мозга не передана», а в следе — ни
-                    # одной строки мозга. Подсказку собирал только бэкстоп
-                    # content_ai.run_once (раз в 15 мин), а хайп-путь стрелял Шаг А
-                    # напрямую и без неё — то есть почти все живые кандидаты шли мимо
-                    # мозга. Сама функция исключений наружу не пускает и пишет след.
-                    payload = _step_a_payload(
-                        кандидат, internal_token, known_tickers,
-                        _brain_hint_for_step_a(db, кандидат),
-                    )
-                    _fire(TRIGGER_ID_STEP_A, token_a, payload, dedup=new_id)
-                    db.execute(_MARK_DISPATCHED, {"id": new_id})
-                    db.commit()
-                    summary["step_a_fired"] += 1
-                    _stagger()  # пауза между прямыми /fire; в режиме общей очереди её держит диспетчер
-                except Exception as e:
-                    summary["step_a_fire_errors"] += 1
-                    print(f"[tg_hype_scan] {channel}: step-a fire failed for candidate "
-                          f"{new_id}: {type(e).__name__}: {e}")
-
-            # ИИ-фильтра (Шаг Н) больше нет (15.09.2026): прошедшее порог сразу
-            # принимается и уходит в канал (см. content_ai._hype_accept). Если
-            # вызов упал — подберёт бэкстоп content_ai.run_once.
-            if can_fire_hype:
-                try:
-                    _hype_accept(new_id, internal_token)
-                    db.execute(_MARK_HYPE_FILTER_DISPATCHED, {"id": new_id})
-                    db.commit()
-                    summary["hype_filter_fired"] += 1
-                except Exception as e:
-                    summary["hype_filter_fire_errors"] += 1
-                    print(f"[tg_hype_scan] {channel}: hype-filter fire failed for candidate "
-                          f"{new_id}: {type(e).__name__}: {e}")
+            _promote(client, db, channel, row, fresh, now, fwd, can_fire, token_a,
+                     can_fire_hype, internal_token, summary)
         except Exception as e:
             summary["errors"] += 1
             print(f"[tg_hype_scan] {channel}: checkpoint-decision failed for {row['message_id']}: "
                   f"{type(e).__name__}: {e}")
 
 
+def _promote(client, db, channel: str, row, fresh, now: datetime, fwd: int,
+             can_fire: bool, token_a: str, can_fire_hype: bool,
+             internal_token: str, summary: dict) -> None:
+    """Пост прошёл отбор (порог репостов или огонёк): дедуп, кандидат, Шаг А, канал."""
+    # Проверки дублей по заголовку больше нет (Вадим 15.09.2026): заголовком
+    # у markettwits выходила строка тегов («⚠️🇺🇸🇷🇺#санкции #россия»), и все
+    # посты с теми же тегами молча отбрасывались. Повторной вставки одного
+    # поста нет и без неё: решение принимается один раз (fwd_3 IS NULL).
+    # Дубль ищется по всему тексту, а не по заголовку (13.10.2026): та же
+    # новость из другого канала в канал не идёт, promoted не ставим.
+    dup = _find_promoted_duplicate(db, now, channel, row["msg_text"])
+    if dup:
+        summary["dup_skipped"] += 1
+        print(f"[tg_hype_scan] {channel}/{row['message_id']}: дубль {dup[0]} "
+              f"(score {dup[1]:.2f}, fwd {fwd}), не публикуем")
+        return
+    headline = _headline_from_text(row["msg_text"])
+
+    media_filename = None
+    if getattr(fresh, "photo", None):
+        candidate_filename = f"{channel}_{row['message_id']}.jpg"
+        try:
+            client.download_media(fresh, file=os.path.join(MEDIA_DIR, candidate_filename))
+            media_filename = candidate_filename
+        except Exception as e:
+            print(f"[tg_hype_scan] {channel}: photo download failed for "
+                  f"{row['message_id']}: {type(e).__name__}: {e}")
+
+    new_id = db.execute(_INSERT_CANDIDATE, {
+        "channel": channel, "headline": headline, "raw_text": row["msg_text"] or headline,
+        "source_url": f"https://t.me/{channel}/{row['message_id']}",
+        "media_filename": media_filename,
+    }).scalar()
+    db.execute(_MARK_PROMOTED, {"channel": channel, "id": row["message_id"]})
+    db.commit()
+    summary["promoted"] += 1
+
+    if can_fire:
+        try:
+            known_tickers = _known_tickers_line(db)
+            кандидат = {"id": new_id, "source": channel, "headline": headline,
+                        "raw_text": row["msg_text"] or headline}
+            # ⚠️ Подсказка второго мозга — и в этом, событийном, пути тоже.
+            # Найдено 08.09.2026 на кандидате 1886 (ПИК, делистинг): Шаг А
+            # написал «подсказка второго мозга не передана», а в следе — ни
+            # одной строки мозга. Подсказку собирал только бэкстоп
+            # content_ai.run_once (раз в 15 мин), а хайп-путь стрелял Шаг А
+            # напрямую и без неё — то есть почти все живые кандидаты шли мимо
+            # мозга. Сама функция исключений наружу не пускает и пишет след.
+            payload = _step_a_payload(
+                кандидат, internal_token, known_tickers,
+                _brain_hint_for_step_a(db, кандидат),
+            )
+            _fire(TRIGGER_ID_STEP_A, token_a, payload, dedup=new_id)
+            db.execute(_MARK_DISPATCHED, {"id": new_id})
+            db.commit()
+            summary["step_a_fired"] += 1
+            _stagger()  # пауза между прямыми /fire; в режиме общей очереди её держит диспетчер
+        except Exception as e:
+            summary["step_a_fire_errors"] += 1
+            print(f"[tg_hype_scan] {channel}: step-a fire failed for candidate "
+                  f"{new_id}: {type(e).__name__}: {e}")
+
+    # ИИ-фильтра (Шаг Н) больше нет (15.09.2026): прошедшее порог сразу
+    # принимается и уходит в канал (см. content_ai._hype_accept). Если
+    # вызов упал — подберёт бэкстоп content_ai.run_once.
+    if can_fire_hype:
+        try:
+            _hype_accept(new_id, internal_token)
+            db.execute(_MARK_HYPE_FILTER_DISPATCHED, {"id": new_id})
+            db.commit()
+            summary["hype_filter_fired"] += 1
+        except Exception as e:
+            summary["hype_filter_fire_errors"] += 1
+            print(f"[tg_hype_scan] {channel}: hype-filter fire failed for candidate "
+                  f"{new_id}: {type(e).__name__}: {e}")
+
+
 def run_once() -> dict:
     summary = {"fetched": 0, "new_watched": 0,
                "checked_5": 0, "checked_6": 0, "checked_7": 0, "checked_8": 0, "checked_decision": 0,
-               "promoted": 0, "dup_skipped": 0, "step_a_fired": 0, "step_a_fire_errors": 0,
+               "promoted": 0, "fire_promoted": 0, "dup_skipped": 0, "step_a_fired": 0, "step_a_fire_errors": 0,
                "hype_filter_fired": 0, "hype_filter_fire_errors": 0, "errors": 0}
     _idf_cache.clear()
 
