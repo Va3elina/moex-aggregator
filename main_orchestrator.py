@@ -156,6 +156,9 @@ SCRIPTS = {
     # Даты погашения облигаций из составов фондов (bond_maturity) из ISS —
     # «Сделки фондов» по ним не считают погашение продажей.
     'bond_maturity_daily': BASE_DIR / 'Funds' / 'sync_bond_maturities.py',
+    # Цены облигаций из составов фондов (bond_history/bond_ref/bond_events) с ISS:
+    # все облигации за дни [последняя дата в базе … сегодня] + новые бумаги целиком.
+    'bond_prices_daily': BASE_DIR / 'Funds' / 'fetch_bond_prices.py',
     # Историческая база расчёта IMOEX (index_composition) — состав индекса на
     # каждый торговый день, знаменатель вселенной imoex у «Силы рынка».
     # ДОЛЖЕН идти перед breadth_daily: тот читает свежий состав из БД.
@@ -306,6 +309,7 @@ TIMEOUTS = {
     'freefloat_cap_daily': 300,  # 5 минут (обычно 2-4 ISS-запроса, бэкфилл дольше)
     'stock_splits_daily': 120,  # один ISS-запрос + upsert нескольких строк
     'bond_maturity_daily': 900,  # обычно единицы новых бумаг; первый прогон — до 300 бумаг × 1-2 запроса по 1 с
+    'bond_prices_daily': 900,  # ~35 запросов на день окна + 80 на справочник, пауза 1 с — обычно 2–4 минуты
     'index_composition_daily': 300,  # 5 минут (инкремент — единицы ISS-запросов)
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
     'dividends_daily': 900,  # 15 минут (много HTTP-запросов к ISS)
@@ -686,6 +690,9 @@ class MainOrchestrator:
             # Даты погашения облигаций (ISS)
             'bond_maturity_daily_runs': 0,
             'bond_maturity_daily_success': 0,
+            # Цены облигаций (ISS)
+            'bond_prices_daily_runs': 0,
+            'bond_prices_daily_success': 0,
             # Index Composition
             'index_composition_daily_runs': 0,
             'index_composition_daily_success': 0,
@@ -1618,6 +1625,24 @@ class MainOrchestrator:
 
         return success
 
+    async def run_bond_prices_update(self) -> bool:
+        """Цены облигаций из составов фондов (ISS history). Окно — от последней даты в
+        bond_history, поэтому пропущенный прогон догоняется сам. В стартовый прогон не входит:
+        он идёт на каждой выкатке, а это лишние ~150 запросов к ISS за раз."""
+        log.info("  📊 Цены облигаций...")
+        self.stats['bond_prices_daily_runs'] += 1
+
+        success, msg, dur = await run_script('bond_prices_daily', ['--once'])
+
+        if success:
+            self.stats['bond_prices_daily_success'] += 1
+            log.info(f"    ✓ Цены облигаций ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Цены облигаций: {msg}")
+
+        return success
+
     async def run_freefloat_cap_update(self) -> bool:
         """Free-float капитализация по бумагам (MOEXBMI). Скрипт идемпотентен:
         дозаполняет пропущенные месяцы и освежает текущий, --force не нужен."""
@@ -1964,6 +1989,7 @@ class MainOrchestrator:
                     await self.run_freefloat_cap_update()
                     await self.run_stock_splits_update()
                     await self.run_bond_maturity_update()
+                    await self.run_bond_prices_update()
                     await self.run_index_composition_update()
                     await self.run_breadth_update()
                     await self.run_dividends_update()
