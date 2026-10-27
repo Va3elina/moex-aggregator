@@ -216,6 +216,11 @@ def scan() -> int:
 SITE_RETRY_SEC = 30   # 18.10: t-capital-funds.ru разово отдал страницу без списка (TMOS), через минуту — норма
 
 
+class EmptyPage(RuntimeError):
+    """Страница открылась, но справок на ней нет. У t-capital-funds.ru так бывает минутами (TMOS 22.10,
+    TBRU 27.10 — обе попытки подряд), поэтому тревога только если пусто и на следующий день."""
+
+
 def _list_docs(tk: str, kind: str, arg: str) -> dict:
     """Справки на странице раскрытия; пустой ответ или сбой — ещё одна попытка, потом ошибка.
     Разовый сбой сайта УК не должен будить Вадима (тревога шлётся только после второй неудачи)."""
@@ -223,7 +228,7 @@ def _list_docs(tk: str, kind: str, arg: str) -> dict:
         try:
             docs = col.one_per_month(col.ADAPTERS[kind](tk, arg))
             if not docs:
-                raise RuntimeError("на странице не нашлось ни одной справки (сменили вёрстку?)")
+                raise EmptyPage("на странице не нашлось ни одной справки (сменили вёрстку?)")
             return docs
         except Exception as e:  # noqa: BLE001
             if attempt == 2:
@@ -231,6 +236,20 @@ def _list_docs(tk: str, kind: str, arg: str) -> dict:
             log(f"{tk}: страница раскрытия — {e}; повтор через {SITE_RETRY_SEC} с")
             time.sleep(SITE_RETRY_SEC)
     raise AssertionError("unreachable")
+
+
+def _empty_yesterday(conn, tk: str) -> bool:
+    """Отметить «сегодня пусто»; True — пусто было и в прошлый скан (отметка 12–48 ч назад)."""
+    prev = conn.execute(text("SELECT sent_at FROM scha_notify_log WHERE key = :k"),
+                        {"k": f"scha:empty:{tk}"}).scalar()
+    conn.execute(text("""
+        INSERT INTO scha_notify_log (key, sent_at) VALUES (:k, now())
+        ON CONFLICT (key) DO UPDATE SET sent_at = now()
+    """), {"k": f"scha:empty:{tk}"})
+    if prev is None:
+        return False
+    age_h = conn.execute(text("SELECT extract(epoch FROM now() - :t) / 3600"), {"t": prev}).scalar()
+    return 12 <= age_h <= 48
 
 
 def _scan(eng) -> int:
@@ -246,10 +265,15 @@ def _scan(eng) -> int:
             log(f"{tk}: страница раскрытия — {e}")
             site = urllib.parse.urlsplit(arg).hostname if "://" in arg else kind
             with eng.begin() as conn:
+                if isinstance(e, EmptyPage) and not _empty_yesterday(conn, tk):
+                    log(f"{tk}: пусто впервые — без тревоги, завтрашний сканер проверит снова")
+                    continue
                 notify_once(conn, f"scha:site:{site}",
                             f"⚠️ Справки СЧА: не открылась страница раскрытия {esc(site)} ({esc(tk)})\n"
                             f"{esc(str(e)[:200])}")
             continue
+        with eng.begin() as conn:
+            conn.execute(text("DELETE FROM scha_notify_log WHERE key = :k"), {"k": f"scha:empty:{tk}"})
         # Только месяцы новее последнего залитого: старые дыры (TMOS 2020, 04.2023) — решение
         # человека, а не автомата. Новый фонд (в базе пусто) — только последняя справка.
         last = latest.get(tk)
