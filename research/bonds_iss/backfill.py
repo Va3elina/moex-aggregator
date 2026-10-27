@@ -177,7 +177,9 @@ def _csv(rows: list[list]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
     for r in rows:
-        w.writerow(["" if v is None else v for v in r])
+        # Данные из ISS (внешние) идут в текст psql-скрипта: перевод строки внутри значения дал бы строку
+        # «\.» — конец COPY, после которого psql выполнил бы остаток как SQL. Переводы строк — в пробел.
+        w.writerow(["" if v is None else (" ".join(v.splitlines()) if isinstance(v, str) else v) for v in r])
     return buf.getvalue()
 
 
