@@ -111,11 +111,24 @@ def _paged(url: str):
             return
 
 
+_TABLE_COLS: dict[str, set[str]] = {}
+
+
+def _columns(conn, table: str) -> set[str]:
+    if table not in _TABLE_COLS:
+        _TABLE_COLS[table] = set(conn.execute(text(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = :t"), {"t": table}).scalars())
+    return _TABLE_COLS[table]
+
+
 def _upsert(conn, table: str, key: str, records: list[dict]) -> int:
-    """UPSERT пачкой одним запросом: jsonb_populate_recordset сам приводит типы колонок таблицы."""
+    """UPSERT пачкой одним запросом: jsonb_populate_recordset сам приводит типы колонок таблицы.
+    Имена колонок приходят из ответа ISS — в SQL идут только те, что есть в таблице: и не инъекция,
+    и новая колонка ISS не роняет загрузку (её просто нет в таблице, пока не добавим миграцией)."""
     if not records:
         return 0
-    cols = sorted({c for r in records for c in r})
+    known = _columns(conn, table)
+    cols = sorted({c for r in records for c in r} & known)
     keys = [k.strip() for k in key.split(",")]
     upd = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols if c not in keys)
     stamp = "loaded_at" if table == "bond_history" else "updated_at"
