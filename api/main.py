@@ -216,7 +216,15 @@ async def startup_event():
                     canonical_isin VARCHAR(20), updated_at TIMESTAMP DEFAULT now()
                 )
             """))
-        logger.info("futures_contracts + securities_ref tables ensured")
+            # bond_maturity — даты погашения облигаций (fund_trades не считает погашение
+            # продажей). Наполняет Funds/sync_bond_maturities.py, миграция 115.
+            _conn.execute(_sql("""
+                CREATE TABLE IF NOT EXISTS bond_maturity (
+                    isin VARCHAR(20) PRIMARY KEY, secid VARCHAR(40), shortname VARCHAR(64),
+                    matdate DATE, is_bond BOOLEAN, checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """))
+        logger.info("futures_contracts + securities_ref + bond_maturity tables ensured")
     except Exception as e:
         logger.warning(f"ensure ref tables failed: {e}")
     # Запускаем NOTIFY listener для SSE

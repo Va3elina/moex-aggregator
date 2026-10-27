@@ -153,6 +153,9 @@ SCRIPTS = {
     # Реестр сплитов акций (stock_splits) из справочника ISS — до breadth_daily,
     # тот делит цены до сплита по этой таблице.
     'stock_splits_daily': BASE_DIR / 'Candles' / 'sync_stock_splits.py',
+    # Даты погашения облигаций из составов фондов (bond_maturity) из ISS —
+    # «Сделки фондов» по ним не считают погашение продажей.
+    'bond_maturity_daily': BASE_DIR / 'Funds' / 'sync_bond_maturities.py',
     # Историческая база расчёта IMOEX (index_composition) — состав индекса на
     # каждый торговый день, знаменатель вселенной imoex у «Силы рынка».
     # ДОЛЖЕН идти перед breadth_daily: тот читает свежий состав из БД.
@@ -302,6 +305,7 @@ TIMEOUTS = {
     'ownership_detect': 180,  # один запрос к news_archive по GIN, замер — секунды
     'freefloat_cap_daily': 300,  # 5 минут (обычно 2-4 ISS-запроса, бэкфилл дольше)
     'stock_splits_daily': 120,  # один ISS-запрос + upsert нескольких строк
+    'bond_maturity_daily': 900,  # обычно единицы новых бумаг; первый прогон — до 300 бумаг × 1-2 запроса по 1 с
     'index_composition_daily': 300,  # 5 минут (инкремент — единицы ISS-запросов)
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
     'dividends_daily': 900,  # 15 минут (много HTTP-запросов к ISS)
@@ -679,6 +683,9 @@ class MainOrchestrator:
             # Сплиты акций (ISS)
             'stock_splits_daily_runs': 0,
             'stock_splits_daily_success': 0,
+            # Даты погашения облигаций (ISS)
+            'bond_maturity_daily_runs': 0,
+            'bond_maturity_daily_success': 0,
             # Index Composition
             'index_composition_daily_runs': 0,
             'index_composition_daily_success': 0,
@@ -1594,6 +1601,23 @@ class MainOrchestrator:
 
         return success
 
+    async def run_bond_maturity_update(self) -> bool:
+        """Даты погашения облигаций из составов фондов (ISS). Идемпотентен:
+        спрашивает только бумаги, которых ещё нет в bond_maturity."""
+        log.info("  📊 Погашения облигаций...")
+        self.stats['bond_maturity_daily_runs'] += 1
+
+        success, msg, dur = await run_script('bond_maturity_daily', ['--once'])
+
+        if success:
+            self.stats['bond_maturity_daily_success'] += 1
+            log.info(f"    ✓ Погашения облигаций ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Погашения облигаций: {msg}")
+
+        return success
+
     async def run_freefloat_cap_update(self) -> bool:
         """Free-float капитализация по бумагам (MOEXBMI). Скрипт идемпотентен:
         дозаполняет пропущенные месяцы и освежает текущий, --force не нужен."""
@@ -1714,6 +1738,7 @@ class MainOrchestrator:
             await self.run_market_cap_update()
             await self.run_freefloat_cap_update()
             await self.run_stock_splits_update()
+            await self.run_bond_maturity_update()
             await self.run_index_composition_update()
             await self.run_breadth_update()
             await self.run_dividends_update()
@@ -1938,6 +1963,7 @@ class MainOrchestrator:
                     await self.run_market_cap_update()
                     await self.run_freefloat_cap_update()
                     await self.run_stock_splits_update()
+                    await self.run_bond_maturity_update()
                     await self.run_index_composition_update()
                     await self.run_breadth_update()
                     await self.run_dividends_update()
