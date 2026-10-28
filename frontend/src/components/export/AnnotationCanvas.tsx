@@ -25,6 +25,9 @@ import { useFabric } from './useFabric';
 import { t } from '../../i18n';
 import type { Canvas as FabricCanvas, FabricObject } from 'fabric';
 
+// Межстрочный множитель для надписей (см. создание IText).
+const TEXT_LINE_HEIGHT = 0.9;
+
 export type AnnotationTool = 'select' | 'pen' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'text';
 
 /**
@@ -426,6 +429,10 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                         fontSize,
                         fontFamily: 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif',
                         fontWeight: 600,
+                        // Дефолт fabric 1.16 × внутренний _fontSizeMult 1.13
+                        // даёт шаг строк ~1.31 кегля — многострочная надпись
+                        // разъезжается. 0.9 × 1.13 ≈ 1.0 кегля.
+                        lineHeight: TEXT_LINE_HEIGHT,
                         editable: true,
                     });
                     fcLocal.add(text);
@@ -717,6 +724,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     active.set({
                         fill: c,
                         fontSize,
+                        lineHeight: TEXT_LINE_HEIGHT,
                         stroke: null,
                         strokeWidth: 0,
                     });
