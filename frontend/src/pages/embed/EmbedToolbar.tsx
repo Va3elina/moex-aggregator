@@ -21,7 +21,7 @@
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { PlusCircle, Settings, ChevronDown, Maximize2, Minimize2, X as XIcon, GripVertical, Contrast } from 'lucide-react';
+import { PlusCircle, Settings, ChevronDown, Maximize2, Minimize2, X as XIcon, GripVertical, Contrast, Check } from 'lucide-react';
 
 /**
  * Контекст оконных кнопок панели ПЕСОЧНИЦЫ. Когда embed рендерится внутри окна
@@ -539,6 +539,8 @@ export function Dropdown<T extends string | number>({
   icon,
   compact,
   compactLabel,
+  checked,
+  valueLabel,
 }: {
   value: T;
   options: { id: T; label: string }[];
@@ -554,11 +556,15 @@ export function Dropdown<T extends string | number>({
    *  значение надо читать НЕ открывая список: у таймфрейма это так, у среза
    *  (участники/режим/показатель) — нет, там иконки достаточно. */
   compactLabel?: (value: T) => string | undefined;
+  /** Есть → список с галочками: пункты выбираются независимо, и он не закрывается
+   *  по клику. Что подписать на кнопке, тогда решает valueLabel. */
+  checked?: (id: T) => boolean;
+  valueLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [btnW, setBtnW] = useState<number>();   // ширина кнопки → ширина списка (Вадим)
   const btnRef = useRef<HTMLButtonElement>(null);
-  const cur = options.find((o) => o.id === value);
+  const curLabel = valueLabel ?? options.find((o) => o.id === value)?.label;
   // Один вариант (напр. ТФ у EOD-only фьючерса — только «1 день») → выбирать
   // нечего: убираем стрелочку (не обещаем список, которого нет) и не открываем
   // попап по клику.
@@ -582,8 +588,8 @@ export function Dropdown<T extends string | number>({
       <button
         ref={btnRef}
         type="button"
-        title={terse ? [title, cur?.label].filter(Boolean).join(': ') : title}
-        aria-label={terse ? [title, cur?.label].filter(Boolean).join(': ') : undefined}
+        title={terse ? [title, curLabel].filter(Boolean).join(': ') : title}
+        aria-label={terse ? [title, curLabel].filter(Boolean).join(': ') : undefined}
         style={{
           ...ddBtnStyle(open),
           cursor: single ? 'default' : 'pointer',
@@ -610,7 +616,7 @@ export function Dropdown<T extends string | number>({
           // из них; невыбранные с height:0/hidden, поэтому не видны и не растят
           // высоту. Без него пришлось бы мерить текст в JS на каждый рендер.
           <span style={{ display: 'grid', minWidth: 0 }}>
-            <span style={{ gridArea: '1 / 1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>{cur?.label ?? '—'}</span>
+            <span style={{ gridArea: '1 / 1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>{curLabel ?? '—'}</span>
             {options.map((o) => (
               <span
                 key={String(o.id)}
@@ -633,18 +639,22 @@ export function Dropdown<T extends string | number>({
           anchorEl={btnRef.current}
           align="left"
           compact
-          width={!terse && btnW ? `${btnW}px` : 'max-content'}
+          width={!terse && !checked && btnW ? `${btnW}px` : 'max-content'}
           onClose={() => setOpen(false)}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: terse ? btnW : undefined }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: terse || checked ? btnW : undefined }}>
             {options.map((o) => {
-              const on = o.id === value;
+              const on = checked ? checked(o.id) : o.id === value;
               return (
                 <button
                   key={String(o.id)}
                   type="button"
-                  onClick={() => { onChange(o.id); setOpen(false); }}
+                  aria-pressed={checked ? on : undefined}
+                  onClick={() => { onChange(o.id); if (!checked) setOpen(false); }}
                   style={{
+                    display: checked ? 'flex' : undefined,
+                    alignItems: 'center',
+                    gap: 6,
                     textAlign: 'left',
                     padding: '7px 9px',
                     borderRadius: 7,
@@ -668,6 +678,7 @@ export function Dropdown<T extends string | number>({
                     cursor: 'pointer',
                   }}
                 >
+                  {checked && <span style={{ display: 'inline-flex', width: 13, flexShrink: 0 }}>{on && <Check size={13} />}</span>}
                   {o.label}
                 </button>
               );

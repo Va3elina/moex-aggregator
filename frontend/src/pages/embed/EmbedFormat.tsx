@@ -106,12 +106,14 @@ export function useSeriesFormats(lsKey: string) {
   const setVisible = useCallback((id: string, visible: boolean) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), visible } })), []);
   const setOpacity = useCallback((id: string, opacity: number) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), opacity } })), []);
   const setWidth = useCallback((id: string, width: number) => setMap((m) => ({ ...m, [id]: { ...(m[id] ?? DEF), width } })), []);
+  // Смена id линии (ОИ: одна линия ↔ несколько) не должна сбрасывать её вид.
+  const copy = useCallback((from: string, to: string) => setMap((m) => (m[from] ? { ...m, [to]: m[from] } : m)), []);
   // ⚠️ useMemo обязателен. Новый объект на каждый рендер попадал в депсы мемо
   // в embed'ах (visibleNative/allSeries → chartPanes), и ЛЮБОЙ ререндер —
   // например, выделение фигуры кликом — пересоздавал ВСЕ серии графика с
   // восстановлением диапазона. Вадим видел это как «нажал на линию и меня
   // телепортировало» плюс микрофриз (пересоздание серий ≈ 100 мс по замеру).
-  return useMemo(() => ({ get, setKind, setColor, setVisible, setOpacity, setWidth }), [get, setKind, setColor, setVisible, setOpacity, setWidth]);
+  return useMemo(() => ({ get, setKind, setColor, setVisible, setOpacity, setWidth, copy }), [get, setKind, setColor, setVisible, setOpacity, setWidth, copy]);
 }
 
 /** Применить формат к серии: тип + цвет + прозрачность + толщина

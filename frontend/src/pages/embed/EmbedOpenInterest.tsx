@@ -7,8 +7,9 @@
  * максимум места в узкой панели.
  *
  * Это chromeless full-PRO зеркало OpenInterestPage: серии ОИ
- * (displayMode × oiVariant), alignToCandles, цвета/лейблы и аннотации экспираций
- * портированы VERBATIM по семантике со страницы.
+ * (displayMode × набор показателей), alignToCandles, цвета/лейблы и аннотации
+ * экспираций портированы по семантике со страницы. Отличие от сайта: показателей
+ * в окне может быть несколько, у каждой линии своя панель.
  *
  * ВАЖНО: ОИ живёт на ФЬЮЧЕРСАХ — instrument это код фьючерса (SR), не акции (SBER).
  * Состояние шарится по ключам frame:embed:oi:* (в extension-iframe storage
@@ -59,7 +60,8 @@ type ClGroup = 'FIZ' | 'YUR';
 // Режим/вариант ОИ — зеркалит OpenInterestPage, но без 'price' (embed всегда
 // показывает серию ОИ; price-only режим заменён тумблером «Цена»).
 type DisplayMode = 'positions' | 'participants';
-type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
+type OILeg = 'oi' | 'long' | 'short' | 'net';
+const OI_LEGS: OILeg[] = ['oi', 'long', 'short', 'net'];
 
 // value = close; open/high/low опциональны (нужны только режимам свечи/бары цены).
 type Series = { time: string; value: number; open?: number; high?: number; low?: number; close?: number; volume?: number }[];
@@ -132,6 +134,35 @@ const OI_COLORS = {
   cyan: 'var(--oi-cyan)',
   accent: 'var(--accent)',
 };
+const LEG_COLOR: Record<OILeg, string> = { oi: OI_COLORS.amber, long: OI_COLORS.green, short: OI_COLORS.red, net: OI_COLORS.accent };
+
+// id линии показателя. Единственная линия всегда 'oi' (под этим id лежат формат и
+// «глаз» старых окон), при нескольких у каждой свой.
+const LEG_ID: Record<OILeg, string> = { oi: 'oi-total', long: 'oi-long', short: 'oi-short', net: 'oi-net' };
+const legId = (leg: OILeg, count: number): string => (count === 1 ? 'oi' : LEG_ID[leg]);
+
+// Чистая позиция — разность ног, она на порядок меньше их самих и на общей оси
+// выглядела бы плоской линией. Поэтому новая линия садится к линии своей шкалы,
+// а если такой нет — в свою панель. Покупки, продажи и ОИ шкалу делят.
+const sameScale = (a: OILeg, b: OILeg) => (a === 'net') === (b === 'net');
+
+// ⚠️ Состав и панели живут в ПРЕЖНИХ ключах, а не в новых: новый ключ при первом
+// чтении окна упал бы на глобальный «шаблон» (см. embedPersist), и окна, ещё не
+// перешедшие на него, получили бы настройки соседа вместо своего старого варианта.
+/** Значение 'oiVariant': 'net' или 'net,oi'. Старые окна: один вариант, 'both' = две ноги. */
+function parseLegs(raw: string): OILeg[] {
+  if (raw === 'both') return ['long', 'short'];
+  const legs = raw.split(',').filter((l): l is OILeg => OI_LEGS.includes(l as OILeg));
+  return legs.length > 0 ? legs : ['net'];
+}
+
+/** Значение 'oiPane': 'net:0,oi:1'. Старые окна: одно число на все линии. */
+function parseLegPanes(raw: string, legs: OILeg[]): Partial<Record<OILeg, number>> {
+  if (!raw.includes(':')) return Object.fromEntries(legs.map((l) => [l, Number(raw) || 0]));
+  return Object.fromEntries(raw.split(',').map((x) => x.split(':')).map(([l, p]) => [l, Number(p) || 0]));
+}
+const formatLegPanes = (m: Partial<Record<OILeg, number>>): string =>
+  Object.entries(m).filter(([, p]) => p != null).map(([l, p]) => `${l}:${p}`).join(',');
 
 const num = (v: number | null): number => v ?? 0;
 
@@ -199,19 +230,26 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // Пользовательские индикаторы (наложения поверх графика). Ключ БЕЗ инструмента:
   // набор индикаторов — это про предпочтения пользователя, а не про актив, и при
   // переключении SR→GAZP он должен остаться.
-  // Панель линий ОИ: 0 — на графике цены (правая ось), 1+ — своя панель снизу.
-  // Номер общий с индикаторами, поэтому уходит к ним в reserved, а перестановку
+  // Показатели окна, порядок = порядок включения. Первая линия главная: от неё
+  // считаются индикаторы по базису ОИ и уровневый алерт.
+  const [oiLegs, setOiLegs] = useState<OILeg[]>(() => parseLegs(rd('frame:embed:oi:oiVariant', 'net')));
+  const primaryLeg = oiLegs[0];
+  // Единая пара «Покупки + Продажи»: две равноправные линии на одной шкале. Для неё
+  // сохранены прежние правила: нет базиса ОИ и алертов, переносится только вместе.
+  const isPair = oiLegs.length === 2 && oiLegs.includes('long') && oiLegs.includes('short');
+  // Панель линии ОИ: 0 — на графике цены (правая ось), 1+ — своя панель снизу.
+  // Номера общие с индикаторами, поэтому уходят к ним в reserved, а перестановку
   // «Выше/Ниже» обе стороны применяют одну и ту же (см. useIndicators).
-  const [oiPane, setOiPane] = useState<number>(() => Number(rd('frame:embed:oi:oiPane', '0')) || 0);
-  const reservedPanes = useMemo(() => (oiPane > 0 ? [oiPane] : []), [oiPane]);
+  const [legPanes, setLegPanes] = useState<Partial<Record<OILeg, number>>>(() => parseLegPanes(rd('frame:embed:oi:oiPane', '0'), oiLegs));
+  const paneOf = useCallback((leg: OILeg) => legPanes[leg] ?? 0, [legPanes]);
+  const reservedPanes = useMemo(() => [...new Set(oiLegs.map(paneOf).filter((p) => p > 0))], [oiLegs, paneOf]);
   const onSwapPanes = useCallback((a: number, b: number) => {
-    setOiPane((p) => (p === a ? b : p === b ? a : p));
+    setLegPanes((m) => Object.fromEntries(Object.entries(m).map(([l, p]) => [l, p === a ? b : p === b ? a : p])));
   }, []);
   const inds = useIndicators('frame:embed:oi:indicators', { reserved: reservedPanes, onSwapPanes });
   const [clgroup, setClgroup] = useState<ClGroup>(() => rd('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(rd('frame:embed:oi:interval', '24')) || 24);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => rd('frame:embed:oi:displayMode', 'positions') as DisplayMode);
-  const [oiVariant, setOiVariant] = useState<OIVariant>(() => rd('frame:embed:oi:oiVariant', 'net') as OIVariant);
   const [showPrice, setShowPrice] = useState<boolean>(() => rd('frame:embed:oi:showPrice', 'true') === 'true');
   const [showExpirations, setShowExpirations] = useState<boolean>(() => rd('frame:embed:oi:showExpirations', 'false') === 'true');
 
@@ -240,10 +278,10 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   useEffect(() => { wr('frame:embed:oi:clgroup', clgroup); }, [clgroup]);
   useEffect(() => { wr('frame:embed:oi:interval', String(interval)); }, [interval]);
   useEffect(() => { wr('frame:embed:oi:displayMode', displayMode); }, [displayMode]);
-  useEffect(() => { wr('frame:embed:oi:oiVariant', oiVariant); }, [oiVariant]);
+  useEffect(() => { wr('frame:embed:oi:oiVariant', oiLegs.join(',')); }, [oiLegs]);
   useEffect(() => { wr('frame:embed:oi:showPrice', String(showPrice)); }, [showPrice]);
   useEffect(() => { wr('frame:embed:oi:showExpirations', String(showExpirations)); }, [showExpirations]);
-  useEffect(() => { wr('frame:embed:oi:oiPane', String(oiPane)); }, [oiPane]);
+  useEffect(() => { wr('frame:embed:oi:oiPane', formatLegPanes(legPanes)); }, [legPanes]);
 
   const changeInterval = (next: number) => setIntervalValue(next);
 
@@ -408,60 +446,26 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // в SimpleChart сдвигал бы серию во времени. Для каждой свечи берём последнее
   // известное значение OI (forward-fill). Дневной ключ — по дате (свечи
   // T00:00:00, OI T23:50:00); интрадей — по полному timestamp.
-  const oiSeries = useMemo(() => {
-    if (!data?.open_interest) {
-      return { secondary: undefined as Series | undefined, third: undefined as Series | undefined };
-    }
+  const oiSeries = useMemo<Partial<Record<OILeg, Series>>>(() => {
+    if (!data?.open_interest) return {};
     const isPositions = displayMode === 'positions';
     const oi = data.open_interest;
-
-    let secondary: Series | undefined;
-    let third: Series | undefined;
-
-    switch (oiVariant) {
-      case 'oi':
-        secondary = oi.map((o: OiPoint) => ({
-          time: o.time,
-          value: isPositions
-            ? num(o.pos_long) + Math.abs(num(o.pos_short))
-            : num(o.pos_long_num) + num(o.pos_short_num),
-        }));
-        break;
-      case 'long':
-        secondary = oi.map((o: OiPoint) => ({
-          time: o.time,
-          value: isPositions ? num(o.pos_long) : num(o.pos_long_num),
-        }));
-        break;
-      case 'short':
-        secondary = oi.map((o: OiPoint) => ({
-          time: o.time,
-          value: isPositions ? Math.abs(num(o.pos_short)) : num(o.pos_short_num),
-        }));
-        break;
-      case 'both':
-        secondary = oi.map((o: OiPoint) => ({
-          time: o.time,
-          value: isPositions ? num(o.pos_long) : num(o.pos_long_num),
-        }));
-        third = oi.map((o: OiPoint) => ({
-          time: o.time,
-          value: isPositions ? Math.abs(num(o.pos_short)) : num(o.pos_short_num),
-        }));
-        break;
-      case 'net':
-        secondary = oi.map((o: OiPoint) => ({
-          time: o.time,
-          value: isPositions
-            ? (o.net_position ?? (num(o.pos_long) + num(o.pos_short)))
-            : num(o.pos_long_num) - num(o.pos_short_num),
-        }));
-        break;
-    }
+    const valueOf = (o: OiPoint, leg: OILeg): number => {
+      switch (leg) {
+        case 'oi': return isPositions
+          ? num(o.pos_long) + Math.abs(num(o.pos_short))
+          : num(o.pos_long_num) + num(o.pos_short_num);
+        case 'long': return isPositions ? num(o.pos_long) : num(o.pos_long_num);
+        case 'short': return isPositions ? Math.abs(num(o.pos_short)) : num(o.pos_short_num);
+        case 'net': return isPositions
+          ? (o.net_position ?? (num(o.pos_long) + num(o.pos_short)))
+          : num(o.pos_long_num) - num(o.pos_short_num);
+      }
+    };
 
     const isIntraday = interval !== 24;
-    const align = (series: Series | undefined): Series | undefined => {
-      if (!series || series.length === 0 || chartData.length === 0) return series;
+    const align = (series: Series): Series => {
+      if (series.length === 0 || chartData.length === 0) return series;
       const map = new Map<string, number>();
       for (const p of series) {
         const key = isIntraday ? p.time : p.time.slice(0, 10);
@@ -478,50 +482,24 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       return aligned.length > 0 ? aligned : series;
     };
 
-    return { secondary: align(secondary), third: align(third) };
-  }, [data, displayMode, oiVariant, interval, chartData]);
+    return Object.fromEntries(oiLegs.map((leg) => [leg, align(oi.map((o: OiPoint) => ({ time: o.time, value: valueOf(o, leg) })))]));
+  }, [data, displayMode, oiLegs, interval, chartData]);
 
-  // Цвета серии ОИ (зеркалит getColors). oi=amber, long=green, short=red,
-  // net=cyan, both=green/red.
-  const colors = useMemo(() => {
-    switch (oiVariant) {
-      case 'oi': return { secondary: OI_COLORS.amber, third: '' };
-      case 'long': return { secondary: OI_COLORS.green, third: '' };
-      case 'short': return { secondary: OI_COLORS.red, third: '' };
-      case 'both': return { secondary: OI_COLORS.green, third: OI_COLORS.red };
-      case 'net': return { secondary: OI_COLORS.accent, third: '' };
-      default: return { secondary: OI_COLORS.amber, third: '' };
-    }
-  }, [oiVariant]);
-
-  // Лейблы серии ОИ (зеркалит getLabels — зависят от displayMode).
-  const labels = useMemo(() => {
+  // Лейблы показателей (зависят от displayMode): пункты меню и подписи линий.
+  const legLabels = useMemo<Record<OILeg, string>>(() => {
     const isPositions = displayMode === 'positions';
-    switch (oiVariant) {
-      case 'oi': return { secondary: 'Открытый интерес', third: '' };
-      case 'long': return { secondary: isPositions ? 'Покупки' : 'Покупатели', third: '' };
-      case 'short': return { secondary: isPositions ? 'Продажи' : 'Продавцы', third: '' };
-      case 'both': return {
-        secondary: isPositions ? 'Покупки' : 'Покупатели',
-        third: isPositions ? 'Продажи' : 'Продавцы',
-      };
-      case 'net': return { secondary: 'Чистая позиция', third: '' };
-      default: return { secondary: '', third: '' };
-    }
-  }, [displayMode, oiVariant]);
-
-  // Лейблы вариантов для drawer-сегментов (зависят от displayMode — выводим,
-  // а не хардкодим, чтобы совпадало с labels выше).
-  const variantOpts = useMemo(() => {
-    const isPositions = displayMode === 'positions';
-    return [
-      { id: 'oi' as OIVariant, label: 'Открытый интерес' },
-      { id: 'long' as OIVariant, label: isPositions ? 'Покупки' : 'Покупатели' },
-      { id: 'short' as OIVariant, label: isPositions ? 'Продажи' : 'Продавцы' },
-      { id: 'both' as OIVariant, label: isPositions ? 'Покупки + Продажи' : 'Покупатели + Продавцы' },
-      { id: 'net' as OIVariant, label: 'Чистая позиция' },
-    ];
+    return {
+      oi: 'Открытый интерес',
+      long: isPositions ? 'Покупки' : 'Покупатели',
+      short: isPositions ? 'Продажи' : 'Продавцы',
+      net: 'Чистая позиция',
+    };
   }, [displayMode]);
+  const legOpts = useMemo(() => OI_LEGS.map((id) => ({ id, label: legLabels[id] })), [legLabels]);
+  // Что подписать на кнопке показателя: при нескольких названия уходят в подсказку.
+  const legsSummary = oiLegs.length === 1 ? legLabels[primaryLeg]
+    : isPair ? `${legLabels.long} + ${legLabels.short}`
+    : `${oiLegs.length} показателя`;
 
   // §OI-4: метки экспираций (смена контракта) — кружок с кодом контракта у оси дат
   // + hover-тултип (from→to), как на сайте. Данные из contract_switches.
@@ -541,13 +519,8 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // алерта уровня ОИ и её подпись. Зеркалит OpenInterestPage.oiLeg.
   const oiLeg: 'net' | 'long' | 'short' | 'oi' | 'npart' = useMemo(() => {
     if (displayMode === 'participants') return 'npart';
-    switch (oiVariant) {
-      case 'long': return 'long';
-      case 'short': return 'short';
-      case 'oi': return 'oi';
-      default: return 'net';   // net + both (both отключает уровневый алерт ниже)
-    }
-  }, [displayMode, oiVariant]);
+    return primaryLeg;
+  }, [displayMode, primaryLeg]);
   const oiLegLabel = OI_LEG_LABEL[oiLeg];
   const oiLegUnit = oiLeg === 'npart' ? 'участников' : 'контрактов';
 
@@ -591,9 +564,9 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     details: [
       TF_COMPACT.find((t) => t.id === interval)?.label,
       clgroup === 'FIZ' ? 'Физлица' : 'Юрлица',
-      labels.secondary,
+      oiLegs.map((l) => legLabels[l]).join(', '),
     ].filter((x): x is string => !!x),
-  }), [displayName, frontContract, instrument, interval, clgroup, labels.secondary]);
+  }), [displayName, frontContract, instrument, interval, clgroup, oiLegs, legLabels]);
 
   // Серии для LwChart: цена (линия, левая ось) + показатель ОИ (area/линии, правая ось).
   const lwSeries = useMemo<LwSeries[]>(() => {
@@ -621,47 +594,50 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       }
       out.push(priceSeries);
     }
-    if (oiSeries.secondary && oiSeries.secondary.length > 0) {
-      if (oiVariant === 'both') {
-        out.push(applyFormat({
-          id: 'oi-long', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
-          data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
-          tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
-        }, sf.get('oi-long')));
-        if (oiSeries.third) {
-          out.push(applyFormat({
-            id: 'oi-short', type: 'line', scale: 'right', color: colors.third, lineWidth: 2, label: labels.third,
-            data: oiSeries.third.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
-            tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
-          }, sf.get('oi-short')));
-        }
-      } else {
-        out.push(applyFormat({
-          id: 'oi', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
-          data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
-          tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
-        }, sf.get('oi')));
-      }
+    for (const leg of oiLegs) {
+      const pts = oiSeries[leg];
+      if (!pts || pts.length === 0) continue;
+      const id = legId(leg, oiLegs.length);
+      out.push(applyFormat({
+        id, type: 'line', scale: 'right', color: LEG_COLOR[leg], lineWidth: 2, label: legLabels[leg],
+        data: pts.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
+        tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
+      }, sf.get(id)));
     }
     return out;
-  }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval, sf.get, data?.price_view]);
+  }, [chartData, oiSeries, oiLegs, legLabels, showPrice, displayName, interval, sf.get, data?.price_view]);
 
   // «Глаз» нативной серии: у цены это существующий тумблер showPrice (единственный
   // источник правды), у линий ОИ — поле visible в карте форматов.
   const visibleNative = useMemo(() => lwSeries.filter((d) => sf.get(d.id).visible !== false), [lwSeries, sf]);
-  // Линии ОИ уезжают в свою панель целиком (их 1–2, и обе на одной шкале).
-  const oiOwn = useMemo(() => visibleNative.filter((d) => d.id !== 'price'), [visibleNative]);
-  const mainNative = useMemo(() => (oiPane > 0 ? visibleNative.filter((d) => d.id === 'price') : visibleNative), [visibleNative, oiPane]);
+  const legOfId = useMemo(() => new Map(oiLegs.map((l) => [legId(l, oiLegs.length), l])), [oiLegs]);
   // ⚠️ Если после переезда на основной панели не осталось НИЧЕГО (цена скрыта) —
-  // возвращаем ОИ наверх: пустая ценовая панель это полоса пустоты во всю ширину
-  // и график без единой линии.
+  // возвращаем наверх панель первой видимой линии: пустая ценовая панель это полоса
+  // пустоты во всю ширину и график без единой линии.
   // Раньше в условие входила ещё и пустота indSeries[0] (нет наложений). Теперь
   // это НЕЛЬЗЯ: наложения по базису ОИ сами садятся в панель oiPaneEff, то есть
   // сборка серий зависит от него — считать его через результат сборки значило бы
   // замкнуть цикл. Проверки по цене достаточно: наложения по цене без самой цены
   // теперь тоже не строятся (базис пуст, см. indCandles ниже), так что «на
   // основной панели пусто» и «цена скрыта» — одно и то же условие.
-  const oiPaneEff = mainNative.length === 0 ? 0 : oiPane;
+  const liftedPane = useMemo(() => {
+    const legs = visibleNative.map((d) => legOfId.get(d.id));
+    if (legs.includes(undefined) || legs.some((l) => l && paneOf(l) === 0)) return 0;   // цена или линия уже на основной
+    return paneOf(legs[0] ?? primaryLeg);
+  }, [visibleNative, legOfId, paneOf, primaryLeg]);
+  const paneEff = useCallback((leg: OILeg) => {
+    const p = paneOf(leg);
+    return p === liftedPane ? 0 : p;
+  }, [paneOf, liftedPane]);
+  // Панель главной линии: туда садятся наложения по базису ОИ.
+  const oiPaneEff = paneEff(primaryLeg);
+  const onPane = useCallback(
+    (pane: number) => visibleNative.filter((d) => {
+      const leg = legOfId.get(d.id);
+      return leg ? paneEff(leg) === pane : pane === 0;
+    }),
+    [visibleNative, legOfId, paneEff],
+  );
 
   // Псевдо-свечи ряда ОИ — основание для индикаторов по базису 'oi'. У точки ОИ
   // одно значение, поэтому open=high=low=close=value, а volume отсутствует (его
@@ -669,12 +645,13 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   //
   // В режиме «Покупки + Продажи» базиса ОИ НЕТ намеренно: там две равноправные
   // линии, и одна скользящая, посчитанная молча по одной из них, вводила бы в
-  // заблуждение. UI в этом режиме ОИ как цель не предлагает.
+  // заблуждение. UI в этом режиме ОИ как цель не предлагает. В остальных наборах
+  // базис — главная линия, и её имя стоит на бейдже индикатора.
   const oiCandles = useMemo<Series | null>(() => {
-    const src = oiVariant === 'both' ? undefined : oiSeries.secondary;
+    const src = isPair ? undefined : oiSeries[primaryLeg];
     if (!src || src.length === 0) return null;
     return src.map((p) => ({ time: p.time, value: p.value, open: p.value, high: p.value, low: p.value, close: p.value }));
-  }, [oiSeries.secondary, oiVariant]);
+  }, [oiSeries, primaryLeg, isPair]);
 
   // Индикаторы считаются от РЯДОВ ПО БАЗИСАМ. Ценовые кладутся на ЛЕВУЮ (ценовую)
   // ось, по ОИ — на правую, туда, где сейчас сам ОИ (oiPaneEff). Порядок важен:
@@ -704,22 +681,23 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // легендой на первом же месте, где applyFormat решит иначе.
   //
   // Условия наличия базисов при этом НЕ меняются: цена попадает в lwSeries ровно
-  // при `showPrice && chartData.length > 0`, а единый ряд ОИ с id 'oi' есть
-  // только вне режима «Покупки + Продажи» — там же, где непуст oiCandles
-  // (страховка `oiCandles &&` держит эти два условия связанными явно).
+  // при `showPrice && chartData.length > 0`, а ряд ОИ — только вне режима
+  // «Покупки + Продажи», там же, где непуст oiCandles (страховка `oiCandles &&`
+  // держит эти два условия связанными явно).
   const indBases = useMemo<BasisOption[]>(() => {
     const out: BasisOption[] = [];
     const px = lwSeries.find((d) => d.id === 'price');
     if (px) out.push({ id: 'price', label: px.label, color: px.color });
-    const oi = oiCandles ? lwSeries.find((d) => d.id === 'oi') : undefined;
+    const primaryId = legId(primaryLeg, oiLegs.length);
+    const oi = oiCandles ? lwSeries.find((d) => d.id === primaryId) : undefined;
     if (oi) out.push({ id: 'oi', label: oi.label, color: oi.color });
     return out;
-  }, [lwSeries, oiCandles]);
+  }, [lwSeries, oiCandles, primaryLeg, oiLegs.length]);
   // indSeries сгруппированы по панелям: [0] — наложения на основной график,
   // [1+] — индикаторы со своей шкалой (RSI/ATR/объёмы).
   const allSeries = useMemo(
-    () => [...(oiPaneEff > 0 ? mainNative : visibleNative), ...(indSeries[0] ?? [])],
-    [visibleNative, mainNative, oiPaneEff, indSeries],
+    () => [...onPane(0), ...(indSeries[0] ?? [])],
+    [onPane, indSeries],
   );
   // ⚠️ Панели держатся по СПИСКУ индикаторов, а не по наличию у них серий.
   // Скрытый «глазом» индикатор серий не даёт — если считать панели по сериям,
@@ -745,28 +723,28 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   const extraPanes = useMemo(() => {
     const used = [...new Set([
       ...inds.list.filter((i) => i.pane > 0 && hasBasis(i)).map((i) => i.pane),
-      ...(oiPaneEff > 0 ? [oiPaneEff] : []),
+      ...oiLegs.map(paneEff).filter((p) => p > 0),
     ])].sort((a, b) => a - b);
     return used.map((pane) => ({
       pane,
-      series: [...(pane === oiPaneEff ? oiOwn : []), ...(indSeries[pane] ?? [])],
+      series: [...onPane(pane), ...(indSeries[pane] ?? [])],
     }));
-  }, [inds.list, indSeries, oiPaneEff, oiOwn, hasBasis]);
+  }, [inds.list, indSeries, oiLegs, paneEff, onPane, hasBasis]);
   // Номер панели ≠ её индекс в стеке: номера не подряд (после удалений остаются
-  // дыры), а осям алертов и уровням нужен именно индекс.
+  // дыры), а осям алертов и уровням нужен именно индекс. Алерт уровня — от главной линии.
   const oiChartIndex = oiPaneEff === 0 ? 0 : extraPanes.findIndex((x) => x.pane === oiPaneEff) + 1;
   oiChartIndexRef.current = oiChartIndex;
 
-  // §OI-3: на каких осях кликабельный «+». Вариант «both» (3 линии) — уровневый
-  // алерт двусмыслен, выключаем целиком (как на сайте). Иначе: левая — если цена
-  // показана; правая (ОИ) — всегда.
+  // §OI-3: на каких осях кликабельный «+». «Покупки + Продажи» — уровневый алерт
+  // двусмыслен, выключаем целиком (как на сайте). Иначе: левая — если цена показана;
+  // правая (ОИ) — когда главная линия одна на своей оси, иначе уровень двусмыслен.
   const alertAxes = useMemo<{ pane: number; side: 'left' | 'right' }[]>(() => {
-    if (oiVariant === 'both') return [];
+    if (isPair) return [];
     const ax: { pane: number; side: 'left' | 'right' }[] = [];
     if (showPrice && livePrices) ax.push({ pane: 0, side: 'left' });
-    ax.push({ pane: oiChartIndex, side: 'right' });
+    if (oiLegs.filter((l) => paneEff(l) === oiPaneEff).length === 1) ax.push({ pane: oiChartIndex, side: 'right' });
     return ax;
-  }, [oiVariant, showPrice, oiChartIndex, livePrices]);
+  }, [isPair, oiLegs, paneEff, oiPaneEff, showPrice, oiChartIndex, livePrices]);
 
   // Активные алерты этого актива → пунктир: цена на ЛЕВОЙ оси, уровень ОИ на ПРАВОЙ.
   // Подписи у линии нет: бейдж «колокольчик + крестик» у шкалы её заменяет.
@@ -815,16 +793,35 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Перенос линий ОИ между панелями. Двигаются ВСЕ разом (в варианте
-  // «Покупки + Продажи» их две, и на разных панелях они несравнимы).
-  const moveOi = useCallback((to: 'up' | 'down' | 'own' | 'main') => {
-    if (to === 'main') { setOiPane(0); return; }
-    if (to === 'own') { setOiPane(inds.freePane()); return; }
+  // Перенос линии ОИ между панелями. «Покупки + Продажи» двигаются разом: на
+  // разных панелях они несравнимы.
+  const moveLeg = useCallback((leg: OILeg, to: 'up' | 'down' | 'own' | 'main') => {
+    if (to === 'main' || to === 'own') {
+      const pane = to === 'main' ? 0 : inds.freePane();
+      setLegPanes((m) => ({ ...m, ...Object.fromEntries((isPair ? oiLegs : [leg]).map((l) => [l, pane])) }));
+      return;
+    }
     const occ = inds.occupiedPanes;
-    const target = occ[occ.indexOf(oiPane) + (to === 'up' ? -1 : 1)];
-    // swapPanes переставит индикаторы и через onSwapPanes — сам oiPane.
-    if (target != null) inds.swapPanes(oiPane, target);
-  }, [inds, oiPane]);
+    const from = paneOf(leg);
+    const target = occ[occ.indexOf(from) + (to === 'up' ? -1 : 1)];
+    // swapPanes переставит индикаторы и через onSwapPanes — сами линии.
+    if (target != null) inds.swapPanes(from, target);
+  }, [inds, isPair, oiLegs, paneOf]);
+
+  // Галочка в меню показателей. Последнюю линию снять нельзя: окно ОИ без ОИ
+  // бессмысленно, а цена выключается отдельно.
+  const toggleLeg = useCallback((leg: OILeg) => {
+    const on = oiLegs.includes(leg);
+    if (on && oiLegs.length === 1) return;
+    const next = on ? oiLegs.filter((l) => l !== leg) : [...oiLegs, leg];
+    // Линия сменила id — формат переезжает с ней.
+    if (oiLegs.length === 1) sf.copy('oi', LEG_ID[primaryLeg]);
+    if (next.length === 1) sf.copy(LEG_ID[next[0]], 'oi');
+    setOiLegs(next);
+    const mate = oiLegs.find((l) => sameScale(l, leg));
+    const pane = mate ? paneOf(mate) : inds.freePane();
+    setLegPanes((m) => ({ ...m, [leg]: on ? undefined : pane }));
+  }, [oiLegs, primaryLeg, paneOf, inds, sf]);
 
   const nativeRows = useMemo<NativeRow[]>(() => {
     const rows: NativeRow[] = [{
@@ -835,33 +832,30 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     // отдельными выпадашками (см. controls ниже). В ⋯ строки остаётся только
     // перемещение линии между панелями — иначе одна и та же настройка имела бы
     // два входа и рассинхронилась бы с рядом наверху.
-    const at = inds.occupiedPanes.indexOf(oiPaneEff);
     for (const d of lwSeries) {
-      if (d.id === 'price') continue;
+      const leg = legOfId.get(d.id);
+      if (!leg) continue;
+      const pane = paneEff(leg);
+      const at = inds.occupiedPanes.indexOf(pane);
       rows.push({
         id: d.id, label: d.label, color: d.color,
         visible: sf.get(d.id).visible !== false,
         onToggle: () => sf.setVisible(d.id, sf.get(d.id).visible === false),
-        pane: oiPaneEff, onMove: moveOi,
+        pane, onMove: (to) => moveLeg(leg, to),
         canUp: at > 0, canDown: at >= 0 && at < inds.occupiedPanes.length - 1,
       });
     }
     return rows;
-  }, [lwSeries, sf, showPrice, displayName, oiPaneEff, inds.occupiedPanes, moveOi]);
+  }, [lwSeries, sf, showPrice, displayName, legOfId, paneEff, inds.occupiedPanes, moveLeg]);
 
   // Иконка «Показателя» — точка цветом ТЕКУЩЕЙ линии ОИ (с учётом перекраски в
-  // ⚙ Формат, поэтому цвет из sf, а не из палитры). «Покупки + Продажи» — две
-  // точки: линии там две, и одна точка врала бы про цвет второй.
+  // ⚙ Формат, поэтому цвет из sf, а не из палитры). По точке на линию: одна точка
+  // врала бы про цвет остальных.
   const variantIcon = useMemo<ReactNode>(() => (
-    oiVariant === 'both'
-      ? (
-        <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
-          <Dot color={sf.get('oi-long').color ?? colors.secondary} />
-          <Dot color={sf.get('oi-short').color ?? colors.third} />
-        </span>
-      )
-      : <Dot color={sf.get('oi').color ?? colors.secondary} />
-  ), [oiVariant, sf, colors]);
+    <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
+      {oiLegs.map((l) => <Dot key={l} color={sf.get(legId(l, oiLegs.length)).color ?? LEG_COLOR[l]} />)}
+    </span>
+  ), [oiLegs, sf]);
 
   // Ряд контролов тулбара. ОДНА функция на видимый ряд и на невидимый измеритель
   // (compact=false всегда) — если рендерить их двумя копиями JSX, любая правка
@@ -874,7 +868,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
       <Dropdown value={interval} options={tfOptions} onChange={changeInterval} title="Таймфрейм" icon={<Clock size={14} />} compact={compact} compactLabel={(v) => TF_SHORT[v]} />
       <Dropdown value={clgroup} options={CLGROUP_OPTS} onChange={setClgroup} title="Участники" icon={CLGROUP_ICON} compact={compact} />
       <Dropdown value={displayMode} options={MODE_OPTS} onChange={setDisplayMode} title="Режим" icon={MODE_ICON} compact={compact} />
-      <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель" icon={variantIcon} compact={compact} />
+      <Dropdown value={primaryLeg} options={legOpts} onChange={toggleLeg} checked={(l) => oiLegs.includes(l)} valueLabel={legsSummary} title={oiLegs.length === 1 ? 'Показатель' : oiLegs.map((l) => legLabels[l]).join(', ')} icon={variantIcon} compact={compact} />
       <IndicatorsButton api={inds} hasVolume={hasVolume} bases={indBases} compact={compact} />
     </>
   );
@@ -945,14 +939,10 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
           {showPrice && (
             <FormatSection label="Цена" kinds={OHLC_KINDS} fmt={sf.get('price')} onKind={(k) => sf.setKind('price', k)} onColor={(c) => sf.setColor('price', c)} onOpacity={(o) => sf.setOpacity('price', o)} onWidth={(w) => sf.setWidth('price', w)} defaultColor={OI_COLORS.primary} />
           )}
-          {oiVariant === 'both' ? (
-            <>
-              <FormatSection label={labels.secondary} fmt={sf.get('oi-long')} onKind={(k) => sf.setKind('oi-long', k)} onColor={(c) => sf.setColor('oi-long', c)} onOpacity={(o) => sf.setOpacity('oi-long', o)} onWidth={(w) => sf.setWidth('oi-long', w)} defaultColor={colors.secondary} />
-              <FormatSection label={labels.third} fmt={sf.get('oi-short')} onKind={(k) => sf.setKind('oi-short', k)} onColor={(c) => sf.setColor('oi-short', c)} onOpacity={(o) => sf.setOpacity('oi-short', o)} onWidth={(w) => sf.setWidth('oi-short', w)} defaultColor={colors.third} />
-            </>
-          ) : (
-            <FormatSection label={labels.secondary} fmt={sf.get('oi')} onKind={(k) => sf.setKind('oi', k)} onColor={(c) => sf.setColor('oi', c)} onOpacity={(o) => sf.setOpacity('oi', o)} onWidth={(w) => sf.setWidth('oi', w)} defaultColor={colors.secondary} />
-          )}
+          {oiLegs.map((l) => {
+            const id = legId(l, oiLegs.length);
+            return <FormatSection key={l} label={legLabels[l]} fmt={sf.get(id)} onKind={(k) => sf.setKind(id, k)} onColor={(c) => sf.setColor(id, c)} onOpacity={(o) => sf.setOpacity(id, o)} onWidth={(w) => sf.setWidth(id, w)} defaultColor={LEG_COLOR[l]} />;
+          })}
         </>
       }
     >
