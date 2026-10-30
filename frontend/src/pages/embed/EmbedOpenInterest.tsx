@@ -36,7 +36,7 @@ import { useToolbarCompact } from './useToolbarCompact';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useLivePrices } from '../../hooks/useLivePrices';
 import { useDrawTools, DrawExportActions, DrawToolsOverlay, ChartExportModal } from './useDrawTools';
-import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, indicatorValues, IndicatorList, PaneIndicatorList, IndicatorsButton, type NativeRow, type BasisOption } from './EmbedIndicators';
+import { useIndicators, useIndicatorSeries, useVolumeProfileSpec, indicatorValues, findBasis, IndicatorList, PaneIndicatorList, IndicatorsButton, type NativeRow, type BasisOption, type IndBasis } from './EmbedIndicators';
 
 // Компактные лейблы таймфрейма для тулбар-выпадашки (§OI-7: одна кнопка-dropdown).
 const TF_COMPACT: { id: number; label: string }[] = [
@@ -230,12 +230,12 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // Пользовательские индикаторы (наложения поверх графика). Ключ БЕЗ инструмента:
   // набор индикаторов — это про предпочтения пользователя, а не про актив, и при
   // переключении SR→GAZP он должен остаться.
-  // Показатели окна, порядок = порядок включения. Первая линия главная: от неё
-  // считаются индикаторы по базису ОИ и уровневый алерт.
+  // Показатели окна, порядок = порядок включения. Первая линия главная: на ней
+  // уровневый алерт и индикаторы, добавленные, пока линия была одна.
   const [oiLegs, setOiLegs] = useState<OILeg[]>(() => parseLegs(rd('frame:embed:oi:oiVariant', 'net')));
   const primaryLeg = oiLegs[0];
   // Единая пара «Покупки + Продажи»: две равноправные линии на одной шкале. Для неё
-  // сохранены прежние правила: нет базиса ОИ и алертов, переносится только вместе.
+  // сохранены прежние правила: нет главной линии и алертов, переносится только вместе.
   const isPair = oiLegs.length === 2 && oiLegs.includes('long') && oiLegs.includes('short');
   // Панель линии ОИ: 0 — на графике цены (правая ось), 1+ — своя панель снизу.
   // Номера общие с индикаторами, поэтому уходят к ним в reserved, а перестановку
@@ -639,19 +639,31 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     [visibleNative, legOfId, paneEff],
   );
 
-  // Псевдо-свечи ряда ОИ — основание для индикаторов по базису 'oi'. У точки ОИ
+  // Псевдо-свечи рядов ОИ — основание для индикаторов по базису ОИ. У точки ОИ
   // одно значение, поэтому open=high=low=close=value, а volume отсутствует (его
   // у позиций нет — объёмы и профиль объёма на этом базисе и не предлагаются).
-  //
-  // В режиме «Покупки + Продажи» базиса ОИ НЕТ намеренно: там две равноправные
-  // линии, и одна скользящая, посчитанная молча по одной из них, вводила бы в
-  // заблуждение. UI в этом режиме ОИ как цель не предлагает. В остальных наборах
-  // базис — главная линия, и её имя стоит на бейдже индикатора.
-  const oiCandles = useMemo<Series | null>(() => {
-    const src = isPair ? undefined : oiSeries[primaryLeg];
-    if (!src || src.length === 0) return null;
-    return src.map((p) => ({ time: p.time, value: p.value, open: p.value, high: p.value, low: p.value, close: p.value }));
-  }, [oiSeries, primaryLeg, isPair]);
+  // 'oi:<нога>' — конкретная линия, 'oi' — «показанный ряд», то есть главная линия.
+  // В режиме «Покупки + Продажи» главной линии НЕТ намеренно: линии там
+  // равноправны, и индикатор, посчитанный молча по одной из них, вводил бы в
+  // заблуждение. Поэтому такой индикатор ждёт, пока вернётся единый ряд, а
+  // новый добавляется только с явным выбором линии.
+  const oiCandles = useMemo(() => {
+    const out: Record<`oi${string}`, Series | null> = { oi: null };
+    for (const leg of oiLegs) {
+      const src = oiSeries[leg];
+      if (!src || src.length === 0) continue;
+      const cnd = src.map((p) => ({ time: p.time, value: p.value, open: p.value, high: p.value, low: p.value, close: p.value }));
+      out[`oi:${leg}`] = cnd;
+      if (leg === primaryLeg && !isPair) out.oi = cnd;
+    }
+    return out;
+  }, [oiSeries, oiLegs, primaryLeg, isPair]);
+
+  // Панель ряда, от которого считается индикатор: наложение едет за своей линией.
+  const paneOfBasis = useCallback((basis: IndBasis) => {
+    const leg = OI_LEGS.find((l) => basis === `oi:${l}`);
+    return leg && oiLegs.includes(leg) ? paneEff(leg) : oiPaneEff;
+  }, [oiLegs, paneEff, oiPaneEff]);
 
   // Индикаторы считаются от РЯДОВ ПО БАЗИСАМ. Ценовые кладутся на ЛЕВУЮ (ценовую)
   // ось, по ОИ — на правую, туда, где сейчас сам ОИ (oiPaneEff). Порядок важен:
@@ -662,10 +674,10 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // на графике нет, значит показывать линию, к которой нечего приложить.
   const toSecFn = useCallback((t: string) => toSec(t, interval !== 24), [interval]);
   const indCandles = useMemo(
-    () => ({ price: showPrice ? chartData : EMPTY_CANDLES, oi: oiCandles }),
+    () => ({ price: showPrice ? chartData : EMPTY_CANDLES, ...oiCandles }),
     [showPrice, chartData, oiCandles],
   );
-  const indSeries = useIndicatorSeries(inds.list, indCandles, toSecFn, inds.colorOf, 'left', oiPaneEff);
+  const indSeries = useIndicatorSeries(inds.list, indCandles, toSecFn, inds.colorOf, 'left', paneOfBasis);
   // Профиль объёма — не серия, а примитив на ценовой серии (он гистограмма по
   // цене, а не по времени). Крепится к 'price': на линии ОИ он отрисовал бы
   // уровни по чужой шкале. Цена скрыта → серии нет → профиля тоже нет.
@@ -680,19 +692,22 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // здесь свою пару displayName + sf.get('price').color — и она разойдётся с
   // легендой на первом же месте, где applyFormat решит иначе.
   //
-  // Условия наличия базисов при этом НЕ меняются: цена попадает в lwSeries ровно
-  // при `showPrice && chartData.length > 0`, а ряд ОИ — только вне режима
-  // «Покупки + Продажи», там же, где непуст oiCandles (страховка `oiCandles &&`
-  // держит эти два условия связанными явно).
+  // Одна линия — базис 'oi': индикатор следует за ней при смене показателя. Несколько —
+  // у каждой свой id, и окно при добавлении спрашивает, от какой считать.
   const indBases = useMemo<BasisOption[]>(() => {
     const out: BasisOption[] = [];
     const px = lwSeries.find((d) => d.id === 'price');
     if (px) out.push({ id: 'price', label: px.label, color: px.color });
-    const primaryId = legId(primaryLeg, oiLegs.length);
-    const oi = oiCandles ? lwSeries.find((d) => d.id === primaryId) : undefined;
-    if (oi) out.push({ id: 'oi', label: oi.label, color: oi.color });
+    for (const leg of oiLegs) {
+      const line = lwSeries.find((d) => d.id === legId(leg, oiLegs.length));
+      if (!line) continue;
+      const own = `oi:${leg}` as const;
+      out.push(oiLegs.length === 1
+        ? { id: 'oi', also: [own], label: line.label, color: line.color }
+        : { id: own, also: leg === primaryLeg && !isPair ? ['oi'] : undefined, label: line.label, color: line.color });
+    }
     return out;
-  }, [lwSeries, oiCandles, primaryLeg, oiLegs.length]);
+  }, [lwSeries, oiLegs, primaryLeg, isPair]);
   // indSeries сгруппированы по панелям: [0] — наложения на основной график,
   // [1+] — индикаторы со своей шкалой (RSI/ATR/объёмы).
   const allSeries = useMemo(
@@ -717,7 +732,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
   // Строка такого индикатора тоже не рисуется (IndicatorRow), а сам он живёт
   // в состоянии — вернулся режим, вернулись и панель, и строка.
   const hasBasis = useCallback(
-    (i: { basis?: 'price' | 'oi' }) => indBases.some((b) => b.id === (i.basis ?? 'price')),
+    (i: { basis?: IndBasis }) => !!findBasis(indBases, i.basis ?? 'price'),
     [indBases],
   );
   const extraPanes = useMemo(() => {
@@ -958,7 +973,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
             volumeProfile={vpSpec}
             // Строка индикатора живёт над СВОЕЙ панелью, а не в общем углу.
             paneOverlay={(i) => (i === 0 ? null : (
-              <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} values={indValues} native={nativeRows} oiPane={oiPaneEff} bases={indBases} />
+              <PaneIndicatorList api={inds} pane={extraPanes[i - 1]?.pane ?? i} values={indValues} native={nativeRows} oiPane={paneOfBasis} bases={indBases} />
             ))}
             paneSizes={paneSizes}
             onPaneSizesChange={onPaneSizesChange}
@@ -992,7 +1007,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         )}
         {/* Оверлей рисования (контекстная панель свойств + сайдбар инструментов +
             слои) и модалка экспорта — общие компоненты useDrawTools.tsx. */}
-        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} values={indValues} oiPane={oiPaneEff} bases={indBases} />
+        <IndicatorList api={inds} native={nativeRows} visible={status === 'ok' && !!data && lwSeries.length > 0} values={indValues} oiPane={paneOfBasis} bases={indBases} />
         <DrawToolsOverlay draw={draw} visible={status === 'ok' && !!data && lwSeries.length > 0} />
         <ChartExportModal
           draw={draw}

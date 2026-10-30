@@ -38,18 +38,24 @@ export type IndicatorKind = 'ma' | 'ema' | 'bb' | 'rsi' | 'atr' | 'volume' | 'vp
 
 /**
  * От какого РЯДА считается индикатор. 'price' — свечи цены (единственный вариант
- * на большинстве графиков), 'oi' — ряд открытого интереса в окне ОИ.
+ * на большинстве графиков), 'oi' и 'oi:<линия>' — ряды открытого интереса в окне ОИ.
  *
  * Отсутствие поля = 'price': так наборы, сохранённые до появления базиса, читаются
  * без миграции.
  */
-export type IndBasis = 'price' | 'oi';
+export type IndBasis = 'price' | 'oi' | `oi:${string}`;
+/** 'oi' — «показанный ряд ОИ, какой бы он ни был»; 'oi:long' — конкретная линия,
+ *  когда их в окне несколько. */
+const isOiBasis = (b: IndBasis) => b !== 'price';
 
 /** Один доступный базис в конкретном окне: id + подпись из самого окна (у цены —
  *  название актива, у ОИ — «Чистая позиция»/«Покупки», зависит от режима и
  *  показателя). */
 export interface BasisOption {
   id: IndBasis;
+  /** Другие id, которые означают тот же ряд: индикатор, добавленный при одной
+   *  линии (id 'oi'), остаётся на ней, когда линий становится больше, и наоборот. */
+  also?: IndBasis[];
   label: string;
   /** Цвет ряда — тот же, что у линии на графике и у квадратика в строке легенды.
    *  Окно обязано брать его из СВОЕЙ сборки серий, иначе выбор базиса и легенда
@@ -228,6 +234,9 @@ function windowLabel(days: number): string {
 /** Базис экземпляра с учётом дефолта. Отдельной функцией, потому что читается он
  *  из десятка мест, и `i.basis ?? 'price'` россыпью легко разъезжается. */
 const basisOf = (i: IndicatorInst): IndBasis => i.basis ?? 'price';
+/** Какой ряд окна стоит за базисом индикатора. undefined — такого ряда сейчас нет. */
+export const findBasis = (bases: BasisOption[] | undefined, id: IndBasis) =>
+  bases?.find((b) => b.id === id || b.also?.includes(id));
 
 /**
  * Виды, доступные для данного базиса: на цене решает hiddenFromMenu, на ОИ —
@@ -236,7 +245,7 @@ const basisOf = (i: IndicatorInst): IndBasis => i.basis ?? 'price';
  */
 function kindAllowedOn(kind: IndicatorKind, basis: IndBasis): boolean {
   const d = KINDS[kind];
-  return basis === 'oi' ? !!d.oiOk : !d.hiddenFromMenu;
+  return isOiBasis(basis) ? !!d.oiOk : !d.hiddenFromMenu;
 }
 
 /**
@@ -254,7 +263,7 @@ const OI_ATR_NAME = 'Ср. изменение';
 
 /** Подпись строки с учётом базиса. */
 function indTitle(i: IndicatorInst): string {
-  if (i.kind === 'atr' && basisOf(i) === 'oi') {
+  if (i.kind === 'atr' && isOiBasis(basisOf(i))) {
     return i.statusArgs === false ? OI_ATR_NAME : `${OI_ATR_NAME} ${i.length}`;
   }
   return KINDS[i.kind].title(i);
@@ -262,7 +271,7 @@ function indTitle(i: IndicatorInst): string {
 
 /** Короткое имя для заголовков секций окна настроек — с той же поправкой. */
 function indShortName(i: IndicatorInst): string {
-  if (i.kind === 'atr' && basisOf(i) === 'oi') return OI_ATR_NAME;
+  if (i.kind === 'atr' && isOiBasis(basisOf(i))) return OI_ATR_NAME;
   const d = KINDS[i.kind];
   return d.shortName ?? d.label;
 }
@@ -349,7 +358,7 @@ function parseList(raw: string): IndicatorInst[] {
         pane: Number.isFinite(x.pane) ? x.pane : 0,
         // Базис: только 'oi' пишем явно — undefined и есть 'price', и лишнее поле
         // в каждой строке персиста ни к чему.
-        basis: x.basis === 'oi' ? 'oi' : undefined,
+        basis: typeof x.basis === 'string' && /^oi(:|$)/.test(x.basis) ? x.basis as IndBasis : undefined,
         side: x.side === 'left' || x.side === 'right' ? x.side : undefined,
         upper: Number.isFinite(x.upper) ? x.upper : undefined,
         lower: Number.isFinite(x.lower) ? x.lower : undefined,
@@ -459,7 +468,7 @@ export function useIndicators(lsKey: string, opts?: {
       // Индикаторы со своей шкалой садятся каждый в СВОЮ панель: RSI и ATR на
       // одной оси были бы нечитаемы (0..100 против абсолютных значений цены).
       const pane = d.defaultPane === 0 ? 0 : nextFreePane(l, reservedRef.current);
-      return [...l, { id: uid(), kind, length: d.defLength, mult: d.defMult, color: null, width: 2, visible: true, pane, basis: basis === 'oi' ? basis : undefined }];
+      return [...l, { id: uid(), kind, length: d.defLength, mult: d.defMult, color: null, width: 2, visible: true, pane, basis: basis === 'price' ? undefined : basis }];
     });
   }, []);
   /** Перенос строки: на график ⇄ в свою панель. */
@@ -552,10 +561,10 @@ function hash(s: string): number {
  * Почему не Map: набор базисов фиксирован типом IndBasis, а объект-литерал
  * проверяется компилятором и легко мемоизируется на стороне вызывающего.
  */
-export type IndCandleSet = IndCandle<string>[] | { price: IndCandle<string>[]; oi?: IndCandle<string>[] | null };
+export type IndCandleSet = IndCandle<string>[] | ({ price: IndCandle<string>[] } & { [b in `oi${string}`]?: IndCandle<string>[] | null });
 
-const asSet = (c: IndCandleSet): Record<IndBasis, IndCandle<string>[]> =>
-  (Array.isArray(c) ? { price: c, oi: [] } : { price: c.price, oi: c.oi ?? [] });
+const asSet = (c: IndCandleSet): Partial<Record<IndBasis, IndCandle<string>[] | null>> =>
+  (Array.isArray(c) ? { price: c } : c);
 
 /**
  * Фактическая панель индикатора.
@@ -568,9 +577,13 @@ const asSet = (c: IndCandleSet): Record<IndBasis, IndCandle<string>[]> =>
  *
  * `oiPane` = 0 для окон без ряда ОИ, там функция вырождается в `i.pane`.
  */
-function effectivePane(i: IndicatorInst, oiPane = 0): number {
-  return i.pane === 0 && basisOf(i) === 'oi' ? oiPane : i.pane;
+function effectivePane(i: IndicatorInst, oiPane: OiPane = 0): number {
+  if (i.pane !== 0 || !isOiBasis(basisOf(i))) return i.pane;
+  return typeof oiPane === 'function' ? oiPane(basisOf(i)) : oiPane;
 }
+
+/** Где сейчас ряд ОИ: одно число или, когда линий несколько, панель каждой. */
+export type OiPane = number | ((basis: IndBasis) => number);
 
 /**
  * Индикаторы → серии, СГРУППИРОВАННЫЕ ПО ПАНЕЛЯМ. Индекс массива = номер панели,
@@ -595,11 +608,11 @@ export function indicatorSeriesByPane(
   overlayScale: 'left' | 'right' = 'left',
   /** Где сейчас ряд ОИ (см. effectivePane). Число, а не объект опций, —
    *  мемоизация useIndicatorSeries держится на сравнении по ссылке. */
-  oiPane = 0,
+  oiPane: OiPane = 0,
 ): LwSeries[][] {
   const out: LwSeries[][] = [[]];
   const bySeries = asSet(candles);
-  if (!bySeries.price.length && !bySeries.oi.length) return out;
+  if (!Object.values(bySeries).some((c) => c?.length)) return out;
   // «Точность» + «Метки на ценовой шкале» — общие для линейных индикаторов
   // (в TV это блок ВЫХОДНЫЕ ЗНАЧЕНИЯ).
   const axisOpts = (i: IndicatorInst): Partial<LwSeries> => {
@@ -618,7 +631,7 @@ export function indicatorSeriesByPane(
   for (const i of list) {
     if (!i.visible) continue;
     const basis = basisOf(i);
-    const cnd = bySeries[basis];
+    const cnd = bySeries[basis] ?? [];
     // Базиса нет или он пуст (цена выключена тумблером, ОИ не пришёл, режим
     // «Покупки + Продажи») — серию не строим вовсе. Строка в легенде остаётся:
     // по ней индикатор и возвращают, когда ряд появится снова.
@@ -642,7 +655,7 @@ export function indicatorSeriesByPane(
       // ПРАВОЙ оси в любой панели (на графике цены левая занята ценой), поэтому
       // его наложения всегда справа: на левой они масштабировались бы по цене и
       // «плавали» относительно кривой, поверх которой нарисованы.
-      scale: (basis === 'oi' ? 'right' : overlay ? overlayScale : 'right') as 'left' | 'right',
+      scale: (isOiBasis(basis) ? 'right' : overlay ? overlayScale : 'right') as 'left' | 'right',
       color: styleColor(line, color),
       lineWidth: line?.width ?? i.width,
       dashed: line?.dash === 'dashed' || line?.dash === 'dotted',
@@ -902,7 +915,7 @@ export function IndicatorList({ api, native, visible, values, oiPane = 0, bases 
   /** Где сейчас ряд ОИ — тем же числом, что ушло в useIndicatorSeries.
    *  ⚠️ Строка обязана считать панель ТАК ЖЕ, как сборка серий, иначе подпись
    *  окажется не в том углу, где линия. */
-  oiPane?: number;
+  oiPane?: OiPane;
   /** Доступные базисы окна. Есть больше одного → в ⋯ строки появляется
    *  «Считать от», а у строк не-ценового базиса — бейдж. */
   bases?: BasisOption[];
@@ -1081,7 +1094,7 @@ export function PaneIndicatorList({ api, pane, values, native, oiPane = 0, bases
   /** Нативные ряды embed'а, съехавшие в эту панель (ОИ). */
   native?: NativeRow[];
   /** Где сейчас ряд ОИ — см. одноимённый проп IndicatorList. */
-  oiPane?: number;
+  oiPane?: OiPane;
   bases?: BasisOption[];
 }) {
   const rows = api.list.filter((i) => effectivePane(i, oiPane) === pane);
@@ -1129,7 +1142,7 @@ function IndicatorRow({ inst, api, value, bases }: {
   // Бейдж различает «MA 20» по цене и «MA 20» по ОИ — без него две одинаковые
   // строки в одном углу неотличимы. В строке места нет, поэтому короткий код
   // базиса, а полная подпись ряда («Чистая позиция») уходит в тултип.
-  const basisLabel = bases?.find((b) => b.id === basis)?.label;
+  const basisLabel = findBasis(bases, basis)?.label;
   const badge = basis === 'price' ? undefined : {
     text: basisBadgeText(basis, basisLabel),
     title: basisLabel ? `Считается от ряда «${basisLabel}»` : undefined,
@@ -1138,7 +1151,7 @@ function IndicatorRow({ inst, api, value, bases }: {
   // режим «Покупки + Продажи» — единого ряда ОИ там нет): рисовать нечего.
   // Строку УБИРАЕМ целиком (решение Вадима: «так проще», чем гасить глазиком).
   // Сам индикатор остаётся в состоянии — вернулся режим, вернулась и строка.
-  const basisGone = !!bases && bases.length > 0 && !bases.some((b) => b.id === basis);
+  const basisGone = !!bases && bases.length > 0 && !findBasis(bases, basis);
   // ⚠️ Никакого «закрыть по клику мимо» здесь быть не должно: окно настроек
   // уходит ПОРТАЛОМ в body, то есть лежит вне этой строки, и такой обработчик
   // принимал бы за клик мимо любое нажатие внутри самого окна — оно закрывалось
@@ -1166,7 +1179,6 @@ function IndicatorRow({ inst, api, value, bases }: {
 
 /** Короткий код базиса в строке легенды. Цена своего бейджа не имеет: она
  *  подразумевается, и метка на каждой строке была бы шумом. */
-const BASIS_BADGE: Record<IndBasis, string> = { price: '', oi: 'ОИ' };
 
 /** Бейдж должен называть КОНКРЕТНЫЙ ряд, а не базис вообще: «ОИ» одинаково
  *  стояло и на средней по открытому интересу, и по чистой позиции, и по
@@ -1180,7 +1192,7 @@ const OI_SHORT: Record<string, string> = {
   'Покупки + Продажи': 'Пок.+Прод.',
 };
 function basisBadgeText(basis: IndBasis, label?: string): string {
-  if (!label) return BASIS_BADGE[basis];
+  if (!label) return basis === 'price' ? '' : 'ОИ';
   return OI_SHORT[label] ?? label;
 }
 
@@ -1188,7 +1200,7 @@ function Row({ color, label, badge, value, valueId, visible, title, onToggle, on
   color: string; label: string; value?: IndValue; valueId?: string; visible: boolean;
   /** Подсказка на всю строку (например «нет данных в этом режиме»). */
   title?: string;
-  /** Метка базиса расчёта — см. BASIS_BADGE. */
+  /** Метка базиса расчёта — см. basisBadgeText. */
   badge?: { text: string; title?: string };
   onToggle: () => void; onSettings?: () => void; onRemove?: () => void;
   /** Меню «⋯» в конце строки. Кнопки переноса между панелями здесь больше нет —
@@ -1285,9 +1297,9 @@ function RowMenu({ inst, api, bases, onSettings }: {
                     {basisOpts.map((b) => (
                       <Fragment key={b.id}>{menuItem(
                         basisItemLabel(b),
-                        () => { api.patch(inst.id, { basis: b.id === 'oi' ? 'oi' : undefined }); setSub(null); close(); },
+                        () => { api.patch(inst.id, { basis: b.id === 'price' ? undefined : b.id }); setSub(null); close(); },
                         false,
-                        b.id === basisOf(inst),
+                        b.id === findBasis(bases, basisOf(inst))?.id,
                       )}</Fragment>
                     ))}
                   </div>
@@ -1650,12 +1662,12 @@ function SettingsDialog({ inst, api, onClose }: { inst: IndicatorInst; api: Indi
                     расхождение с привычным «ATR» выглядит как ошибка. */}
                 {inst.kind === 'flow' && (
                   <Note>
-                    {basis === 'oi'
+                    {isOiBasis(basis)
                       ? 'Столбец — насколько изменилась позиция за окно, в контрактах. Это то же, что сумма дневных изменений за период: шум отдельных дней гасится, видны волны набора и сброса.'
                       : 'Столбец — изменение цены за окно, в процентах.'}
                   </Note>
                 )}
-                {inst.kind === 'atr' && basis === 'oi' && (
+                {inst.kind === 'atr' && isOiBasis(basis) && (
                   <Note>
                     У ряда позиций нет максимума и минимума внутри бара, поэтому истинный
                     диапазон равен модулю изменения позиции. Показатель — средняя величина,
@@ -1992,7 +2004,7 @@ export function useIndicatorSeries(
   toSec: (t: string) => number,
   colorOf: (i: IndicatorInst) => string,
   overlayScale: 'left' | 'right' = 'left',
-  oiPane = 0,
+  oiPane: OiPane = 0,
 ): LwSeries[][] {
   return useMemo(
     () => indicatorSeriesByPane(list, candles, toSec, colorOf, overlayScale, oiPane),
