@@ -1,7 +1,8 @@
 """Радар боли для постов @Thor_INV: что разогрелось в Пульсе и какие факты накопил автор.
 
 Первый этап завода личных постов. Раз в день собирает ленту Пульса (публичное API, без логина), считает,
-какие бумаги обсуждают и какие из них выросли к обычному, и шлёт сводку в личку ревьюерам @frameadminbot.
+какие бумаги обсуждают и какие из них выросли к обычному, и шлёт сводку в личку админу @frameadminbot
+(только ему: коллеге в боте уходят только черновики).
 Вместе с ней идут факты из копилки: команда `/факт текст` в том же боте (signals/content_review_bot.py).
 Завод берёт личные истории только оттуда, выдумывать сделки и бытовые детали нельзя.
 
@@ -206,12 +207,11 @@ def build_digest(assets: list, posts: list, facts: list) -> str:
 def send_digest(body: str) -> None:
     from signals import config
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
-    for chat_id in {config.ADMIN_USER_ID, *config.CONTENT_DRAFT_EXTRA_CHAT_IDS}:
-        r = requests.post(f"{api_root}/bot{config.BOT_TOKEN}/sendMessage",
-                          data={"chat_id": chat_id, "text": body, "parse_mode": "HTML",
-                                "disable_web_page_preview": True}, timeout=20)
-        if not r.ok:
-            print(f"[thor_radar] отправка {chat_id}: {r.status_code}")
+    r = requests.post(f"{api_root}/bot{config.BOT_TOKEN}/sendMessage",
+                      data={"chat_id": config.ADMIN_USER_ID, "text": body, "parse_mode": "HTML",
+                            "disable_web_page_preview": True}, timeout=20)
+    if not r.ok:
+        print(f"[thor_radar] отправка: {r.status_code}")
 
 
 def main() -> None:

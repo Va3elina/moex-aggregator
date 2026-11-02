@@ -1,5 +1,5 @@
 #!/bin/bash
-# Wrapper: радар боли для постов @Thor_INV → личка ревьюеров @frameadminbot (signals/thor_radar.py).
+# Wrapper: радар боли для постов @Thor_INV → личка админа @frameadminbot (signals/thor_radar.py).
 #   0 6 * * * /bin/bash /opt/frame/signals/thor_radar.sh >> /opt/frame/logs/thor_radar.log 2>&1
 # Ручной прогон без отправки: --dry-run
 set -eu
