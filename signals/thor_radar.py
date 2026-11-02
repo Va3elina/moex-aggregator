@@ -36,6 +36,8 @@ HOT_HOURS = 48
 BASE_DAYS = 7                  # база сравнения: сколько дней до окна HOT_HOURS
 MAX_PAGES = 80                 # по 30 постов, ~200 постов в сутки
 PAGE_PAUSE_SEC = 0.2
+PAGE_RETRIES = 4
+RETRY_PAUSE_SEC = 3
 MAX_TICKERS_IN_POST = 6        # больше — пост-пачка, в счёт бумаг не идёт
 ASSET_TYPES = {"share", "bond"} # фьючерсы и фонды это фон обзоров, а не тема
 MIN_AUTHORS = 5
@@ -106,9 +108,13 @@ def fetch_feed(now: datetime) -> list:
         params = {"limit": 30}
         if cursor:
             params["cursor"] = cursor
-        r = requests.get(FEED_URL, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=20,
-                         verify=str(RU_ROOT_CA))
-        if r.status_code >= 500 and posts:      # в глубине ленты API отдаёт 500, база просто будет короче
+        for attempt in range(PAGE_RETRIES):     # 500 бывает и на второй странице, и проходит при повторе
+            r = requests.get(FEED_URL, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=20,
+                             verify=str(RU_ROOT_CA))
+            if r.status_code < 500:
+                break
+            time.sleep(RETRY_PAUSE_SEC * (attempt + 1))
+        if r.status_code >= 500 and posts:      # не прошло: база будет короче, build_digest предупредит
             print(f"[thor_radar] лента оборвалась: {r.status_code}, постов {len(posts)}")
             break
         r.raise_for_status()
@@ -173,8 +179,15 @@ def _snippet(body: str, n: int = 90) -> str:
     return s[:n].rstrip() + ("…" if len(s) > n else "")
 
 
-def build_digest(assets: list, posts: list, facts: list) -> str:
-    lines = ["<b>Радар для @Thor_INV</b>", "", "<b>Что обсуждают за 48 часов</b>"]
+def coverage_hours(posts: list, now: datetime) -> float:
+    return (now - min(_when(p) for p in posts)).total_seconds() / 3600 if posts else 0
+
+
+def build_digest(assets: list, posts: list, facts: list, hours: float = HOT_HOURS) -> str:
+    lines = ["<b>Радар для @Thor_INV</b>", ""]
+    if hours < HOT_HOURS:
+        lines += [f"⚠️ Лента Пульса оборвалась, охвачено только {hours:.0f} ч. из {HOT_HOURS}, сводка неполная.", ""]
+    lines.append("<b>Что обсуждают за 48 часов</b>")
     if not assets:
         lines.append("Заметных тем нет.")
     for a in assets:
@@ -234,7 +247,7 @@ def main() -> None:
         facts = recent_facts(db)
     finally:
         db.close()
-    body = build_digest(rank_assets(posts, now), top_posts(posts, now), facts)
+    body = build_digest(rank_assets(posts, now), top_posts(posts, now), facts, coverage_hours(posts, now))
     print(f"[thor_radar] постов {len(posts)}, знаков {len(body)}")
     if args.dry_run:
         print(body)

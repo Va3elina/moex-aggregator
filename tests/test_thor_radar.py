@@ -46,6 +46,12 @@ def test_ticker_pack_and_official_are_ignored():
     assert tr.rank_assets(posts, NOW) == []
 
 
+def test_digest_warns_when_feed_was_cut():
+    posts = [_post("a", 3, [])]
+    assert "⚠️" in tr.build_digest([], posts, [], tr.coverage_hours(posts, NOW))
+    assert "⚠️" not in tr.build_digest([], posts, [])
+
+
 def test_digest_escapes_and_fits_limit():
     long_post = _post("a", 1, [], comments=5, body="<b>хак</b> {$SMLT} **жирно** " + "слово " * 50)
     body = tr.build_digest([], [long_post], [])
