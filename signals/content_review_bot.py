@@ -63,7 +63,7 @@ if "@db:" in _db:
 
 from sqlalchemy import text  # noqa: E402
 from api.database import SessionLocal  # noqa: E402
-from signals import config, tg_joins  # noqa: E402
+from signals import config, tg_joins, thor_radar  # noqa: E402
 from signals.publish.telegram import (  # noqa: E402
     send_text_post, apply_custom_emoji, with_frame_signature,
 )
@@ -946,11 +946,25 @@ def process_update(update: dict) -> None:
     cmd = txt.split()[0].lower()
     if cmd == "/start":
         send(chat_id, "👋 Review-бот content-пайплайна Frame. Сюда приходят только "
-                       "карточки новых черновиков. /joins [дней] — вступления в канал по ссылкам.")
+                       "карточки новых черновиков. /joins [дней] — вступления в канал по ссылкам. "
+                       "/факт текст — записать сделку или историю для постов @Thor_INV.")
     elif cmd == "/joins":
         arg = txt.split()[1] if len(txt.split()) > 1 else ""
         days = int(arg) if arg.isdigit() else 30
         _with_db(lambda db: tg_joins.send_html(API_BASE, chat_id, tg_joins.joins_report(db, days)))
+    elif cmd in ("/факт", "/fact"):
+        body = txt[len(cmd):].strip()
+        if not body:
+            send(chat_id, "Напиши факт после команды: /факт купил ОФЗ 26254 на 200 тысяч")
+            return
+
+        saved = []
+
+        def _save(db):
+            thor_radar.ensure_tables(db)
+            saved.append(thor_radar.add_fact(db, chat_id, body))
+        _with_db(_save)
+        send(chat_id, f"Записал факт #{saved[0]} 👍" if saved else "Не удалось записать факт, повтори позже")
 
 
 def main() -> None:
