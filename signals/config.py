@@ -127,6 +127,9 @@ CONTENT_PENDING_DAYS = 5       # окно ожидания подтвержде�
 # CONTENT_CHANNEL_ID — ТЕСТОВЫЙ канал на старте (не боевой @FrameTool) —
 # Вадим создаёт канал, добавляет бота админом, даёт chat_id (обычно -100...).
 CONTENT_CHANNEL_ID = int(os.getenv("CONTENT_CHANNEL_ID", "0"))
+# Карточки черновиков шлёт и слушает FRAME · Редакция (@frame_post_bot, Вадим 03.11.2026); без токена —
+# по-старому @frameadminbot. Публикация в канал остаётся за BOT_TOKEN (publish/telegram.py): он админ канала.
+EDITOR_BOT_TOKEN = os.getenv("EDITOR_BOT_TOKEN", "").strip() or BOT_TOKEN
 # users.id того же админа, что получает карточки — для reviewer_id (FK).
 CONTENT_REVIEWER_USER_ID = int(os.getenv("CONTENT_REVIEWER_USER_ID", "0"))
 # Кому ЕЩЁ, кроме админа, слать карточки черновиков (Telegram id через запятую).
