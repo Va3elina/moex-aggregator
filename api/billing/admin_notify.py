@@ -1,5 +1,6 @@
 """
-Уведомления о биллинге в @frameadminbot.
+Уведомления о биллинге в FRAME · Касса (@frame_billing_bot, BILLING_BOT_TOKEN; с 03.11.2026,
+до этого — @frameadminbot, он остался запасным).
 
 События пишет триггер БД в billing_events (db/migrations/106_billing_events.sql),
 здесь их рендер и доставка:
@@ -47,21 +48,26 @@ PERIOD_NAMES = {"monthly": "месяц", "yearly": "год", "trial": "проб�
 #  Телеграм
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _tokens() -> list[str]:
+    """Касса; нет её токена или получатель её не запустил — @frameadminbot, как раньше."""
+    toks = [os.environ.get(k, "").strip() for k in ("BILLING_BOT_TOKEN", "BOT_TOKEN")]
+    return list(dict.fromkeys(t for t in toks if t))
+
+
 def _configured() -> bool:
-    return bool(os.environ.get("BOT_TOKEN") and os.environ.get("ADMIN_CHAT_ID"))
+    return bool(_tokens() and os.environ.get("ADMIN_CHAT_ID"))
 
 
 def _send(text_msg: str) -> bool:
-    """Та же связка, что у mandate_scan._notify_admin: BOT_TOKEN/ADMIN_CHAT_ID +
-    TELEGRAM_API_ROOT (прямой api.telegram.org с прода закрыт)."""
-    token = os.environ.get("BOT_TOKEN", "")
+    """Получатели ADMIN_CHAT_ID + TELEGRAM_API_ROOT (прямой api.telegram.org с прода закрыт)."""
+    tokens = _tokens()
     # ADMIN_CHAT_ID — один id или список через запятую (всем админам бота).
     chat_ids = [c.strip() for c in os.environ.get("ADMIN_CHAT_ID", "").split(",") if c.strip()]
-    if not token or not chat_ids:
+    if not tokens or not chat_ids:
         return False
     # Успех, если дошло хотя бы одному: иначе недоступный второй получатель
-    # зациклил бы повторную отправку первому.
-    return any([_send_one(token, chat_id, text_msg) for chat_id in chat_ids])
+    # зациклил бы повторную отправку первому. Каждому — первым ботом, который принял.
+    return any([any(_send_one(t, chat_id, text_msg) for t in tokens) for chat_id in chat_ids])
 
 
 def _send_one(token: str, chat_id: str, text_msg: str) -> bool:
@@ -86,7 +92,7 @@ def _send_one(token: str, chat_id: str, text_msg: str) -> bool:
             return False
         return True
     except Exception as e:
-        log.warning("billing admin notify: send failed: %s", e)
+        log.warning("billing admin notify: send failed: %s", str(e).replace(token, "<REDACTED>"))
         return False
 
 

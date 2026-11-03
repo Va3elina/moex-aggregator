@@ -274,6 +274,7 @@ services:
       # ниже по файлу), просто нужны ещё и здесь, в api-контейнере.
       - BOT_TOKEN=${BOT_TOKEN:-}
       - EDITOR_BOT_TOKEN=${EDITOR_BOT_TOKEN:-}   # мандат-кандидаты → FRAME · Редакция
+      - BILLING_BOT_TOKEN=${BILLING_BOT_TOKEN:-}  # события биллинга → FRAME · Касса (api/billing/admin_notify.py)
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-}
       # Бесплатный пробный период (free trial). TRIAL_ENABLED=1 включает /trial/*
       # и trial_eligible в /status. TRIAL_HASH_SALT — соль для хешей идентичности
@@ -453,6 +454,7 @@ services:
       # Пуш в @frameadminbot, когда прогон встал (кончилась квота, источник закрылся).
       # ⚠️ Прямой api.telegram.org с сервера закрыт — только через релей.
       - BOT_TOKEN=${BOT_TOKEN:-}
+      - BILLING_BOT_TOKEN=${BILLING_BOT_TOKEN:-}  # страховочный проход биллинга → FRAME · Касса
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-}
       - ADMIN_TECH_CHAT_ID=${ADMIN_TECH_CHAT_ID:-}
       - TELEGRAM_API_ROOT=${TELEGRAM_API_ROOT:-}
