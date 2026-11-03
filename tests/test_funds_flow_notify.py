@@ -115,6 +115,16 @@ def test_slot_coverage_week_3_of_5_month_60pct():
     assert ff.slot_covered(1, "1d", date(2026, 11, 2))
 
 
+def test_senior_horizon_only_one_message():
+    base = {"cat": "bonds", "sub": "Длинные", "window": "за год", "day": date(2026, 11, 5)}
+    d, w, m = ({**base, "side": "in", "tf": tf} for tf in ("1d", "1w", "1m"))
+    other = {**base, "side": "out", "tf": "1w"}
+    got = fn.senior_only([d, w, m, other])
+    assert got == [m, other]                                  # приток — один месяц; отток — своё сообщение
+    assert m["folded"] == [d, w] and "folded" not in other
+    assert fn.senior_only([{**base, "side": "in", "tf": "1d"}, {**base, "side": "in", "tf": "1w"}])[0]["tf"] == "1w"
+
+
 def test_mark_matches_record_notify():
     assert fn.mark("за 3 месяца") == ""
     assert fn.mark("за полгода") == "🔴 "
