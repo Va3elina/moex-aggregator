@@ -1,4 +1,4 @@
-"""Итоги постов канала → @framesignalbot (личка админов): что сделала цена актива после публикации.
+"""Итоги постов канала → FRAME · Редакция (@frame_post_bot) (личка админов): что сделала цена актива после публикации.
 
 Посты канала уже лежат в channel_posts (signals/channel_scan.py, крон каждые 5 минут, парсер t.me/s/FrameTool),
 отдельный поллер channel_post боту не нужен. Прогнозы в постах неявные («рекордный шорт нефти, посмотрим, как
@@ -272,7 +272,7 @@ def run_once(since: date, dry_run: bool) -> dict:
         if dry_run:
             print(msg + "\n")
             continue
-        if send(msg, NAME):
+        if send(msg, NAME, bot="editor"):
             sent[f"{post['id']}|{h}"] = today.isoformat()
             summary["sent"] += 1
         else:

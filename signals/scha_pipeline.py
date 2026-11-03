@@ -15,7 +15,7 @@
   - текст из файла и запись в базу — Funds/scha_job_tools.py ВНУТРИ api-контейнера (архив виден ему
     как /data/manual_scha/auto, только чтение);
   - запуск рутины — общая очередь signals/routine_queue.py + диспетчер signals/routine_dispatch.py;
-  - сообщения — @framesignalbot через research/robots_tg/robots_tg.py;
+  - сообщения — FRAME · Дежурный (@frameadminbot) через research/robots_tg/robots_tg.py;
   - таблицы — db/migrations/108_routine_queue_scha_jobs.sql; план — research/scha_pipeline/PLAN.md.
 
 SCHA_AUTO_IMPORT=1 — «сошлось» заливается. Без него (режим отчёта) — сообщение «залил бы», база не меняется.
@@ -99,6 +99,7 @@ def _tg():
             sys.path.insert(0, str(d))
             break
     import robots_tg
+    getattr(robots_tg, "use_duty_bot", lambda: None)()   # FRAME · Дежурный (@frameadminbot), не бот роботов
     return robots_tg
 
 
