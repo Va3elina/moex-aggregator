@@ -1,4 +1,4 @@
-"""Рекорды позиций физлиц → отдельное сообщение на каждый в FRAME · Редакция (@frame_post_bot) (личка админа).
+"""Рекорды позиций физлиц → отдельное сообщение на каждый в @framesignalbot (личка админа).
 
 Ряды те же, что у движка находок завода постов (signals/insights/detect.load_positions): дневные позиции физлиц
 по фьючерсам. Показатели — только чистые позиции (Вадим 16.10): по объёму и по числу трейдеров, каждая в две
@@ -228,7 +228,7 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
         if dry_run:
             print(msg + "\n")
             continue
-        if send(msg, NAME, bot="editor"):
+        if send(msg, NAME):   # Вадим 03.11: рекорды пока в @framesignalbot, бот переработаем позже
             summary["sent"] += 1
             sent[_key(x)] = {"day": str(pd.Timestamp(day).date()), "rank": RANK[x["window"]]}
         else:
