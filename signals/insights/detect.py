@@ -45,6 +45,7 @@ from collections import Counter, defaultdict
 import numpy as np
 import pandas as pd
 
+from api.services.fund_flows import slot_covered  # неполный месяц: рекорд/серия только при данных за 60% дней
 from api.services.fund_reorg import correct_flows  # поправки на реорганизации фондов — те же, что у сайта
 from signals.insights import data
 
@@ -471,6 +472,7 @@ def detect_funds(out):
                        leg=f"{n}d")
         s5 = daily[c].rolling(5).sum().dropna()
         mtd = daily[c].groupby(daily.index.to_period("M")).cumsum()
+        mtd_days = daily[c].groupby(daily.index.to_period("M")).cumcount() + 1
         mo = daily[c].resample("ME").sum()
         arr, dates = s5.values, s5.index
         for t in dates[(dates >= out.since) & (dates <= out.until)]:
@@ -488,7 +490,7 @@ def detect_funds(out):
                 out.add(t, "фонды", f"funds:{c}", "разворот", 6,
                         f"{label[c].capitalize()}: {word} после месяца в обратную сторону — {bn(v)} за 5 дней")
             # месяц с начала: рекорд оттока/притока среди месяцев
-            m = mtd.loc[t] if t in mtd.index else None
+            m = mtd.loc[t] if t in mtd.index and slot_covered(int(mtd_days.loc[t]), "1m", t.date()) else None
             past = mo[mo.index < t.to_period("M").start_time]
             if m is not None and len(past) >= 12:
                 if (m < 0 and m <= past.min()) or (m > 0 and m >= past.max()):
