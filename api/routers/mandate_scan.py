@@ -123,16 +123,17 @@ def _is_stale(event_date: Optional[date], today: Optional[date] = None) -> bool:
 
 
 def _notify_admin(candidate: MandateCandidate) -> bool:
-    """Пуш в @frameadminbot. Та же связка BOT_TOKEN/ADMIN_CHAT_ID, что у
+    """Пуш в FRAME · Редакция (@frame_post_bot, EDITOR_BOT_TOKEN; получатель не нажал «Старт» или токена
+    нет — @frameadminbot, BOT_TOKEN). Получатели ADMIN_CHAT_ID, как у
     tg_bot.py, + TELEGRAM_API_ROOT relay (api.telegram.org недоступен напрямую
     с прод-сервера, РКН — см. _notify_hype_colleague в content_news.py, живой
     инцидент 2026-07-15). Возвращает True/False — вызывающий код решает, ставить
     ли notified_at; сбой не должен молча теряться (тот же урок, что и с
     hype_filter_dispatch_attempts, db/migrations/035_*.sql)."""
-    token = os.environ.get("BOT_TOKEN", "")
+    tokens = [t for t in (os.environ.get("EDITOR_BOT_TOKEN", "").strip(), os.environ.get("BOT_TOKEN", "").strip()) if t]
     # ADMIN_CHAT_ID — один id или список через запятую.
     chat_ids = [c.strip() for c in os.environ.get("ADMIN_CHAT_ID", "").split(",") if c.strip()]
-    if not token or not chat_ids:
+    if not tokens or not chat_ids:
         return False
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
     trigger_line = f"\n⚙️ Триггер: {candidate.trigger_description}" if candidate.trigger_description else ""
@@ -156,21 +157,26 @@ def _notify_admin(candidate: MandateCandidate) -> bool:
         # получатель заставил бы повторять отправку первому.
         delivered, last_err = False, None
         for chat_id in chat_ids:
-            try:
-                resp = requests.post(f"{api_root}/bot{token}/sendMessage",
-                                     json={**payload, "chat_id": chat_id}, timeout=10)
-                resp.raise_for_status()
-                delivered = True
-            except Exception as e:
-                last_err = e
+            for token in dict.fromkeys(tokens):
+                try:
+                    resp = requests.post(f"{api_root}/bot{token}/sendMessage",
+                                         json={**payload, "chat_id": chat_id}, timeout=10)
+                    resp.raise_for_status()
+                    delivered = True
+                    break
+                except Exception as e:
+                    last_err = e
         if not delivered and last_err is not None:
             raise last_err
         return True
     except Exception as e:
         body = getattr(e, "response", None)
         body_text = body.text[:300] if body is not None else ""
+        msg = f"{e} {body_text}"
+        for t in tokens:  # в тексте HTTPError адрес запроса — с токеном бота
+            msg = msg.replace(t, "<REDACTED>")
         print(f"[mandate_scan] notify failed for source_ref={candidate.source_ref}: "
-              f"{type(e).__name__}: {e} {body_text}")
+              f"{type(e).__name__}: {msg}")
         return False
 
 

@@ -273,6 +273,7 @@ services:
       # _notify_admin) — те же credentials, что у tg_bot-сервиса (BOT_TOKEN/ADMIN_CHAT_ID
       # ниже по файлу), просто нужны ещё и здесь, в api-контейнере.
       - BOT_TOKEN=${BOT_TOKEN:-}
+      - EDITOR_BOT_TOKEN=${EDITOR_BOT_TOKEN:-}   # мандат-кандидаты → FRAME · Редакция
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-}
       # Бесплатный пробный период (free trial). TRIAL_ENABLED=1 включает /trial/*
       # и trial_eligible в /status. TRIAL_HASH_SALT — соль для хешей идентичности

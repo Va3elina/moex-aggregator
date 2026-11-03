@@ -54,7 +54,9 @@ def test_card_marked_sent_only_after_telegram_accepts():
     src = inspect.getsource(bot._notify_new_drafts)
     # deliver: rich-карточка, при отказе — прежняя; True только если Telegram принял одну из них
     assert "if send_rich(chat_id" in src and "return send_kb(chat_id" in src
-    assert src.index("if deliver(config.ADMIN_USER_ID)") < src.index("_MARK_NOTIFIED")
+    assert src.index("if deliver_any(config.ADMIN_USER_ID)") < src.index("_MARK_NOTIFIED")
+    # Редакция не приняла (получатель не нажал «Старт») — та же карточка старым ботом
+    assert "with _via(ADMIN_API_BASE):" in src
 
 
 def test_edit_button_sends_remarks_to_writer_not_replaces_post():

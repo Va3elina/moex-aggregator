@@ -5,7 +5,7 @@ send/send_kb/edit_kb/answer_cb + view-builder'ов (text, inline_keyboard)).
 
 Отличие от alert_bot.py: там ОДИН бот (ALERT_BOT_TOKEN) обслуживает МНОГО
 пользователей по их alerts. Здесь — ОДИН админ (config.ADMIN_USER_ID, личка),
-бот = config.BOT_TOKEN (тот же, что publish/telegram.py уже использует для
+бот = config.EDITOR_BOT_TOKEN, FRAME · Редакция (до 03.11.2026 — config.BOT_TOKEN, тот же, что publish/telegram.py использует для
 sendPhoto/sendMessage — у него нет своего getUpdates-поллера нигде, кроме
 этого файла, конфликта с alert_bot.py, у которого СВОЙ токен, нет).
 
@@ -47,7 +47,9 @@ draft_text (оригинал ИИ терялся), причина отказа �
 import html
 import json
 import re
+import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import requests
@@ -69,13 +71,37 @@ from signals.publish.telegram import (  # noqa: E402
 )
 
 API_ROOT = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
-API_BASE = f"{API_ROOT}/bot{config.BOT_TOKEN}"
+# Два бота (Вадим 03.11.2026): карточки черновиков — FRAME · Редакция (@frame_post_bot, EDITOR_BOT_TOKEN),
+# вступления в канал — @frameadminbot (BOT_TOKEN): он админ канала, chat_member приходят только ему.
+# У каждого свой поток long-poll; ответ уходит тем ботом, чей поток обрабатывает апдейт (_base()), поэтому
+# кнопки старых карточек из @frameadminbot продолжают работать. Без EDITOR_BOT_TOKEN — один бот, как раньше.
+ADMIN_API_BASE = f"{API_ROOT}/bot{config.BOT_TOKEN}"
+EDITOR_API_BASE = f"{API_ROOT}/bot{config.EDITOR_BOT_TOKEN}"
+TWO_BOTS = config.EDITOR_BOT_TOKEN != config.BOT_TOKEN
+_local = threading.local()
+
+
+def _base() -> str:
+    return getattr(_local, "base", EDITOR_API_BASE)
+
+
+@contextmanager
+def _via(base: str):
+    prev = getattr(_local, "base", None)
+    _local.base = base
+    try:
+        yield
+    finally:
+        _local.base = prev if prev is not None else EDITOR_API_BASE
 
 _DRAFT_PREVIEW_LIMIT = 3500  # запас под Telegram-лимит 4096 с учётом обвязки карточки
 
 
 def _redact(s) -> str:
-    return str(s).replace(config.BOT_TOKEN, "<REDACTED>")
+    s = str(s)
+    for tok in {config.BOT_TOKEN, config.EDITOR_BOT_TOKEN} - {""}:
+        s = s.replace(tok, "<REDACTED>")
+    return s
 
 
 def send(chat_id, text_msg: str) -> None:
@@ -83,7 +109,7 @@ def send(chat_id, text_msg: str) -> None:
     plain (не эскейпленный вызывающим), чтобы не заставлять каждого caller'а
     думать про экранирование ради простых строк вроде «Жду текст...»."""
     try:
-        requests.post(f"{API_BASE}/sendMessage",
+        requests.post(f"{_base()}/sendMessage",
                        data={"chat_id": chat_id, "text": text_msg,
                              "disable_web_page_preview": True},
                        timeout=15)
@@ -103,7 +129,7 @@ def send_kb(chat_id, text_msg: str, inline_keyboard: list) -> bool:
     тихой потери, что уже был у Шага Н.
     """
     try:
-        resp = requests.post(f"{API_BASE}/sendMessage",
+        resp = requests.post(f"{_base()}/sendMessage",
                              json={"chat_id": chat_id, "text": text_msg, "parse_mode": "HTML",
                                    "disable_web_page_preview": True,
                                    "reply_markup": {"inline_keyboard": inline_keyboard}},
@@ -147,9 +173,9 @@ def send_rich(chat_id, rich_html: str, inline_keyboard: list, photo: str | None 
         if photo:
             with open(photo, "rb") as f:
                 files = {"chart": (os.path.basename(photo), f, "image/png")}
-                resp = requests.post(f"{API_BASE}/sendRichMessage", data=data, files=files, timeout=30)
+                resp = requests.post(f"{_base()}/sendRichMessage", data=data, files=files, timeout=30)
         else:
-            resp = requests.post(f"{API_BASE}/sendRichMessage", data=data, timeout=15)
+            resp = requests.post(f"{_base()}/sendRichMessage", data=data, timeout=15)
         d = resp.json()
     except (requests.RequestException, ValueError, OSError) as e:
         print(f"[content_review_bot] send_rich error: {_redact(e)}")
@@ -164,7 +190,7 @@ def edit_markup(chat_id, message_id, inline_keyboard: list) -> None:
     """Rich-карточку после решения не переписываем (editMessageText с фото — лишняя сложность):
     меняем только кнопки на строку статуса."""
     try:
-        requests.post(f"{API_BASE}/editMessageReplyMarkup",
+        requests.post(f"{_base()}/editMessageReplyMarkup",
                       json={"chat_id": chat_id, "message_id": message_id,
                             "reply_markup": {"inline_keyboard": inline_keyboard}}, timeout=15)
     except requests.RequestException as e:
@@ -176,7 +202,7 @@ def send_photo(chat_id, path: str, caption: str = "") -> bool:
     карточкой) — отдельным сообщением сразу под карточкой черновика."""
     try:
         with open(path, "rb") as f:
-            resp = requests.post(f"{API_BASE}/sendPhoto", data={"chat_id": chat_id, "caption": caption},
+            resp = requests.post(f"{_base()}/sendPhoto", data={"chat_id": chat_id, "caption": caption},
                                  files={"photo": (os.path.basename(path), f, "image/png")}, timeout=30)
         ok = bool(resp.json().get("ok"))
     except (requests.RequestException, ValueError, OSError) as e:
@@ -189,7 +215,7 @@ def send_photo(chat_id, path: str, caption: str = "") -> bool:
 
 def edit_kb(chat_id, message_id, text_msg: str, inline_keyboard: list) -> None:
     try:
-        requests.post(f"{API_BASE}/editMessageText",
+        requests.post(f"{_base()}/editMessageText",
                        json={"chat_id": chat_id, "message_id": message_id, "text": text_msg,
                              "parse_mode": "HTML", "disable_web_page_preview": True,
                              "reply_markup": {"inline_keyboard": inline_keyboard}},
@@ -203,7 +229,7 @@ def answer_cb(callback_query_id, text_msg: str = "") -> None:
         data = {"callback_query_id": callback_query_id}
         if text_msg:
             data["text"] = text_msg
-        requests.post(f"{API_BASE}/answerCallbackQuery", data=data, timeout=15)
+        requests.post(f"{_base()}/answerCallbackQuery", data=data, timeout=15)
     except requests.RequestException as e:
         print(f"[content_review_bot] answer_cb error: {_redact(e)}")
 
@@ -671,8 +697,17 @@ def _notify_new_drafts() -> None:
                     send_photo(chat_id, photo, f"график к черновику #{cid}")
                 return send_kb(chat_id, txt, kb)
 
+            def deliver_any(chat_id) -> bool:
+                """Сначала Редакцией; получатель её не запустил — старым @frameadminbot (его кнопки тоже работают)."""
+                if deliver(chat_id):
+                    return True
+                if not TWO_BOTS:
+                    return False
+                with _via(ADMIN_API_BASE):
+                    return deliver(chat_id)
+
             # «Отправлено» ставим ТОЛЬКО если Telegram сообщение принял.
-            if deliver(config.ADMIN_USER_ID):
+            if deliver_any(config.ADMIN_USER_ID):
                 db.execute(_MARK_NOTIFIED, {"id": cid})
                 db.commit()
                 _notify_failed_at.pop(cid, None)
@@ -680,7 +715,7 @@ def _notify_new_drafts() -> None:
                 # отправленным, и его отказ карточку не вернёт (не нажал /start —
                 # Telegram ответит «chat not found», send_kb напечатает это в лог).
                 for extra in config.CONTENT_DRAFT_EXTRA_CHAT_IDS:
-                    deliver(extra)
+                    deliver_any(extra)
             else:
                 _notify_failed_at[cid] = time.monotonic()
     except Exception as e:
@@ -879,7 +914,7 @@ def _tg_joins_tick() -> None:
     if time.monotonic() - _last_tick < tg_joins.TICK_SEC:
         return
     _last_tick = time.monotonic()
-    _with_db(lambda db: tg_joins.hourly_tick(db, API_BASE, config.ADMIN_USER_ID))
+    _with_db(lambda db: tg_joins.hourly_tick(db, _base(), config.ADMIN_USER_ID))
 
 
 def process_update(update: dict) -> None:
@@ -950,25 +985,26 @@ def process_update(update: dict) -> None:
     elif cmd == "/joins":
         arg = txt.split()[1] if len(txt.split()) > 1 else ""
         days = int(arg) if arg.isdigit() else 30
-        _with_db(lambda db: tg_joins.send_html(API_BASE, chat_id, tg_joins.joins_report(db, days)))
+        _with_db(lambda db: tg_joins.send_html(_base(), chat_id, tg_joins.joins_report(db, days)))
 
 
-def main() -> None:
-    print(f"[{datetime.now(timezone.utc)}] content_review_bot started")
-    _with_db(tg_joins.ensure_tables)
+def _poll(base: str, allowed: list, with_drafts: bool, with_joins: bool) -> None:
+    """Long-poll одного бота; апдейты обрабатываются от его имени (_via)."""
+    _local.base = base
     offset = None
     while True:
         try:
-            _notify_new_drafts()
-            _tg_joins_tick()
+            if with_drafts:
+                _notify_new_drafts()
+            if with_joins:
+                _tg_joins_tick()
             # long-poll 20с (не 30): ходим через CF-worker relay, на 30с Telegram
             # отдаёт ответ впритык к нашему requests-таймауту и edge-лимитам
             # relay — ловили ~900 polling-ошибок/день (Read timed out + не-JSON).
-            params = {"timeout": 20,
-                      "allowed_updates": json.dumps(["message", "callback_query", "chat_member"])}
+            params = {"timeout": 20, "allowed_updates": json.dumps(allowed)}
             if offset:
                 params["offset"] = offset
-            resp = requests.get(f"{API_BASE}/getUpdates", params=params, timeout=30)
+            resp = requests.get(f"{base}/getUpdates", params=params, timeout=30)
             data = resp.json()
             if not data.get("ok"):
                 time.sleep(5)
@@ -985,6 +1021,18 @@ def main() -> None:
         except Exception as e:
             print(f"[content_review_bot] loop error: {_redact(e)}")
             time.sleep(5)
+
+
+def main() -> None:
+    print(f"[{datetime.now(timezone.utc)}] content_review_bot started, два бота: {TWO_BOTS}")
+    _with_db(tg_joins.ensure_tables)
+    if not TWO_BOTS:
+        _poll(ADMIN_API_BASE, ["message", "callback_query", "chat_member"], True, True)
+        return
+    # @frameadminbot: вступления в канал, /joins и кнопки старых карточек
+    threading.Thread(target=_poll, args=(ADMIN_API_BASE, ["message", "callback_query", "chat_member"], False, True),
+                     daemon=True, name="admin-bot").start()
+    _poll(EDITOR_API_BASE, ["message", "callback_query"], True, False)
 
 
 if __name__ == "__main__":
