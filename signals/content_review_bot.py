@@ -979,10 +979,14 @@ def process_update(update: dict) -> None:
         return
 
     cmd = txt.split()[0].lower()
+    # Вступления в канал — дело Дежурного (@frameadminbot, админ канала); Редакция — только черновики и поводы.
+    on_admin = _base() == ADMIN_API_BASE
     if cmd == "/start":
-        send(chat_id, "👋 Review-бот content-пайплайна Frame. Сюда приходят только "
-                       "карточки новых черновиков. /joins [дней] — вступления в канал по ссылкам.")
-    elif cmd == "/joins":
+        if on_admin:
+            send(chat_id, "FRAME · Дежурный. /joins [дней] — вступления в канал по ссылкам.")
+        else:
+            send(chat_id, "FRAME · Редакция: карточки черновиков, мандат и поводы для постов.")
+    elif cmd == "/joins" and on_admin:
         arg = txt.split()[1] if len(txt.split()) > 1 else ""
         days = int(arg) if arg.isdigit() else 30
         _with_db(lambda db: tg_joins.send_html(_base(), chat_id, tg_joins.joins_report(db, days)))
