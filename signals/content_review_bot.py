@@ -978,14 +978,12 @@ def process_update(update: dict) -> None:
             db.close()
         return
 
-    cmd = txt.split()[0].lower()
-    if cmd == "/start":
-        send(chat_id, "👋 Review-бот content-пайплайна Frame. Сюда приходят только "
-                       "карточки новых черновиков. /joins [дней] — вступления в канал по ссылкам.")
-    elif cmd == "/joins":
-        arg = txt.split()[1] if len(txt.split()) > 1 else ""
-        days = int(arg) if arg.isdigit() else 30
-        _with_db(lambda db: tg_joins.send_html(_base(), chat_id, tg_joins.joins_report(db, days)))
+    # Команд у ботов нет (Вадим 03.11): на /start — только что сюда приходит.
+    if txt.split()[0].lower() == "/start":
+        if _base() == ADMIN_API_BASE:
+            send(chat_id, "FRAME · Дежурный: сервер, бэкапы, справки СЧА и сбои.")
+        else:
+            send(chat_id, "FRAME · Редакция: карточки черновиков, мандат и поводы для постов.")
 
 
 def _poll(base: str, allowed: list, with_drafts: bool, with_joins: bool) -> None:
@@ -1029,7 +1027,7 @@ def main() -> None:
     if not TWO_BOTS:
         _poll(ADMIN_API_BASE, ["message", "callback_query", "chat_member"], True, True)
         return
-    # @frameadminbot: вступления в канал, /joins и кнопки старых карточек
+    # @frameadminbot: вступления в канал и кнопки старых карточек
     threading.Thread(target=_poll, args=(ADMIN_API_BASE, ["message", "callback_query", "chat_member"], False, True),
                      daemon=True, name="admin-bot").start()
     _poll(EDITOR_API_BASE, ["message", "callback_query"], True, False)

@@ -95,37 +95,6 @@ def record_chat_member(conn, upd: dict) -> None:
     })
 
 
-def joins_report(conn, days: int = 30) -> str:
-    """HTML для бота: вступления по ссылкам за N дней и сколько из них ещё в канале."""
-    rows = conn.execute(text(f"""
-        WITH j AS (
-            SELECT chat_id, chat_title, user_id, event_at, {_SRC_SQL} AS src
-            FROM tg_channel_joins
-            WHERE event = 'join' AND event_at >= now() - make_interval(days => :days)
-        )
-        SELECT j.chat_title, j.src,
-               COUNT(*) AS joined,
-               COUNT(*) FILTER (WHERE NOT EXISTS (
-                   SELECT 1 FROM tg_channel_joins l
-                   WHERE l.chat_id = j.chat_id AND l.user_id = j.user_id
-                     AND l.event = 'leave' AND l.event_at > j.event_at)) AS stayed,
-               COUNT(*) FILTER (WHERE j.event_at >= now() - interval '7 days') AS joined_7d
-        FROM j
-        GROUP BY j.chat_title, j.src
-        ORDER BY j.chat_title, joined DESC
-    """), {"days": days}).fetchall()
-    if not rows:
-        return f"<b>🔗 Инвайт-ссылки</b>\n\nЗа {days} дн. вступлений не записано."
-    lines = [f"<b>🔗 Инвайт-ссылки за {days} дн.</b>\nвсего / за 7 дн. / остались"]
-    title = None
-    for chat_title, src, joined, stayed, j7 in rows:
-        if chat_title != title:
-            title = chat_title
-            lines.append(f"\n<b>{chat_title}</b>")
-        lines.append(f"<code>{src}</code>: {joined} / {j7} / {stayed}")
-    return "\n".join(lines)
-
-
 def _tracked_chats(conn) -> list:
     return [r[0] for r in conn.execute(text(
         "SELECT chat_id FROM tg_channel_joins UNION SELECT chat_id FROM tg_channel_members"))]
