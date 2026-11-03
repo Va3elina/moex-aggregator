@@ -172,8 +172,11 @@ def _notify_admin(candidate: MandateCandidate) -> bool:
     except Exception as e:
         body = getattr(e, "response", None)
         body_text = body.text[:300] if body is not None else ""
+        msg = f"{e} {body_text}"
+        for t in tokens:  # в тексте HTTPError адрес запроса — с токеном бота
+            msg = msg.replace(t, "<REDACTED>")
         print(f"[mandate_scan] notify failed for source_ref={candidate.source_ref}: "
-              f"{type(e).__name__}: {e} {body_text}")
+              f"{type(e).__name__}: {msg}")
         return False
 
 
