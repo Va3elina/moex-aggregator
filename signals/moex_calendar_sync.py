@@ -6,7 +6,7 @@
 iss.moex.com календарь не отдаёт). 2 запроса в день: текущий и следующий год. Год перезаписывается целиком.
 Читатель — moex_calendar.py (праздники для всех загрузчиков); при сбое здесь он берёт запасной блок в коде.
 
-Сообщение в @framesignalbot:
+Сообщение в FRAME · Дежурный (@frameadminbot):
   - биржа поменяла нерабочие будни (добавила/сняла праздник) по акциям или фьючерсам;
   - даты в базе разошлись с запасным блоком в коде (moex_calendar.ISS_*_CLOSED) — блок пора обновить
     scripts/moex_calendar_refresh.py (один раз на каждое новое расхождение);
@@ -50,6 +50,7 @@ def notify(text_: str) -> None:
             sys.path.insert(0, str(d))
             break
     import robots_tg
+    getattr(robots_tg, "use_duty_bot", lambda: None)()   # FRAME · Дежурный (@frameadminbot), не бот роботов
     robots_tg.send(text_)
 
 

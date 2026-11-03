@@ -53,7 +53,7 @@ def log(msg: str) -> None:
 
 
 def _notify_once(conn, key: str, text_: str) -> None:
-    """Сбой — в @framesignalbot, не чаще раза в сутки на ключ."""
+    """Сбой — в FRAME · Дежурный (@frameadminbot), не чаще раза в сутки на ключ."""
     fresh = conn.execute(text("""
         INSERT INTO scha_notify_log (key, sent_at) VALUES (:k, now())
         ON CONFLICT (key) DO UPDATE SET sent_at = now()
@@ -63,6 +63,7 @@ def _notify_once(conn, key: str, text_: str) -> None:
     if fresh:
         sys.path.insert(0, str(ROOT / "research" / "robots_tg"))
         import robots_tg
+        getattr(robots_tg, "use_duty_bot", lambda: None)()   # FRAME · Дежурный (@frameadminbot), не бот роботов
         robots_tg.send(text_)
 
 

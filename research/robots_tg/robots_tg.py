@@ -1,10 +1,10 @@
-"""Единые сообщения роботов в Telegram (бот сайта @framesignalbot → личный чат Вадима).
+"""Единые сообщения роботов в Telegram (FRAME · Роботы @frame_robots_bot → личный чат Вадима).
 
 Формат у всех роботов одинаковый:
   первая строка  — рынок · робот · событие [· итог]
   дальше         — сделки: цветной значок, бумага, цена; строка «причина»; цель, если есть
   последняя      — «с начала»: сколько робот заработал всего
-Отправка — как у алертов сайта: токен ALERT_BOT_TOKEN, чат ADMIN_CHAT_ID и релей TELEGRAM_API_ROOT из /opt/frame/.env
+Отправка: токен из TOKEN_KEYS (ниже), чат ADMIN_CHAT_ID и релей TELEGRAM_API_ROOT из /opt/frame/.env
 (с сервера Telegram напрямую закрыт). Только стандартная библиотека — модуль подключают роботы с разными окружениями.
 """
 from __future__ import annotations
@@ -30,6 +30,17 @@ EMOJI_IDS = pathlib.Path(__file__).resolve().parent / "state" / "emoji_ids.json"
 _ids: dict = {"mtime": None, "map": {}}
 
 
+# Какой бот шлёт: первый найденный токен из списка. Роботы — FRAME · Роботы (@frame_robots_bot); служебные скрипты
+# (справки СЧА, календарь, диспетчер рутин) ставят use_duty_bot() → FRAME · Дежурный (@frameadminbot).
+# Последний в списке — старый @framesignalbot: запасной, пока нового токена нет в .env.
+TOKEN_KEYS = ("ROBOTS_BOT_TOKEN", "ALERT_BOT_TOKEN")
+
+
+def use_duty_bot() -> None:
+    global TOKEN_KEYS
+    TOKEN_KEYS = ("BOT_TOKEN", "ALERT_BOT_TOKEN")
+
+
 def _cfg() -> dict | None:
     if not ENV.exists():
         return None
@@ -37,9 +48,10 @@ def _cfg() -> dict | None:
     for line in ENV.read_text().splitlines():
         if "=" in line and not line.lstrip().startswith("#"):
             k, v = line.split("=", 1); kv[k.strip()] = v.strip().strip('"').strip("'")
-    if not kv.get("ALERT_BOT_TOKEN") or not kv.get("ADMIN_CHAT_ID"):
+    tok = next((kv[k] for k in TOKEN_KEYS if kv.get(k)), None)
+    if not tok or not kv.get("ADMIN_CHAT_ID"):
         return None
-    return dict(tok=kv["ALERT_BOT_TOKEN"], chat=kv["ADMIN_CHAT_ID"], root=kv.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/"))
+    return dict(tok=tok, chat=kv["ADMIN_CHAT_ID"], root=kv.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/"))
 
 
 def _call(method: str, payload: dict) -> dict | None:
