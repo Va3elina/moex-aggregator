@@ -154,6 +154,21 @@ def message(x: dict) -> str:
             f'<a href="{html.escape(chart_url(x))}">График →</a>')
 
 
+def senior_only(new: list) -> list:
+    """Рекорды одного среза и стороны на разных горизонтах в одном прогоне — одно сообщение по старшему (месяц >
+    неделя > день); младшие едут в x["folded"], чтобы пометить их отправленными и не прислать следующим прогоном."""
+    best: dict = {}
+    for x in new:
+        k = (x["cat"], x["sub"], x["side"])
+        if k not in best or list(HORIZONS).index(x["tf"]) > list(HORIZONS).index(best[k]["tf"]):
+            best[k] = x
+    for x in new:
+        top = best[(x["cat"], x["sub"], x["side"])]
+        if x is not top:
+            top.setdefault("folded", []).append(x)
+    return [x for x in new if x is best[(x["cat"], x["sub"], x["side"])]]
+
+
 def _key(x: dict) -> str:
     return f"{x['cat']}|{x['sub'] or '*'}|{x['side']}|{x['tf']}"
 
@@ -178,7 +193,7 @@ def run_once(dry_run: bool = False) -> dict:
     if day is None:
         return summary
     sent = _load_sent()
-    new = [x for x in recs if due(x, sent.get(_key(x)), x["day"])]
+    new = senior_only([x for x in recs if due(x, sent.get(_key(x)), x["day"])])
     new.sort(key=lambda x: (RANK[x["window"]], x["cat"], x["sub"] or "", list(HORIZONS).index(x["tf"]), x["side"]))
     summary["new"] = len(new)
     for x in new:
@@ -188,7 +203,8 @@ def run_once(dry_run: bool = False) -> dict:
             continue
         if send(msg, NAME, bot="editor"):
             summary["sent"] += 1
-            sent[_key(x)] = {"day": x["day"].isoformat(), "rank": RANK[x["window"]]}
+            for y in [x] + x.get("folded", []):
+                sent[_key(y)] = {"day": y["day"].isoformat(), "rank": RANK[y["window"]]}
         else:
             summary["failed"] += 1
         time.sleep(1.1)                   # лимит Telegram — около сообщения в секунду на чат
