@@ -93,6 +93,24 @@ def test_bar_records_windows_and_sides():
     assert fn.bar_records(_bars(hist + [0.5])) == []           # повтор максимума — не рекорд
 
 
+def test_slot_coverage_week_3_of_5_month_60pct():
+    def series(days):
+        return {1: [(d, 1.0, 1.0) for d in days]}
+    mon = date(2026, 11, 2)
+    week = [mon + timedelta(days=i) for i in range(5)]
+    assert not fn.slot_covered(series(week[:1]), "1w", week[0])     # 2 ноября: один день — не неделя
+    assert not fn.slot_covered(series(week[:2]), "1w", week[1])
+    assert fn.slot_covered(series(week[:3]), "1w", week[2])
+    assert fn.slot_covered(series(week[:1]), "1d", week[0])
+    # ноябрь 2026: 21 рабочий день → нужно 13
+    nov = [d for d in (date(2026, 11, 1) + timedelta(days=i) for i in range(30)) if d.weekday() < 5]
+    assert len(nov) == 21
+    assert not fn.slot_covered(series(nov[:12]), "1m", nov[11])
+    assert fn.slot_covered(series(nov[:13]), "1m", nov[12])
+    # прошлые слоты на счёт не влияют
+    assert not fn.slot_covered(series([date(2026, 10, 30)] * 1 + nov[:1]), "1m", nov[0])
+
+
 def test_mark_matches_record_notify():
     assert fn.mark("за 3 месяца") == ""
     assert fn.mark("за полгода") == "🔴 "
