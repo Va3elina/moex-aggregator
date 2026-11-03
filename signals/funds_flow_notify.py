@@ -6,7 +6,7 @@
 Всё, что в сообщении, читатель видит на сайте (Вадим 26.10):
   • столбцы — ровно графика притоков-оттоков (api/services/fund_flows: тот же код, что /api/funds/flows, с поправками
     FLOW_REORG_CORRECTIONS); горизонт — таймфрейм графика: день, неделя, месяц (календарные, последний слот может быть
-    неполным — так он и нарисован). «За всё время» — период графика «Всё»: с 2020 года, не раньше min_date категории;
+    неполным — так он и нарисован, но рекорд по нему — только при данных за 60% рабочих дней). «За всё время» — период графика «Всё»: с 2020 года, не раньше min_date категории;
   • срезы — категория целиком (все фонды) и каждая её подкатегория, как группы в таблице и выборе фондов на странице
     (состав — load_fund_categories, тот же, что у сайта);
   • ссылка открывает этот срез (?category=…&funds=…), «Притоки-Оттоки» на этом таймфрейме (?tf=) и период, где
@@ -44,6 +44,9 @@ SENT_FILE = os.path.join(fresh.STATE_DIR, f"{NAME}.sent.json")
 HORIZONS = {"1d": "за день", "1w": "за неделю", "1m": "за месяц"}
 SIDES = {"in": "Приток", "out": "Отток"}
 MIN_HISTORY_DAYS = 365                # на короткой истории «за всё время» ничего не значит
+# Неполная неделя/месяц против полных (03.11: один день 2 ноября дал «рекорд за неделю» и «за месяц»): рекорд
+# последнего слота — только когда данные есть хотя бы за 60% его рабочих дней (неделя 3 из 5, месяц ~13 из 21)
+MIN_SLOT_COVERAGE = 0.6
 # подписи групп как в таблице фондов (FundsTable: «Управляемые фонды акций» → «Управляемые фонды»)
 SUBCAT_LABEL = {"Управляемые фонды акций": "Управляемые фонды"}
 # период графика под окно: у притоков-оттоков на дневном/недельном/месячном ТФ есть 1y, 3y и all
@@ -92,6 +95,22 @@ def bar_records(bars: list) -> list:
     return out
 
 
+def slot_covered(series: dict, tf: str, end: date) -> bool:
+    """Хватает ли данных в календарном слоте, где лежит end: дней с данными (сетка дат среза) не меньше
+    MIN_SLOT_COVERAGE от рабочих дней слота (пн–пт, праздники не вычитаем). День — всегда полный."""
+    if tf == "1d":
+        return True
+    key = ff.period_key(end, tf)
+    have = len({d for rows in series.values() for d, _, _ in rows if ff.period_key(d, tf) == key})
+    if tf == "1w":
+        first = end - timedelta(days=end.weekday())
+        nxt = first + timedelta(days=7)
+    else:
+        first = end.replace(day=1)
+        nxt = (first + timedelta(days=32)).replace(day=1)
+    return have >= np.ceil(MIN_SLOT_COVERAGE * np.busday_count(first, nxt) - 1e-9)
+
+
 def _load():
     from sqlalchemy import text
     from api.database import SessionLocal
@@ -123,6 +142,8 @@ def records(cats: dict, raw: list) -> tuple[date | None, list]:
                 continue
             end = date.fromisoformat(bars[-1]["period_end"])
             last = end if last is None or end > last else last
+            if not slot_covered(series, tf, end):
+                continue
             for side, w in bar_records(bars):
                 out.append({**s, "tf": tf, "side": side, "window": w, "day": end})
     return last, out
