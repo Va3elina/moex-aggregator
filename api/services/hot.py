@@ -25,6 +25,7 @@ from sqlalchemy import text
 
 from api.logger import get_logger
 from api.services import oi_screener as scr
+from api.services.fund_flows import slot_covered
 
 log = get_logger()
 
@@ -627,6 +628,12 @@ def fund_case(months: List[Tuple[str, float]], weeks: List[Tuple[str, str, float
     m_last, v_last = full[-1]
     # 1) рекорд недели среди трёх последних полных недель
     wk = [w for w in weeks if w[1] < today.isoformat()]
+    # незакрытая неделя (данные за понедельник при сегодняшнем вторнике) — только с данными за 3 рабочих дня из 5;
+    # дни с данными — рабочие дни от начала до конца столбца
+    if wk:
+        d0, d1 = date.fromisoformat(wk[-1][0]), date.fromisoformat(wk[-1][1])
+        if not slot_covered(sum((d0 + timedelta(days=i)).weekday() < 5 for i in range((d1 - d0).days + 1)), "1w", d1):
+            wk = wk[:-1]
     for k in range(len(wk) - 1, max(len(wk) - 4, 26), -1):
         prior = [w[2] for w in wk[:k]]
         v = wk[k][2]

@@ -110,6 +110,22 @@ def test_fund_case_week_record_beats_month_cases():
     assert c["chart"]["level"] < 0 and c["chart"]["prev"] != c["chart"]["hl"]
 
 
+def test_fund_case_partial_week_needs_3_days():
+    """03.11: данные за один понедельник 2 ноября — не «рекордный приток за неделю»."""
+    today = date(2026, 11, 3)
+    weeks, d = [], date(2025, 3, 3)
+    while d < date(2026, 11, 2):
+        weeks.append((d.isoformat(), (d + timedelta(days=4)).isoformat(), 0.5))
+        d += timedelta(days=7)
+    months = _months([1] * 20, start=(2025, 1))
+    one_day = weeks + [("2026-11-02", "2026-11-02", 5.0)]
+    c = H.fund_case(months, one_day, today)
+    assert not c or c["case"] != "week_record"
+    three = weeks + [("2026-11-02", "2026-11-04", 5.0)]
+    c = H.fund_case(months, three, date(2026, 11, 5))
+    assert c["case"] == "week_record" and c["chart"]["hl"] == "2026-11-02"
+
+
 def test_season_years_window_per_year():
     closes = []
     for y in range(2010, 2026):

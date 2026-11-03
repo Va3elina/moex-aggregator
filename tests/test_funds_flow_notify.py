@@ -109,6 +109,10 @@ def test_slot_coverage_week_3_of_5_month_60pct():
     assert fn.slot_covered(series(nov[:13]), "1m", nov[12])
     # прошлые слоты на счёт не влияют
     assert not fn.slot_covered(series([date(2026, 10, 30)] * 1 + nov[:1]), "1m", nov[0])
+    # общее правило для всех уведомлений: по числу дней с данными
+    assert not ff.slot_covered(2, "1w", date(2026, 11, 3)) and ff.slot_covered(3, "1w", date(2026, 11, 4))
+    assert not ff.slot_covered(12, "1m", date(2026, 11, 17)) and ff.slot_covered(13, "1m", date(2026, 11, 18))
+    assert ff.slot_covered(1, "1d", date(2026, 11, 2))
 
 
 def test_mark_matches_record_notify():

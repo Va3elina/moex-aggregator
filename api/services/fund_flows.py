@@ -7,8 +7,9 @@
 fund_series — {fund_id: [(trade_date, nav, pay), ...]} по возрастанию даты, nav/pay уже протянуты вперёд по
 общей сетке дат выбранных фондов (как в SQL роутера); fill_series строит то же из сырых строк fund_data.
 """
+import math
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import text
 
@@ -156,6 +157,27 @@ def period_key(d: date, timeframe: str):
     if timeframe == "1y":
         return (d.year,)
     return d.isocalendar()[:2]
+
+
+# Неполная неделя/месяц против полных (03.11: один день 2 ноября дал «рекорд за неделю» и «за месяц»): рекорд,
+# серию или разворот по незакрытому слоту объявляем, только когда данные есть хотя бы за 60% его рабочих дней
+# (неделя 3 из 5, месяц ~13 из 21). Общее правило всех уведомлений и находок.
+MIN_SLOT_COVERAGE = 0.6
+
+
+def slot_covered(days_with_data: int, timeframe: str, d: date) -> bool:
+    """Хватает ли дней с данными в календарном слоте (1w — ISO-неделя, 1m — месяц), где лежит d: не меньше
+    MIN_SLOT_COVERAGE от рабочих дней слота (пн–пт, праздники не вычитаем). День — всегда полный."""
+    if timeframe == "1w":
+        first = d - timedelta(days=d.weekday())
+        nxt = first + timedelta(days=7)
+    elif timeframe == "1m":
+        first = d.replace(day=1)
+        nxt = (first + timedelta(days=32)).replace(day=1)
+    else:
+        return True
+    workdays = sum((first + timedelta(days=i)).weekday() < 5 for i in range((nxt - first).days))
+    return days_with_data >= math.ceil(MIN_SLOT_COVERAGE * workdays - 1e-9)
 
 
 def _bar(start, end, net, g_in, g_out, base) -> dict:
