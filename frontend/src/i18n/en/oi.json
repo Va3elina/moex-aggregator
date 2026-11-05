@@ -132,6 +132,7 @@
   "Избранные": "Favorites",
   "Актив": "Asset",
   "Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где {{group}} стоят сейчас, хвост = сдвиг {{over}}, размер головы = сила движения. Точные проценты — при наведении на строку.": "Comet on the skew axis −100…+100: full short on the left, zero (even) in the middle, full long on the right. Head = where {{group}} stand now, tail = shift {{over}}, head size = strength of the move. Exact percentages on hover.",
+  "Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где {{group}} стоят сейчас, хвост = сдвиг {{over}}, размер головы = сила движения. Точные проценты — при наведении на строку. Клик — сортировать по перекосу: ▼ лонг сверху, ▲ шорт сверху.": "Comet on the skew axis −100…+100: full short on the left, zero (even) in the middle, full long on the right. Head = where {{group}} stand now, tail = shift {{over}}, head size = strength of the move. Exact percentages on hover. Click to sort by skew: ▼ long on top, ▲ short on top.",
   "Позиция {{group}}": "{{group}} position",
   "Во сколько раз изменение позиции {{over}} сильнее {{usual}}. Клик — перевернуть порядок.": "How many times the position change {{over}} exceeds {{usual}}. Click to flip the order.",
   "Сила": "Strength",

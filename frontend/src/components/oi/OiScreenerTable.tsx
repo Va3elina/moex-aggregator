@@ -19,8 +19,9 @@
  * Тулбар: Физлица/Юрлица (SegmentedControl — паритет с вкладкой графика),
  * Категории — Dropdown, ★ Избранные со счётчиком.
  * Порога ≥2×/3×/5× нет: лента всегда отсортирована по силе (резкие сверху,
- * тихие приглушены). Сортировки по перекосу тоже нет — «где стоят» это не
- * повод для ранжирования ленты СОБЫТИЙ, для этого есть вкладка графика.
+ * тихие приглушены). Вторая сортировка — по перекосу (клик по заголовку
+ * «Позиция»): ▼ сильнейший перекос в лонг сверху, ▲ сильнейший в шорт сверху.
+ * Стрелка висит только на активной колонке, повторный клик переворачивает.
  *
  * Рекорды перекоса — оранжевая метка периода у сигнала («↑3мес»: пробили
  * максимум за 3 месяца) + акцентная левая грань строки. Исторический экстремум
@@ -160,8 +161,15 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [onlyFav, setOnlyFav] = usePersistedState<boolean>('frame:oi-screener:onlyfav', false);
   // Баннер «★ добавлено — поставить алерт?» после добавления в избранное.
   const [alertPrompt, setAlertPrompt] = useState<{ sectype: string; name: string } | null>(null);
-  // Единственная сортировка — по силе; тумблер меняет лишь направление.
+  // Сортировка: по силе (дефолт) или по перекосу позиции. Клик по активной
+  // колонке переворачивает направление, по другой — переключает на неё с ▼.
+  const [sortKey, setSortKey] = usePersistedState<'ratio' | 'skew'>('frame:oi-screener:sortkey', 'ratio');
   const [sortDir, setSortDir] = usePersistedState<1 | -1>('frame:oi-screener:sortdir', -1);
+  const clickSort = (key: 'ratio' | 'skew') => {
+    if (key === sortKey) setSortDir((d) => (d === -1 ? 1 : -1));
+    else { setSortKey(key); setSortDir(-1); }
+  };
+  const sortArrow = (key: 'ratio' | 'skew') => (sortKey === key ? (sortDir === -1 ? ' ▼' : ' ▲') : '');
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(FAVORITES_KEY);
@@ -234,7 +242,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   useSnapshotTracking('screener_view', rows === null && !locked ? null : {
     clgroup, horizon, group,
     only_fav: onlyFav || undefined,
-    sort: sortDir === 1 ? 'asc' : undefined,
+    sort: sortKey === 'skew' || sortDir === 1 ? `${sortKey}_${sortDir === 1 ? 'asc' : 'desc'}` : undefined,
     locked: locked || undefined,
   });
 
@@ -277,6 +285,17 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     //  - избранные наверху разрывали ряд по силе в произвольных местах. Для
     //    «только избранные» есть отдельный фильтр ★, он и решает эту задачу.
     // sortDir = −1 → сильные сверху (дефолт).
+    // По перекосу: −1 → самый лонговый сверху, +1 → самый шортовый сверху.
+    // Строки без перекоса — в конце обеих сторон, как и без силы.
+    if (sortKey === 'skew') {
+      return [...out].sort((a, b) => {
+        if (a.net_pct == null || b.net_pct == null) {
+          if (a.net_pct == null && b.net_pct == null) return 0;
+          return a.net_pct == null ? 1 : -1;
+        }
+        return sortDir * (a.net_pct - b.net_pct);
+      });
+    }
     out = [...out].sort((a, b) => {
       // Строки без силы держим в конце ОБЕИХ сортировок вручную: через общий
       // ключ (ratio ?? −1) по возрастанию они всплыли бы наверх и первая
@@ -288,7 +307,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       return sortDir * (a.ratio - b.ratio);
     });
     return out;
-  }, [rows, favorites, group, sortDir, onlyFav]);
+  }, [rows, favorites, group, sortKey, sortDir, onlyFav]);
 
   // Калибровка размера головы кометы: размах ×N sharp-строк по видимой
   // выборке. Длина хвоста не нормируется — она
@@ -641,18 +660,23 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           {/* Заголовки — одна строка на колонку, без вторых строк-приписок */}
           <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 8px 12px 18px', borderBottom: '2px solid var(--text-primary)', alignItems: 'center' }}>
             <span style={headCell}>{t('Актив')}</span>
-            <span style={headCell} title={t('Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где {{group}} стоят сейчас, хвост = сдвиг {{over}}, размер головы = сила движения. Точные проценты — при наведении на строку.', { group: groupWord, over: W.over })}>
-              {t('Позиция {{group}}', { group: groupGen })}
-            </span>
+            <button
+              type="button"
+              style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, justifySelf: 'start' }}
+              onClick={() => clickSort('skew')}
+              title={t('Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где {{group}} стоят сейчас, хвост = сдвиг {{over}}, размер головы = сила движения. Точные проценты — при наведении на строку. Клик — сортировать по перекосу: ▼ лонг сверху, ▲ шорт сверху.', { group: groupWord, over: W.over })}
+            >
+              {t('Позиция {{group}}', { group: groupGen })}{sortArrow('skew')}
+            </button>
             {/* Сила — числовая колонка: заголовок и число по центру, чтобы
                 отступы слева (комета) и справа (сигнал) были симметричны. */}
             <button
               type="button"
               style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, justifySelf: 'center' }}
-              onClick={() => setSortDir((d) => (d === -1 ? 1 : -1))}
+              onClick={() => clickSort('ratio')}
               title={t('Во сколько раз изменение позиции {{over}} сильнее {{usual}}. Клик — перевернуть порядок.', { over: W.over, usual: W.usual })}
             >
-              {t('Сила')}{sortDir === -1 ? ' ▼' : ' ▲'}
+              {t('Сила')}{sortArrow('ratio')}
             </button>
             <span style={{ ...headCell, justifySelf: 'center' }}>{t('Сигнал')}</span>
             <span />
