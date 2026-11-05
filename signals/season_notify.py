@@ -1,4 +1,4 @@
-"""Сезонность → уведомление в FRAME · Редакция (@frame_post_bot) в день, когда у актива начинается сильный сезонный период.
+"""Сезонность → уведомление в @framesignalbot (бот сигналов; из Редакции вернули 05.11.2026) в день, когда у актива начинается сильный сезонный период.
 
 Правило — то же, что у витрины /hot и сезонности завода (signals/insights/season.py): следующие 3 месяца (91 день
 от той же даты) шли в одну сторону минимум в 75% лет (лет не меньше 10), медиана хода по модулю от 3%. Уведомление —
@@ -119,7 +119,7 @@ def run_once(dry_run: bool = False, today: date | None = None) -> dict:
         if dry_run:
             print(msg + "\n")
             continue
-        if send(msg, NAME, bot="editor"):
+        if send(msg, NAME, bot="signal"):
             summary["sent"] += 1
             sent.add(_key(p, st))
         else:
