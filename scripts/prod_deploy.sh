@@ -153,4 +153,28 @@ if echo "$changed" | grep -qE '^nginx/'; then
   fi
 fi
 
+# ─── host-кроны, которые ставит деплой ────────────────────────────────────
+# Кроны signals/*.sh живут в crontab хоста и ставились руками по SSH. 04-05.11.2026 SSH с машины Вадима
+# висел на приветствии, а деплой из Actions проходил, поэтому новый крон ставим отсюда. Идемпотентно:
+# если скрипт уже есть в кроне root или alexgondon, ничего не делаем. Владелец как у tg_hype_scan.
+ensure_cron() {  # $1 = имя скрипта (маркер), $2 = строка крона
+  local u cur owner=root
+  for u in root alexgondon; do
+    if crontab -l -u "$u" 2>/dev/null | grep -qF "$1"; then return 0; fi
+  done
+  if crontab -l -u alexgondon 2>/dev/null | grep -q 'signals/tg_hype_scan'; then owner=alexgondon; fi
+  cur=$(crontab -l -u "$owner" 2>/dev/null || true)   # прочитать до записи: старые строки не потеряются
+  if ! printf '%s\n%s\n' "$cur" "$2" | sed '/^$/d' | crontab -u "$owner" -; then return 1; fi
+  echo "=== cron добавлен ($owner): $2 ==="
+  return 10
+}
+cron_rc=0
+ensure_cron hype_digest.sh '0 14 * * * /bin/bash /opt/frame/signals/hype_digest.sh >> /opt/frame/logs/hype_digest.log 2>&1' || cron_rc=$?
+if [ "$cron_rc" = "10" ]; then
+  # Разовая проверка сразу после установки: подборка из сохранённых замеров, без Telegram и без отправки.
+  timeout 120 bash /opt/frame/signals/hype_digest.sh --dry-run --no-refresh 2>&1 | tail -20 || true
+elif [ "$cron_rc" != "0" ]; then
+  echo "::warning:: крон hype_digest не поставлен (код $cron_rc)"
+fi
+
 echo "=== HEAD на проде: $(git rev-parse --short HEAD) ==="
