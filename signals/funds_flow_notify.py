@@ -1,4 +1,4 @@
-"""Рекордные притоки и оттоки «Денег в фондах» → отдельное сообщение на каждый рекорд в FRAME · Редакция (@frame_post_bot) (личка админа).
+"""Рекордные притоки и оттоки «Денег в фондах» → отдельное сообщение на каждый рекорд в @framesignalbot (бот сигналов; из Редакции вернули 06.11.2026) (личка админа).
 
 Модель та же, что у рекордов позиций физлиц (signals/record_notify.py): рекорд — поток, какого не было 3 месяца,
 полгода, год, 2, 3, 5 лет или за всё время (окна, повторы и пауза — оттуда же: window, due, COOLDOWN_DAYS).
@@ -201,7 +201,7 @@ def run_once(dry_run: bool = False) -> dict:
         if dry_run:
             print(msg + "\n")
             continue
-        if send(msg, NAME, bot="editor"):
+        if send(msg, NAME, bot="signal"):
             summary["sent"] += 1
             for y in [x] + x.get("folded", []):
                 sent[_key(y)] = {"day": y["day"].isoformat(), "rank": RANK[y["window"]]}
