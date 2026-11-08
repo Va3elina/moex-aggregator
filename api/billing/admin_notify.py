@@ -378,6 +378,17 @@ def _render_event(db: Session, ev) -> str | None:
             f"Хотел отменить {_plan_name(sub)}, принял скидку {sub.discount_pct}% на продление {_d(sub.expires_at)}",
         ])
     if kind == "autopay_bound":
+        # Вебхук первой оплаты в одной транзакции активирует подписку и пишет карту:
+        # триггер даёт payment и autopay_bound с одним created_at (now() транзакции).
+        # «Новая подписка» уже говорит «карта, привязана», второе сообщение лишнее.
+        # Поздняя привязка (СБП-резолв, карта к действующей подписке) идёт отдельно.
+        same_tx_payment = db.execute(text("""
+            SELECT 1 FROM billing_events
+            WHERE kind = 'payment' AND subscription_id = :sid AND created_at = :ts
+            LIMIT 1
+        """), {"sid": sub.id, "ts": ev["created_at"]}).first()
+        if same_tx_payment is not None:
+            return None
         return "\n".join([
             "🔗 <b>Привязан способ оплаты</b>", _who(user, sub.user_id), "",
             f"Тариф: {_plan_name(sub)}", f"Оплата: {_method_line(pm, sub)}",
