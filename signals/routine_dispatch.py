@@ -35,6 +35,7 @@ from api.database import get_engine  # noqa: E402
 MAX_RUNNING = int(os.environ.get("ROUTINE_MAX_RUNNING", "2"))
 FIRE_GAP_SEC = int(os.environ.get("ROUTINE_FIRE_GAP_SEC", "10"))
 QUOTA_PAUSE_MIN = int(os.environ.get("ROUTINE_QUOTA_PAUSE_MIN", "60"))
+GEO_PAUSE_MIN = int(os.environ.get("ROUTINE_GEO_PAUSE_MIN", "15"))
 RUN_BUDGET_SEC = 50          # cron раз в минуту — укладываемся, чтобы прогоны не наслаивались
 FIRING_STUCK_MIN = 5         # 'firing' дольше — прогон упал посреди запуска
 LOCK_KEY = 0x524F5554        # pg advisory lock «ROUT»: второй прогон выходит сразу
@@ -130,6 +131,15 @@ def _is_quota(e: Exception) -> bool:
     return any(w in str(e).lower() for w in _QUOTA_WORDS)
 
 
+def _is_geo_block(e: Exception) -> bool:
+    """Anthropic не пускает сам запрос (403 «Request not allowed») — так он отвечает российским
+    адресам. Это сломанный релей, а не токен рутины: 09.11.2026 Cloudflare-воркер перестал
+    прятать страну отправителя, и диспетчер за день сжёг ~200 заданий как «настройку»."""
+    resp = getattr(e, "response", None)
+    return (resp is not None and resp.status_code == 403
+            and "request not allowed" in (resp.text or "").lower())
+
+
 def dispatch_one(eng) -> bool:
     """Запустить одно задание, если можно. True — запустили (или попытались)."""
     with eng.begin() as conn:
@@ -197,6 +207,22 @@ def dispatch_one(eng) -> bool:
                 _notify_once(conn, "routine:quota",
                              f"⚠️ Рутины: лимит подписки, очередь на паузе {QUOTA_PAUSE_MIN} мин\n{err[:200]}")
                 log(f"#{job.id} {job.routine}: квота → пауза очереди: {err}")
+            elif _is_geo_block(e):
+                # релей не прячет российский адрес — не вина задания и не вина рутины: попытку
+                # не тратим, вся очередь ждёт (иначе каждое следующее задание сгорит так же).
+                conn.execute(text("""
+                    UPDATE routine_queue SET status = 'queued', attempts = attempts - 1, last_error = :e
+                    WHERE id = :id
+                """), {"id": job.id, "e": err})
+                conn.execute(text("""
+                    UPDATE routine_queue_state SET paused_until = now() + make_interval(mins => :m),
+                           pause_reason = :e WHERE id = 1
+                """), {"m": GEO_PAUSE_MIN, "e": err})
+                _notify_once(conn, "routine:geo",
+                             "⚠️ Рутины: Anthropic не пускает запросы с нашего адреса (гео-отказ 403). "
+                             "Сломан релей CLAUDE_ROUTINE_API_ROOT, токены ни при чём. "
+                             f"Очередь ждёт и повторяет каждые {GEO_PAUSE_MIN} мин.")
+                log(f"#{job.id} {job.routine}: гео-отказ Anthropic → пауза очереди {GEO_PAUSE_MIN} мин")
             elif isinstance(e, PermissionError) or (getattr(e, "response", None) is not None
                                                     and e.response.status_code in (401, 403, 404)):
                 # настройка сломана — повтор не поможет
