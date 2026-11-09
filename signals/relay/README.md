@@ -30,7 +30,7 @@
    (рядом) → **Deploy**. Telegram-путь не меняется — обратная совместимость.
 3. `RELAY_SECRET` (Settings → Variables and Secrets) — **уже есть**, ничего не трогай.
    *(Если ставишь с нуля: Add → Name `RELAY_SECRET`, Type Secret, Value
-   `2daa4ac1f624c27d63ee265bde547bad` или `openssl rand -hex 16` → Deploy.)*
+   `openssl rand -hex 16` (само значение — только в `.env`, не в git) → Deploy.)*
 4. **Скажи мне: «воркер обновлён»** — URL и секрет я уже знаю из `TELEGRAM_API_ROOT`.
 
 ## Что делаю я после этого
