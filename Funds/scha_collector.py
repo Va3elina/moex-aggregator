@@ -147,8 +147,12 @@ _SSL = None
 # Verify return code 21). Браузер и curl на маке достраивают цепочку сами, Python и curl на
 # сервере — нет → CERTIFICATE_VERIFY_FAILED, что выглядит как «Атон банит сервер». Добавляем
 # ИМЕННО промежуточный: он подписан корнем GlobalSign R3 из certifi, доверие не расширяется.
-# Корень Минцифры сюда не подключаем — сайтам УК он не нужен (см. moex_tls.py про точечное доверие).
+# Корень Минцифры — только для сайтов УК из _MINCIFRY_HOSTS (точечное доверие, см. moex_tls.py).
 _GS_INTERMEDIATE = ROOT / "certs" / "globalsign_rsa_ov_ssl_ca_2018.pem"
+# t-capital-funds.ru с 11.2026 на сертификате Минцифры (Russian Trusted Sub CA → Root CA):
+# в certifi этого корня нет → CERTIFICATE_VERIFY_FAILED «self-signed certificate in chain».
+_MINCIFRY_ROOT = ROOT / "certs" / "russian_trusted_root_ca.pem"
+_MINCIFRY_HOSTS = ("t-capital-funds.ru",)
 
 # Ходим ТОЛЬКО на сайты УК и только по https. Ссылки на файлы берутся со страниц УК — без этого
 # списка подменённая ссылка (http://127.0.0.1:…, внутренний хост) превратила бы сборщик на сервере
@@ -170,16 +174,21 @@ class _SafeRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _opener():
+def _opener(host: str = ""):
     global _SSL
     if _SSL is None:
         import ssl
         import certifi
-        ctx = ssl.create_default_context(cafile=certifi.where())
-        if _GS_INTERMEDIATE.is_file():
-            ctx.load_verify_locations(cafile=str(_GS_INTERMEDIATE))
-        _SSL = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx), _SafeRedirect())
-    return _SSL
+        _SSL = {}
+        for kind in ("common", "mincifry"):
+            ctx = ssl.create_default_context(cafile=certifi.where())
+            if _GS_INTERMEDIATE.is_file():
+                ctx.load_verify_locations(cafile=str(_GS_INTERMEDIATE))
+            if kind == "mincifry" and _MINCIFRY_ROOT.is_file():
+                ctx.load_verify_locations(cafile=str(_MINCIFRY_ROOT))
+            _SSL[kind] = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx), _SafeRedirect())
+    ru = any(host == d or host.endswith("." + d) for d in _MINCIFRY_HOSTS)
+    return _SSL["mincifry" if ru else "common"]
 
 
 def http_get(url: str, timeout: int = 60) -> tuple[bytes, dict]:
@@ -187,7 +196,8 @@ def http_get(url: str, timeout: int = 60) -> tuple[bytes, dict]:
     url = urllib.parse.quote(url, safe=":/?&=%#,-._~+")
     _check_url(url)
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ru-RU,ru;q=0.9"})
-    with _opener().open(req, timeout=timeout) as r:
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    with _opener(host).open(req, timeout=timeout) as r:
         return r.read(), dict(r.headers)
 
 
