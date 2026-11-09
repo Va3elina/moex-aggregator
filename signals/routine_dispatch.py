@@ -102,7 +102,9 @@ def _fire(routine: str, payload: str) -> str:
         body = r.json()
     except ValueError:
         body = {}
-    return str(body.get("session_id") or body.get("id") or "")[:80]
+    # /fire отдаёт claude_code_session_id; без него в очереди и логе номер был пустым,
+    # и запуск нельзя было найти в list_runs при разборе сбоя.
+    return str(body.get("claude_code_session_id") or body.get("session_id") or body.get("id") or "")[:80]
 
 
 def _retry_after_sec(err: str) -> int | None:
