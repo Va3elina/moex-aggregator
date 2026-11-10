@@ -10,7 +10,7 @@
 Срез сигнала бывает подкатегорией («Облигации · Короткие»), а карточка считается по категории целиком: цифры среза
 идут фактами в начало карточки, остальное — фон категории.
 
-Фильтры:
+Фильтры (порога по величине нет — Вадим 10.11: «уберите пороги совсем», как у самого бота):
   • один повод на категорию за прогон — самый сильный сигнал (рекорд старше окна, потом старший горизонт);
   • канал писал о той же категории за SKIP_DAYS дня — пропуск (insight_scan.repeat_of), раньше — «продолжение темы»;
   • тикер кандидата — «funds:<категория>», как у находок детектора: правило «один тикер — один пост за три дня»
@@ -84,24 +84,6 @@ def _WINDOW_RANK(w: str) -> int:  # noqa: N802 — окно рекорда: ст
     return RANK.get(w, 0)
 
 
-MIN_RUB, MIN_FRAC = 1.5e9, 0.015    # 1,5 млрд ₽ или 1,5% активов категории — вдвое ниже insight_scan (Вадим 10.11)
-
-
-def significant(x: dict) -> bool:
-    """Бот шлёт серии без порога по величине (Вадим 10.11: «без порога СЧА»), а пост — нет: «приток в золото 10 дней
-    подряд» на 642 млн ₽ из 63 млрд — 1% активов, не новость для читателя (холостой прогон 10.11). Поток столбца или
-    сумма серии ≥ min(1,5 млрд ₽, 1,5% активов категории); рекорд за всё время и самая долгая серия — без порога."""
-    if x.get("window") == "за всё время" or x.get("record"):
-        return True
-    from signals.insights import cards
-    v = max(abs(x.get("flow") or 0), abs(x.get("run_sum") or 0)) * 1e9
-    try:
-        aum = float(cards.upto(cards.funds_data()[1][x["cat"]], pd.Timestamp(x["day"])).iloc[-1])
-    except Exception:  # noqa: BLE001 — нет активов категории: порог в рублях
-        aum = 0.0
-    return v >= (min(MIN_RUB, MIN_FRAC * aum) if aum > 0 else MIN_RUB)
-
-
 def submit(items: list, kind: str, dry_run: bool = False, log=print) -> dict:
     """Отправленные ботом сигналы → кандидаты завода. kind: «record» или «streak». Возвращает сводку."""
     summary = {"leads": 0, "created": 0, "skipped_repeat": 0, "skipped_exists": 0}
@@ -113,10 +95,6 @@ def submit(items: list, kind: str, dry_run: bool = False, log=print) -> dict:
     best: dict = {}
     for x in items:
         lead = lead_record(x) if kind == "record" else lead_streak(x)
-        if not significant(x):
-            log(f"[funds_signal_leads] пропуск, мало для читателя: {lead['headline'][:90]}")
-            summary["skipped_small"] = summary.get("skipped_small", 0) + 1
-            continue
         key = (lead["rank"], TF_RANK[x["tf"]], x["sub"] is None)
         if x["cat"] not in best or key > best[x["cat"]][0]:
             best[x["cat"]] = (key, x, lead)
