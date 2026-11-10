@@ -306,8 +306,8 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
             <SegGroup value={group} options={GROUP_OPTS} onChange={setGroup} />
           </DrawerSection>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            <b style={{ color: 'var(--text-primary)' }}>Комета</b> — где {groupWord} стоят на оси −100…+100 (слева шорт,
-            справа лонг), хвост — сдвиг {W.over}, размер головы — сила движения.{' '}
+            <b style={{ color: 'var(--text-primary)' }}>Комета</b> — где {groupWord} стоят на шкале долей (слева 100% шорт,
+            справа 100% лонг), хвост — сдвиг {W.over}, размер головы — сила движения.{' '}
             <b style={{ color: 'var(--text-primary)' }}>Сила</b> — во сколько раз изменение позиции {W.over} резче
             обычного; «резко» — от {W.thr}. Точные проценты — при наведении на комету. Данные дневные, T+1.
           </div>
@@ -331,7 +331,7 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
               {/* Шапка — прилипает при скролле ленты */}
               <div style={{ ...GRID, position: 'sticky', top: 0, zIndex: 2, background: 'var(--bg-secondary)', padding: '6px 8px 6px 12px', borderBottom: '1.5px solid var(--text-primary)' }}>
                 <span style={headCell}>Актив</span>
-                <span style={headCell} title={`Ось перекоса −100…+100: слева полный шорт, по центру ноль, справа полный лонг. Голова = где ${groupWord} сейчас, хвост = сдвиг ${W.over}.`}>
+                <span style={headCell} title={`Шкала долей: слева 100% шорт, по центру поровну, справа 100% лонг. Доли — при наведении на комету. Голова = где ${groupWord} сейчас, хвост = сдвиг ${W.over}.`}>
                   Позиция {groupGen}
                 </span>
                 <span style={{ ...headCell, justifySelf: 'center' }}>Сила</span>

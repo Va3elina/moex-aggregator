@@ -664,7 +664,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
               type="button"
               style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, justifySelf: 'start' }}
               onClick={() => clickSort('skew')}
-              title={t('Комета на оси перекоса −100…+100: слева полный шорт, по центру ноль (поровну), справа полный лонг. Голова = где {{group}} стоят сейчас, хвост = сдвиг {{over}}, размер головы = сила движения. Точные проценты — при наведении на строку. Клик — сортировать по перекосу: ▼ лонг сверху, ▲ шорт сверху.', { group: groupWord, over: W.over })}
+              title={t('Комета на шкале долей: слева 100% шорт, по центру поровну, справа 100% лонг. Голова = где {{group}} стоят сейчас, хвост = сдвиг {{over}}, размер головы = сила движения. Доли шорта и лонга — при наведении на строку, как в открытых позициях МосБиржи. Клик — сортировать по перекосу: ▼ лонг сверху, ▲ шорт сверху.', { group: groupWord, over: W.over })}
             >
               {t('Позиция {{group}}', { group: groupGen })}{sortArrow('skew')}
             </button>
