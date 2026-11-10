@@ -86,6 +86,15 @@ const FAVORITES_KEY = 'favoriteInstruments'; // общий ключ с пике�
 function fmtRatio(r: number): string {
   return r.toLocaleString(getLang() === 'en' ? 'en-GB' : 'ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
 }
+/** «4,3×» для колонки «Сила» с поджатым десятичным разделителем. В моноширинном
+ *  шрифте запятая занимает целую клетку и раздвигала «4 , 3» — число выглядело
+ *  шире и иначе, чем «79%» в соседней «Доле». */
+function RatioNum({ r }: { r: number }) {
+  const s = fmtRatio(r);
+  const m = s.match(/^(\d+)([.,])(\d)(×)$/);
+  if (!m) return <>{s}</>;
+  return <>{m[1]}<span style={{ margin: '0 -0.22em' }}>{m[2]}</span>{m[3]}{m[4]}</>;
+}
 /** «1 актив / 2 актива / 5 активов» */
 function pluralAssets(n: number): string {
   if (getLang() === 'en') return n === 1 ? '1 asset' : `${n} assets`;
@@ -407,7 +416,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           title={t('{{move}} {{group}} в {{ratio}} от {{usual}} — ниже порога «резко» ({{thr}})', { move: W.move, group: groupGen, ratio: fmtRatio(r.ratio), usual: W.usual, thr: W.thr })}
           style={num}
         >
-          {fmtRatio(r.ratio)}
+          <RatioNum r={r.ratio} />
         </span>
       );
     }
@@ -424,7 +433,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         title={t('{{move}} {{group}} в {{ratio}} сильнее {{usual}}{{note}}', { move: W.move, group: groupGen, ratio: fmtRatio(r.ratio), usual: W.usual, note: tierNote })}
         style={num}
       >
-        {fmtRatio(r.ratio)}
+        <RatioNum r={r.ratio} />
       </span>
     );
   };
