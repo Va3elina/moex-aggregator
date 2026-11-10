@@ -218,3 +218,11 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run", action="store_true", help="показать сообщения, ничего не слать")
     a = ap.parse_args()
     print(f"[{NAME}] {run_once(dry_run=a.dry_run)}")
+    # серии притоков-оттоков (signals/funds_flow_streak.py) — тем же кроном, после рекордов; сбой одного не роняет
+    # другое
+    from signals import funds_flow_streak
+    try:
+        print(f"[{funds_flow_streak.NAME}] {funds_flow_streak.run_once(dry_run=a.dry_run)}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[{funds_flow_streak.NAME}] ошибка: {type(e).__name__}: {e}")
+        raise
