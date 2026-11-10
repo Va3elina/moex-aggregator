@@ -391,6 +391,15 @@ def company_lines(spec, as_of) -> dict:
 def build(job: dict, now_iso: str) -> dict:
     spec, date = job["spec"], job["date"]
     card = cards.build_card(spec, date)
+    if job.get("lead"):
+        # повод из бота сигналов (signals/funds_signal_leads.py): пост о сигнале, карточка категории — фон
+        lead = job["lead"]
+        card["headline"] = lead["headline"]
+        card["facts"] = list(lead["facts"]) + list(card.get("facts") or [])
+        fl = cards.focus_lines(card)
+        card["focus"] = fl[:1] + [f"повод: {x}" for x in lead["facts"]] + fl[1:]
+        if lead.get("note"):
+            card["limits"] = list(card.get("limits") or []) + [lead["note"]]
     ctx = cards.context_for(card, spec, now_iso)
     ctx["что канал уже писал по этому ряду"] = own_posts(spec, card["as_of"])
     ctx.update(company_lines(spec, card["as_of"]))

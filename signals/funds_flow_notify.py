@@ -136,7 +136,14 @@ def records(cats: dict, raw: list) -> tuple[date | None, list]:
             if not slot_covered(series, tf, end):
                 continue
             for side, w in bar_records(bars):
-                out.append({**s, "tf": tf, "side": side, "window": w, "day": end})
+                # цифры для повода завода (signals/funds_signal_leads.py): поток столбца и прошлый столбец больше
+                sgn = 1 if side == "in" else -1
+                v = bars[-1]["flow"]
+                prev = next((b for b in reversed(bars[:-1]) if sgn * b["flow"] >= sgn * v), None)
+                out.append({**s, "tf": tf, "side": side, "window": w, "day": end, "flow": v,
+                            "start": bars[-1]["period_start"],
+                            "prev_day": prev and prev["period_end"], "prev_start": prev and prev["period_start"],
+                            "prev_flow": prev and prev["flow"]})
     return last, out
 
 
@@ -196,13 +203,16 @@ def run_once(dry_run: bool = False) -> dict:
     new = senior_only([x for x in recs if due(x, sent.get(_key(x)), x["day"])])
     new.sort(key=lambda x: (RANK[x["window"]], x["cat"], x["sub"] or "", list(HORIZONS).index(x["tf"]), x["side"]))
     summary["new"] = len(new)
+    delivered = []
     for x in new:
         msg = message(x)
         if dry_run:
             print(msg + "\n")
+            delivered.append(x)
             continue
         if send(msg, NAME, bot="signal"):
             summary["sent"] += 1
+            delivered.append(x)
             for y in [x] + x.get("folded", []):
                 sent[_key(y)] = {"day": y["day"].isoformat(), "rank": RANK[y["window"]]}
         else:
@@ -210,7 +220,20 @@ def run_once(dry_run: bool = False) -> dict:
         time.sleep(1.1)                   # лимит Telegram — около сообщения в секунду на чат
     if not dry_run and new:
         _save_sent(sent, (day - timedelta(days=COOLDOWN_DAYS + 7)).isoformat())
+    summary["leads"] = to_factory(delivered, "record", dry_run)
     return summary
+
+
+def to_factory(items: list, kind: str, dry_run: bool) -> dict | str:
+    """Отправленные сигналы → поводы завода постов (signals/funds_signal_leads.py). Сбой не роняет бота."""
+    if not items:
+        return {}
+    try:
+        from signals.funds_signal_leads import submit
+        return submit(items, kind, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001 — сигнал уже ушёл, повод — сверху
+        print(f"[{NAME}] поводы для завода: {type(e).__name__}: {e}")
+        return f"ошибка: {type(e).__name__}"
 
 
 if __name__ == "__main__":

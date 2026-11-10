@@ -197,8 +197,12 @@ def pending(cats: dict, raw: list, state: dict) -> tuple[list, dict]:
         if seen is None:
             continue
         for e in events(bars, tf):
-            if bars[e["i"]]["period_end"] > seen:
-                new.append({**s, **e, "tf": tf})
+            i = e["i"]
+            if bars[i]["period_end"] > seen:
+                # цифры для повода завода (signals/funds_signal_leads.py): столбец события и сумма серии
+                run = bars[i - e["n"]:i] if e["kind"] == "break" else bars[i - e["n"] + 1:i + 1]
+                new.append({**s, **e, "tf": tf, "flow": bars[i]["flow"], "start": bars[i]["period_start"],
+                            "run_sum": round(sum(b["flow"] for b in run), 4)})
     return new, upd
 
 
@@ -208,14 +212,16 @@ def run_once(dry_run: bool = False) -> dict:
     out = senior_only(new)
     out.sort(key=lambda x: (x["day"], x["cat"], x["sub"] or "", x["side"]))
     summary = {"events": len(new), "new": len(out), "sent": 0, "failed": 0, "seeded": len(set(upd) - set(state))}
-    ok = True
+    ok, delivered = True, []
     for x in out:
         msg = message(x)
         if dry_run:
             print(msg + "\n")
+            delivered.append(x)
             continue
         if send(msg, NAME, bot="signal"):
             summary["sent"] += 1
+            delivered.append(x)
         else:
             summary["failed"] += 1
             ok = False
@@ -224,6 +230,10 @@ def run_once(dry_run: bool = False) -> dict:
     # двигаем — следующий прогон пришлёт снова
     if not dry_run and ok:
         _save_state({**state, **upd})
+    # повод заводу — только когда состояние сдвинулось, иначе следующий прогон пришлёт и повод заново
+    if dry_run or ok:
+        from signals.funds_flow_notify import to_factory
+        summary["leads"] = to_factory(delivered, "streak", dry_run)
     return summary
 
 
