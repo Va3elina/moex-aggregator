@@ -672,7 +672,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
               {t('Позиция {{group}}', { group: groupGen })}{sortArrow('skew')}
             </button>
             <span
-              style={headCell}
+              style={{ ...headCell, justifySelf: 'center' }}
               title={t('Доля открытых контрактов {{group}} на стороне перевеса: 66% шорт = 66% контрактов короткие. Сверяется с открытыми позициями МосБиржи.', { group: groupGen })}
             >
               {t('Доля')}
@@ -778,12 +778,14 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 </div>
 
                 {/* Доля стороны перевеса: (100 ± net) / 2 — та же точка, где голова кометы */}
-                <div style={{ ...MONO, whiteSpace: 'nowrap' }}>
+                <div style={{ ...MONO, whiteSpace: 'nowrap', justifySelf: 'center' }}>
                   {r.net_pct == null ? (
                     <span style={{ color: 'var(--text-muted)' }}>—</span>
                   ) : (
-                    // Сторона читается по цвету — без слова «лонг/шорт»; шрифт как у числа «Силы».
-                    <span style={{ fontSize: 'var(--fs-base)', fontWeight: 800, letterSpacing: '0.01em', color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
+                    // Сторона читается по цвету — без слова «лонг/шорт». Кегль ×1,125 к «Силе»:
+                    // при равных 16px голое число выглядело мельче числа в пилюле с рамкой
+                    // (подобрано на проде на глаз, 2026-11).
+                    <span style={{ fontSize: 'calc(var(--fs-base) * 1.125)', fontWeight: 800, letterSpacing: '0.01em', color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
                       {Math.round((100 + Math.abs(r.net_pct)) / 2)}%
                     </span>
                   )}
