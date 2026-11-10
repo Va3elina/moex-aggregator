@@ -153,6 +153,8 @@
   "лонг": "long",
   "шорт": "short",
   "Сегодня {{side}} {{pct}} / {{other}} {{otherPct}}": "Today {{side}} {{pct}} / {{other}} {{otherPct}}",
+  "Доля": "Share",
+  "Доля открытых контрактов {{group}} на стороне перевеса: 66% шорт = 66% контрактов короткие. Сверяется с открытыми позициями МосБиржи.": "Share of {{group}} open contracts on the dominant side: 66% short = 66% of contracts are short. Matches MOEX open positions.",
   "{{delta}} п.п.": "{{delta}} pp",
   "сила ×{{ratio}}": "strength ×{{ratio}}",
   "Что такое открытые позиции": "What open interest is",

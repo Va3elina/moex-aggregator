@@ -525,7 +525,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // широкие) — колонки разъехались бы. При смене формулировок пересчитать.
   // «Сила» — 96px, а не 64: пилюля-бейдж с рамкой и падингами шире голого
   // числа, и на трёхзначных днях («15,2×») она не должна лезть на соседей.
-  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 96px 140px 72px';
+  // «Доля» — 88px между кометой и «Силой»: доля стороны перевеса («66% шорт»)
+  // в тех же единицах, что открытые позиции МосБиржи. Самый длинный текст —
+  // «100% лонг».
+  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 88px 96px 140px 72px';
 
   // Оптическая компенсация для «Силы»: слева от числа стоит дорожка кометы
   // впритык (зазор = gap), а справа к gap прибавляется половина свободного
@@ -668,6 +671,12 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             >
               {t('Позиция {{group}}', { group: groupGen })}{sortArrow('skew')}
             </button>
+            <span
+              style={headCell}
+              title={t('Доля открытых контрактов {{group}} на стороне перевеса: 66% шорт = 66% контрактов короткие. Сверяется с открытыми позициями МосБиржи.', { group: groupGen })}
+            >
+              {t('Доля')}
+            </span>
             {/* Сила — числовая колонка: заголовок и число по центру, чтобы
                 отступы слева (комета) и справа (сигнал) были симметричны. */}
             <button
@@ -766,6 +775,22 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                     prevLabel={W.prev}
                     deltaLabel={W.over}
                   />
+                </div>
+
+                {/* Доля стороны перевеса: (100 ± net) / 2 — та же точка, где голова кометы */}
+                <div style={{ ...MONO, whiteSpace: 'nowrap' }}>
+                  {r.net_pct == null ? (
+                    <span style={{ color: 'var(--text-muted)' }}>—</span>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 'var(--fs-base)', fontWeight: 700, color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
+                        {Math.round((100 + Math.abs(r.net_pct)) / 2)}%
+                      </span>
+                      <span style={{ marginLeft: 5, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                        {r.net_pct >= 0 ? t('лонг') : t('шорт')}
+                      </span>
+                    </>
+                  )}
                 </div>
 
                 {/* Сила — пилюля-бейдж 4,3× со ступенями по порогу «резко» */}
