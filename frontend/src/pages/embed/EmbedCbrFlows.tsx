@@ -49,19 +49,31 @@ export default function EmbedCbrFlows() {
   const [params] = useSearchParams();
   const { theme } = useTheme();
 
-  const [type, setType] = useState<CbrType>((params.get('type') as CbrType) || 'stocks');
+  const [type, setType] = useState<CbrType>(
+    () => ((params.get('type') as CbrType) || (rd('frame:embed:cbr:type', 'stocks') as CbrType)),
+  );
   const [period, setPeriod] = useState<PeriodFilter>(
     () => (params.get('period') || rd('frame:embed:cbr:period', '1y')) as PeriodFilter,
   );
   // Скрытые категории. При смене типа — сбрасываем на дефолт (категории различаются
   // для stocks/ofz/fx); дефолт сужен до базовых категорий — до 7 участников
   // (stocks/ofz) не помещаются на узкой embed-ширине, см. cbrDefaultVisibility.
-  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(() => getDefaultHiddenCategories(type));
+  // Персист по типу (frame:embed:cbr:hidden:<type>), как на сайте. Значение —
+  // список через «|» (имена категорий русские, запятых в них не бывает, но «|»
+  // надёжнее); отсутствие ключа = дефолт cbrDefaultVisibility.
+  const readHidden = (t: CbrType): Set<string> => {
+    const raw = rd(`frame:embed:cbr:hidden:${t}`, '\u0000');
+    if (raw === '\u0000') return getDefaultHiddenCategories(t);
+    return new Set(raw ? raw.split('|') : []);
+  };
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(() => readHidden(type));
+  const hiddenTypeRef = useRef(type);
   const [data, setData] = useState<CbrResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
   const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => { wr('frame:embed:cbr:period', period); }, [period]);
+  useEffect(() => { wr('frame:embed:cbr:type', type); }, [type]);
 
   // Реалтайм: ингест ОРФР ручной и редкий, но 'daily'-флаш кэша ловим — тихий рефетч.
   const [refreshTick, setRefreshTick] = useState(0);
@@ -86,8 +98,15 @@ export default function EmbedCbrFlows() {
     return () => { cancelled = true; };
   }, [type, refreshTick]);
 
-  // Сброс скрытых категорий на дефолт при смене типа актива.
-  useEffect(() => { setHiddenCategories(getDefaultHiddenCategories(type)); }, [type]);
+  // Смена типа актива → перечитываем сохранённый набор этого типа (или дефолт).
+  // Пишем только из toggleCategory (действие юзера), чтобы дефолт не
+  // «запекался» в хранилище и обновлялся вместе с cbrDefaultVisibility.
+  useEffect(() => {
+    if (hiddenTypeRef.current === type) return;
+    hiddenTypeRef.current = type;
+    setHiddenCategories(readHidden(type));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type]);
 
   // Видимые категории (для передачи в график).
   const visibleCategories = useMemo(
@@ -103,17 +122,16 @@ export default function EmbedCbrFlows() {
   }, [data, period]);
 
   const toggleCategory = (cat: string) => {
-    setHiddenCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(cat)) {
-        next.delete(cat);
-      } else {
-        // Нельзя скрыть последнюю видимую категорию.
-        if (visibleCategories.length <= 1) return prev;
-        next.add(cat);
-      }
-      return next;
-    });
+    const next = new Set(hiddenCategories);
+    if (next.has(cat)) {
+      next.delete(cat);
+    } else {
+      // Нельзя скрыть последнюю видимую категорию.
+      if (visibleCategories.length <= 1) return;
+      next.add(cat);
+    }
+    setHiddenCategories(next);
+    wr(`frame:embed:cbr:hidden:${type}`, [...next].join('|'));
   };
 
   const boxRef = useRef<HTMLDivElement>(null);

@@ -54,6 +54,28 @@ export function writeLS(key: string, value: string): void {
   }
 }
 
+/**
+ * Удаляет инстансные ключи панелей, которых больше нет (frame:embed:<инд>:p:<pid>:*
+ * с pid не из `live`). Зовёт песочница на маунте со списком id своих панелей.
+ * Ключи расширения Т-терминала (?pid=) живут в partitioned-хранилище чужого
+ * сайта и сюда не попадают. Возвращает число удалённых ключей.
+ */
+export function gcPanelKeys(live: Set<string>): number {
+  const re = /^frame:embed:[^:]+:p:([^:]+):/;
+  const dead: string[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      const m = k ? re.exec(k) : null;
+      if (k && m && !live.has(m[1])) dead.push(k);
+    }
+    for (const k of dead) localStorage.removeItem(k);
+  } catch {
+    /* partitioned / private mode */
+  }
+  return dead.length;
+}
+
 export function readBoolLS(key: string, fallback: boolean): boolean {
   return readLS(key, fallback ? 'true' : 'false') === 'true';
 }
