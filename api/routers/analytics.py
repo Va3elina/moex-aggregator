@@ -339,6 +339,16 @@ def _serialize_jsonb(payload: Optional[dict]) -> Optional[str]:
 # чем tzdata в slim-образе. В SQL зона берётся из базы Postgres.
 MSK = timezone(timedelta(hours=3))
 VISIT_GAP_MIN = 30
+
+
+def _utc_iso(ts: Optional[datetime]) -> Optional[str]:
+    """server_ts хранится naive-UTC. Без зоны браузер читает строку как
+    местное время и показывает админу UTC вместо МСК (−3 часа)."""
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.isoformat()
 BOUNCE_MAX_SEC = 15
 MAX_RANGE_DAYS = 366
 
@@ -3055,8 +3065,8 @@ def _collapse_heartbeats(rows: list) -> list:
                 {
                     "beats": len(run),
                     "mins": mins,
-                    "from": oldest[3].isoformat(),
-                    "to": newest[3].isoformat(),
+                    "from": _utc_iso(oldest[3]),
+                    "to": _utc_iso(newest[3]),
                 },
                 newest[3],
                 newest[4],
@@ -3130,8 +3140,8 @@ def guest_detail(
     return {
         "guest": {
             "visitor_id": visitor_id,
-            "first_seen_at": prof[0].isoformat() if prof[0] else None,
-            "last_seen_at": prof[1].isoformat() if prof[1] else None,
+            "first_seen_at": _utc_iso(prof[0]),
+            "last_seen_at": _utc_iso(prof[1]),
             "events_total": int(prof[2] or 0),
             "device": prof[3],
             "country": prof[4],
@@ -3294,8 +3304,8 @@ def _activity_detail(conn, where: str, params: dict, days: int) -> dict:
             "period_days": days,
             "events": int(summary[0]) if summary else 0,
             "sessions": int(summary[1]) if summary else 0,
-            "first_active_ts": summary[2].isoformat() if summary and summary[2] else None,
-            "last_active_ts": summary[3].isoformat() if summary and summary[3] else None,
+            "first_active_ts": _utc_iso(summary[2]) if summary else None,
+            "last_active_ts": _utc_iso(summary[3]) if summary else None,
             "avg_session_sec": int(summary[4]) if summary and summary[4] else 0,
             "total_time_sec": int(summary[5]) if summary and summary[5] else 0,
             "active_days": int(summary[6]) if summary and summary[6] else 0,
@@ -3303,7 +3313,7 @@ def _activity_detail(conn, where: str, params: dict, days: int) -> dict:
         "timeline": [
             {
                 "event_type": t[0], "event_path": t[1], "payload": t[2],
-                "server_ts": t[3].isoformat(), "country": t[4],
+                "server_ts": _utc_iso(t[3]), "country": t[4],
                 "device": t[5], "session_id": t[6],
             } for t in timeline
         ],
@@ -3313,7 +3323,7 @@ def _activity_detail(conn, where: str, params: dict, days: int) -> dict:
         ],
         "top_assets": [
             {"secid": r[0], "name": names.get(r[0]), "views": int(r[1]),
-             "last_ts": r[2].isoformat() if r[2] else None} for r in top_assets
+             "last_ts": _utc_iso(r[2])} for r in top_assets
         ],
         "top_exports": [{"indicator": r[0], "count": int(r[1])} for r in top_exports],
         "devices": [{"device": r[0], "sessions": int(r[1])} for r in devices],
