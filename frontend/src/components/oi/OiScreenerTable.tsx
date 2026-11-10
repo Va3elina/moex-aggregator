@@ -782,14 +782,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                   {r.net_pct == null ? (
                     <span style={{ color: 'var(--text-muted)' }}>—</span>
                   ) : (
-                    <>
-                      <span style={{ fontSize: 'var(--fs-base)', fontWeight: 700, color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
-                        {Math.round((100 + Math.abs(r.net_pct)) / 2)}%
-                      </span>
-                      <span style={{ marginLeft: 5, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                        {r.net_pct >= 0 ? t('лонг') : t('шорт')}
-                      </span>
-                    </>
+                    // Сторона читается по цвету — без слова «лонг/шорт»; шрифт как у числа «Силы».
+                    <span style={{ fontSize: 'var(--fs-base)', fontWeight: 800, letterSpacing: '0.01em', color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
+                      {Math.round((100 + Math.abs(r.net_pct)) / 2)}%
+                    </span>
                   )}
                 </div>
 
