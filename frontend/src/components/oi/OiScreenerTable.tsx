@@ -451,7 +451,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     if (rec) {
       return (
         <span
-          style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', cursor: 'help' }}
+          style={{ fontSize: 'var(--fs-base)', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', cursor: 'help' }}
           title={rec.title}
         >
           {rec.text}
@@ -477,7 +477,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             ? t('{{group}} резко нарастили короткую позицию по «{{name}}»: изменение чистой позиции {{over}} в {{ratio}} сильнее {{usual}} («резко» — от {{thr}}). Обратная сторона ({{mirror}}) держит зеркальную позицию.', vars)
             : t('{{group}} резко сократили короткую позицию по «{{name}}»: изменение чистой позиции {{over}} в {{ratio}} сильнее {{usual}} («резко» — от {{thr}}). Обратная сторона ({{mirror}}) держит зеркальную позицию.', vars));
       return (
-        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' }} title={full}>
+        <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' }} title={full}>
           {verb}
         </span>
       );
@@ -500,7 +500,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
               : t('Мало истории для расчёта ATR-14.'))
           : t('Сдвиг чистой позиции {{over}} в пределах обычного{{ratio}} — ниже порога «резко» ({{thr}}).', { over: W.over, ratio: r.ratio != null ? ` (${fmtRatio(r.ratio)})` : '', thr: W.thr });
     return (
-      <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-secondary)' }} title={noteTitle}>{note}</span>
+      <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500, color: 'var(--text-secondary)' }} title={noteTitle}>{note}</span>
     );
   };
 
@@ -533,7 +533,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // «Доля» — 88px между кометой и «Силой»: доля стороны перевеса («66% шорт»)
   // в тех же единицах, что открытые позиции МосБиржи. Самый длинный текст —
   // «100% лонг».
-  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 88px 96px 140px 72px';
+  const gridCols = 'minmax(180px, 222px) minmax(360px, 1fr) 88px 96px 164px 72px';
 
   // Оптическая компенсация для «Силы»: слева от числа стоит дорожка кометы
   // впритык (зазор = gap), а справа к gap прибавляется половина свободного
