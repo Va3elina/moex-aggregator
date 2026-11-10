@@ -9,10 +9,10 @@
  * добавляет колонку: на среднесроке и сила, и хвост кометы, и все дельты
  * считаны за 14 торговых дней, поэтому тексты («за день» → «за 2 недели»,
  * «вчера» → «2 недели назад») и порог «резко» (2× → 3×) едут вместе с ним. Числа перекоса из строк убраны — точные значения в подсказке кометы;
- * «Сила» (ATR-кратность) — пилюля-бейдж «4,3×» с тремя абсолютными ступенями от
- * порога «резко»: ×1 контур цветом текста, ×1,5 контур accent, ×2 (или
- * сильнейшая строка выборки от ×1,5) заливка accent с кольцом. Относительный градиент «теплоты» пробовали и убрали: он
- * красил лидера тихого дня как настоящий выброс.
+ * «Сила» (ATR-кратность) — голое число «4,3×» без рамки и цвета: резкие —
+ * чёрным жирным, тихие — серым (2026-11). Пилюля с оранжевым контуром/заливкой
+ * перетягивала акцент на второстепенную колонку. Рекорды в «Сигнале» и левая
+ * грань строки тоже без accent; оранжевыми остались только звёзды избранного.
  * Заголовок колонки — «Сила»: аббревиатура «×N» ничего не
  * сообщала, а само число уже читается как кратность.
  *
@@ -381,38 +381,29 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     return null;
   };
 
-  // ── Сила: пилюля-бейдж «4,3×» с тремя ступенями (как в первом дизайне
-  // скринера). Ступени абсолютные и привязаны к порогу «резко» этого горизонта
-  // (2× за день / 3× за 2 недели): x1 — обычная резкость (контур цветом
-  // текста), x1,5 — сильная (контур accent), x2 — особо сильная (заливка
-  // accent + кольцо). Градиент «теплоты» убран: он красил лидера тихого дня
-  // так же ярко, как настоящий выброс, и одинаковое число в разные дни
-  // выглядело по-разному.
+  // ── Сила: голое число «4,3×». Выше порога «резко» этого горизонта
+  // (2× за день / 3× за 2 недели) — чёрным жирным, ниже — серым. Ступени
+  // «сильное / особо сильное» остались только в подсказке: оранжевая пилюля
+  // перетягивала акцент на второстепенную колонку (2026-11).
   const ratioCell = (r: OiScreenerRow) => {
     if (r.ratio == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
-    const pill: CSSProperties = {
-      ...MONO, fontSize: 'var(--fs-base)', fontWeight: 800, letterSpacing: '0.01em',
+    const num: CSSProperties = {
+      ...MONO, fontSize: 'var(--fs-base)', letterSpacing: '0.01em',
       whiteSpace: 'nowrap', display: 'inline-block',
-      padding: '3px 11px', borderRadius: 999, border: '2px solid',
     };
-    // Ниже порога «резко» — та же пилюля, но приглушённая: колонка должна
-    // читаться как одна колонка бейджей, а не прыгать между формами.
+    // Ниже порога «резко» — серым, обычной жирности.
     if (r.status !== 'sharp') {
       return (
         <span
           title={t('{{move}} {{group}} в {{ratio}} от {{usual}} — ниже порога «резко» ({{thr}})', { move: W.move, group: groupGen, ratio: fmtRatio(r.ratio), usual: W.usual, thr: W.thr })}
-          style={{ ...pill, borderColor: 'var(--text-muted)', color: 'var(--text-muted)' }}
+          style={{ ...num, fontWeight: 500, color: 'var(--text-muted)' }}
         >
           {fmtRatio(r.ratio)}
         </span>
       );
     }
-    // Заливка: либо абсолютный выброс (2 порога — 4× за день, 6× за 2 недели),
-    // либо лидер выборки, если он хотя бы в 1,5 порога. Второе условие нужно,
-    // потому что чисто абсолютный порог не брался целыми днями (типичный
-    // максимум дня 3,5…4,5× при пороге «резко» 2×) — заливки просто не было
-    // видно. Теперь сильнейшая строка дня залита почти всегда, а в бурный день
-    // к ней добавляются все настоящие выбросы.
+    // Ступень для подсказки: «особо сильное» — абсолютный выброс (2 порога)
+    // или лидер выборки от 1,5 порога; «сильное» — от 1,5 порога.
     const leader = stats.ratioHi != null && r.ratio >= stats.ratioHi - 1e-9;
     const strong = r.ratio >= sharpThr * 2 || (leader && r.ratio >= sharpThr * 1.5);
     const mid = r.ratio >= sharpThr * 1.5;
@@ -422,13 +413,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     return (
       <span
         title={t('{{move}} {{group}} в {{ratio}} сильнее {{usual}}{{note}}', { move: W.move, group: groupGen, ratio: fmtRatio(r.ratio), usual: W.usual, note: tierNote })}
-        style={{
-          ...pill,
-          borderColor: mid ? 'var(--accent)' : 'var(--text-primary)',
-          background: strong ? 'var(--accent)' : 'transparent',
-          color: strong ? 'var(--text-inverse)' : mid ? 'var(--accent)' : 'var(--text-primary)',
-          boxShadow: strong ? '0 0 0 4px color-mix(in oklab, var(--accent) 22%, transparent)' : undefined,
-        }}
+        style={{ ...num, fontWeight: 800, color: 'var(--text-primary)' }}
       >
         {fmtRatio(r.ratio)}
       </span>
@@ -445,7 +430,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     if (rec) {
       return (
         <span
-          style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap', cursor: 'help' }}
+          style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', cursor: 'help' }}
           title={rec.title}
         >
           {rec.text}
@@ -523,8 +508,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   // Только фиксированное число: шапка и строки — РАЗНЫЕ grid-контейнеры, и
   // max-content посчитал бы их независимо (заголовок «СИГНАЛ» узкий, строки
   // широкие) — колонки разъехались бы. При смене формулировок пересчитать.
-  // «Сила» — 96px, а не 64: пилюля-бейдж с рамкой и падингами шире голого
-  // числа, и на трёхзначных днях («15,2×») она не должна лезть на соседей.
+  // «Сила» — 96px: с запасом под трёхзначные дни («15,2×»).
   // «Доля» — 88px между кометой и «Силой»: доля стороны перевеса («66% шорт»)
   // в тех же единицах, что открытые позиции МосБиржи. Самый длинный текст —
   // «100% лонг».
@@ -731,7 +715,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                   // рендерилась рвано — часть строк выглядела без разделителя.
                   borderBottom: '1px solid var(--border-color, rgba(128,128,128,0.18))',
                   // Акцентная левая грань = в строке рекорд (перекоса или позиции).
-                  borderLeft: `3px solid ${r.record || r.net_record ? 'var(--accent)' : 'transparent'}`,
+                  // Левая грань прозрачная всегда (подсветку рекордов accent убрали, 2026-11);
+                  // ширину держим, чтобы не сдвигать сетку относительно шапки.
+                  borderLeft: '3px solid transparent',
                   cursor: 'pointer',
                   opacity: r.status === 'illiquid' || r.status === 'nodata' ? 0.55 : 1,
                 }}
@@ -782,16 +768,15 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                   {r.net_pct == null ? (
                     <span style={{ color: 'var(--text-muted)' }}>—</span>
                   ) : (
-                    // Сторона читается по цвету — без слова «лонг/шорт». Кегль ×1,125 к «Силе»:
-                    // при равных 16px голое число выглядело мельче числа в пилюле с рамкой
-                    // (подобрано на проде на глаз, 2026-11).
-                    <span style={{ fontSize: 'calc(var(--fs-base) * 1.125)', fontWeight: 800, letterSpacing: '0.01em', color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
+                    // Сторона читается по цвету — без слова «лонг/шорт». Кегль как у «Силы»:
+                    // обе колонки — голые числа (пилюлю у «Силы» убрали, 2026-11).
+                    <span style={{ fontSize: 'var(--fs-base)', fontWeight: 800, letterSpacing: '0.01em', color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
                       {Math.round((100 + Math.abs(r.net_pct)) / 2)}%
                     </span>
                   )}
                 </div>
 
-                {/* Сила — пилюля-бейдж 4,3× со ступенями по порогу «резко» */}
+                {/* Сила — голое число 4,3×: резкие жирным, тихие серым */}
                 <div style={{ justifySelf: 'center' }}>{ratioCell(r)}</div>
 
                 {/* Сигнал: рекорд, глагол резкого движения или пометка */}
@@ -827,8 +812,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         <div className="flex items-center justify-between flex-wrap" style={{ gap: 8, padding: '14px 4px 0', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
           <span>
             {isMed
-              ? t('Сила 4,3× значит: за 2 недели позиция сдвинулась в 4,3 раза сильнее, чем этот актив обычно проходит за такой срок. Медленное движение, которое копилось неделями, — в дневной ленте его не видно. Бейдж с цветной рамкой — сильное движение (от {{mid}}), залитый — особо сильное (от {{strong}} или сильнейшее в списке). Точный перекос и дельта — при наведении на комету.', { mid: fmtRatio(sharpThr * 1.5), strong: fmtRatio(sharpThr * 2) })
-              : t('Сила 4,3× значит: за день позиция сдвинулась в 4,3 раза сильнее, чем этот актив двигается обычно (среднее за 14 дней). Бейдж с цветной рамкой — сильное движение (от {{mid}}), залитый — особо сильное (от {{strong}} или сильнейшее в списке). Точный перекос и дневная дельта — при наведении на комету.', { mid: fmtRatio(sharpThr * 1.5), strong: fmtRatio(sharpThr * 2) })}
+              ? t('Сила 4,3× значит: за 2 недели позиция сдвинулась в 4,3 раза сильнее, чем этот актив обычно проходит за такой срок. Медленное движение, которое копилось неделями, — в дневной ленте его не видно. Жирным — резкое движение (от {{thr}}). Точные доли и сдвиг — при наведении на комету.', { thr: fmtRatio(sharpThr) })
+              : t('Сила 4,3× значит: за день позиция сдвинулась в 4,3 раза сильнее, чем этот актив двигается обычно (среднее за 14 дней). Жирным — резкое движение (от {{thr}}). Точные доли и дневной сдвиг — при наведении на комету.', { thr: fmtRatio(sharpThr) })}
           </span>
           <span style={MONO}>{pluralAssets(visible.length)} · {groupWord} · {isMed ? t('2 недели') : t('день')}</span>
         </div>
