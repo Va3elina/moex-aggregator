@@ -9,8 +9,8 @@
  * добавляет колонку: на среднесроке и сила, и хвост кометы, и все дельты
  * считаны за 14 торговых дней, поэтому тексты («за день» → «за 2 недели»,
  * «вчера» → «2 недели назад») и порог «резко» (2× → 3×) едут вместе с ним. Числа перекоса из строк убраны — точные значения в подсказке кометы;
- * «Сила» (ATR-кратность) — голое число «4,3×» без рамки и цвета: резкие —
- * чёрным жирным, тихие — серым (2026-11). Пилюля с оранжевым контуром/заливкой
+ * «Сила» (ATR-кратность) — голое число «4,3×» шрифтом «Доли»: от 2× — чёрным,
+ * слабее — серым (STRENGTH_ACCENT_THR, 2026-11). Пилюля с оранжевым контуром/заливкой
  * перетягивала акцент на второстепенную колонку. Рекорды в «Сигнале» и левая
  * грань строки тоже без accent; оранжевыми остались только звёзды избранного.
  * Заголовок колонки — «Сила»: аббревиатура «×N» ничего не
@@ -94,6 +94,11 @@ function pluralAssets(n: number): string {
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} актива`;
   return `${n} активов`;
 }
+
+// Порог визуального акцента числа «Силы» (чёрный вместо серого) — одинаков для
+// дня и 2 недель. Не путать с порогом «резко» (sharpThr), от которого зависят
+// тексты и алерты.
+const STRENGTH_ACCENT_THR = 2;
 
 const MONO: CSSProperties = {
   fontFamily: 'var(--font-mono, ui-monospace, monospace)',
@@ -381,22 +386,24 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     return null;
   };
 
-  // ── Сила: голое число «4,3×». Выше порога «резко» этого горизонта
-  // (2× за день / 3× за 2 недели) — чёрным жирным, ниже — серым. Ступени
+  // ── Сила: голое число «4,3×» шрифтом «Доли». От STRENGTH_ACCENT_THR (2×)
+  // на обоих горизонтах — чёрным, ниже — серым. Ступени
   // «сильное / особо сильное» остались только в подсказке: оранжевая пилюля
   // перетягивала акцент на второстепенную колонку (2026-11).
   const ratioCell = (r: OiScreenerRow) => {
     if (r.ratio == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
     const num: CSSProperties = {
       ...MONO, fontSize: 'var(--fs-base)', letterSpacing: '0.01em',
-      whiteSpace: 'nowrap', display: 'inline-block',
+      whiteSpace: 'nowrap', display: 'inline-block', fontWeight: 800,
+      // Шрифт как у «Доли»; акцент только цветом и от STRENGTH_ACCENT_THR (2×)
+      // на обоих горизонтах — ниже порога «резко» недельной ленты (3×).
+      color: r.ratio >= STRENGTH_ACCENT_THR ? 'var(--text-primary)' : 'var(--text-muted)',
     };
-    // Ниже порога «резко» — серым, обычной жирности.
     if (r.status !== 'sharp') {
       return (
         <span
           title={t('{{move}} {{group}} в {{ratio}} от {{usual}} — ниже порога «резко» ({{thr}})', { move: W.move, group: groupGen, ratio: fmtRatio(r.ratio), usual: W.usual, thr: W.thr })}
-          style={{ ...num, fontWeight: 500, color: 'var(--text-muted)' }}
+          style={num}
         >
           {fmtRatio(r.ratio)}
         </span>
@@ -413,7 +420,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     return (
       <span
         title={t('{{move}} {{group}} в {{ratio}} сильнее {{usual}}{{note}}', { move: W.move, group: groupGen, ratio: fmtRatio(r.ratio), usual: W.usual, note: tierNote })}
-        style={{ ...num, fontWeight: 800, color: 'var(--text-primary)' }}
+        style={num}
       >
         {fmtRatio(r.ratio)}
       </span>
@@ -430,7 +437,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     if (rec) {
       return (
         <span
-          style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', cursor: 'help' }}
+          style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', cursor: 'help' }}
           title={rec.title}
         >
           {rec.text}
@@ -456,7 +463,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             ? t('{{group}} резко нарастили короткую позицию по «{{name}}»: изменение чистой позиции {{over}} в {{ratio}} сильнее {{usual}} («резко» — от {{thr}}). Обратная сторона ({{mirror}}) держит зеркальную позицию.', vars)
             : t('{{group}} резко сократили короткую позицию по «{{name}}»: изменение чистой позиции {{over}} в {{ratio}} сильнее {{usual}} («резко» — от {{thr}}). Обратная сторона ({{mirror}}) держит зеркальную позицию.', vars));
       return (
-        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }} title={full}>
+        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' }} title={full}>
           {verb}
         </span>
       );
@@ -671,7 +678,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             >
               {t('Сила')}{sortArrow('ratio')}
             </button>
-            <span style={{ ...headCell, justifySelf: 'center' }}>{t('Сигнал')}</span>
+            {/* «Изменение», а не «Сигнал»: колонка описывает, что произошло с
+                позицией, и не должна читаться как торговая рекомендация. */}
+            <span style={{ ...headCell, justifySelf: 'center' }}>{t('Изменение')}</span>
             <span />
           </div>
 
@@ -812,8 +821,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         <div className="flex items-center justify-between flex-wrap" style={{ gap: 8, padding: '14px 4px 0', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
           <span>
             {isMed
-              ? t('Сила 4,3× значит: за 2 недели позиция сдвинулась в 4,3 раза сильнее, чем этот актив обычно проходит за такой срок. Медленное движение, которое копилось неделями, — в дневной ленте его не видно. Жирным — резкое движение (от {{thr}}). Точные доли и сдвиг — при наведении на комету.', { thr: fmtRatio(sharpThr) })
-              : t('Сила 4,3× значит: за день позиция сдвинулась в 4,3 раза сильнее, чем этот актив двигается обычно (среднее за 14 дней). Жирным — резкое движение (от {{thr}}). Точные доли и дневной сдвиг — при наведении на комету.', { thr: fmtRatio(sharpThr) })}
+              ? t('Сила 4,3× значит: за 2 недели позиция сдвинулась в 4,3 раза сильнее, чем этот актив обычно проходит за такой срок. Медленное движение, которое копилось неделями, — в дневной ленте его не видно. Чёрным — движение от {{thr}}, серым — слабее. Точные доли и сдвиг — при наведении на комету.', { thr: fmtRatio(STRENGTH_ACCENT_THR) })
+              : t('Сила 4,3× значит: за день позиция сдвинулась в 4,3 раза сильнее, чем этот актив двигается обычно (среднее за 14 дней). Чёрным — движение от {{thr}}, серым — слабее. Точные доли и дневной сдвиг — при наведении на комету.', { thr: fmtRatio(STRENGTH_ACCENT_THR) })}
           </span>
           <span style={MONO}>{pluralAssets(visible.length)} · {groupWord} · {isMed ? t('2 недели') : t('день')}</span>
         </div>
