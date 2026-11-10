@@ -185,8 +185,20 @@ export function useDrawTools(persistKey: string): DrawTools {
     patchSharedDraw({ keep: typeof v === 'function' ? v(getSharedDraw().keep) : v }), []);
   const [drawings, setDrawings] = useState<LwDrawing[]>([]);
   const [selectedDrawId, setSelectedDrawId] = useState<string | null>(null);
-  const [drawHidden, setDrawHidden] = useState(false);
-  const [drawLocked, setDrawLocked] = useState(false);
+  // «Скрыть рисунки» / «Замок» — персист на индикатор (frame:embed:<инд>:drawHidden),
+  // не на инструмент: это режим окна, а не свойство конкретного актива.
+  const drawPrefKey = persistKey.replace(/^(frame:embed:[^:]+:).*$/, '$1');
+  const [drawHidden, setDrawHiddenRaw] = useState(() => rd(`${drawPrefKey}drawHidden`, '0') === '1');
+  const [drawLocked, setDrawLockedRaw] = useState(() => rd(`${drawPrefKey}drawLocked`, '0') === '1');
+  const drawPrefReady = useRef(false);
+  useEffect(() => {
+    if (!drawPrefReady.current) { drawPrefReady.current = true; return; }
+    wr(`${drawPrefKey}drawHidden`, drawHidden ? '1' : '0');
+    wr(`${drawPrefKey}drawLocked`, drawLocked ? '1' : '0');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawHidden, drawLocked]);
+  const setDrawHidden = setDrawHiddenRaw;
+  const setDrawLocked = setDrawLockedRaw;
   const [layersOpen, setLayersOpen] = useState(false);
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
   const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);

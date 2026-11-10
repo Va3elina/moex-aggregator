@@ -276,7 +276,7 @@ export default function FundsMoneyPage() {
 
     // ?funds= из диплинка применяется один раз (после загрузки funds); флаг от повторов.
     const fundsFilterAppliedRef = useRef(false);
-    const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
+    const [collapsedSubcats, setCollapsedSubcats] = usePersistedSet<string>('frame:funds:collapsedSubcats');
     const [navSortDir, setNavSortDir] = useState<'desc' | 'asc'>('desc');
     // Выбор фондов вынесен в разворачивающийся виджет-модалку (масштаб как у
     // селектора актива на ОИ): таблетка сверху → модалка со списком фондов.

@@ -12,10 +12,18 @@ import { readPalette, applyPalette } from '../hooks/useChartPalette';
  * usePersistedState-инициализаторы читают уже гидрированный localStorage,
  * менять их не нужно).
  *
- * Механика записи: install() оборачивает localStorage.setItem — любая запись
- * отслеживаемого ключа планирует дебаунс-PUT полного снапшота. Записи из
- * iframe-панелей песочницы (embed на том же origin) в своём контексте setItem
- * не патчат наш, но порождают storage-событие в top-окне — его тоже слушаем.
+ * Механика записи: install() оборачивает localStorage.setItem/removeItem —
+ * любая запись отслеживаемого ключа планирует дебаунс-PUT полного снапшота.
+ * Записи из iframe-панелей песочницы (embed на том же origin) в своём
+ * контексте setItem не патчат наш, но порождают storage-событие в top-окне —
+ * его тоже слушаем.
+ *
+ * Неподтверждённые локальные изменения (PENDING_KEY): каждый изменённый ключ
+ * помечается временем изменения и снимается с пометки только после успешного
+ * PUT. Pull при загрузке НЕ перетирает помеченные ключи серверными значениями.
+ * Без этого любой сбой пуша (протухший токен в keepalive при закрытии вкладки,
+ * 400 от сервера, сеть) приводил к откату: на следующей загрузке старый
+ * серверный снимок затирал свежий тумблер, и настройка «не сохранялась».
  *
  * Гварды против затирания серверных настроек мусором:
  *  - пуш только из top-окна и НЕ на /embed: embed в Т-терминале живёт в
@@ -26,7 +34,8 @@ import { readPalette, applyPalette } from '../hooks/useChartPalette';
  *    пока не знаем его состояние.
  *
  * Конфликты: last-write-wins целиком блобом (один человек, устройства меняются
- * по очереди). Ключи, есть только локально, доливаются на сервер после pull.
+ * по очереди), кроме неподтверждённых локальных ключей — они побеждают.
+ * Ключи, есть только локально, доливаются на сервер после pull.
  */
 
 /** Отслеживаемые префиксы: настройки индикаторов/песочницы/embed (frame:*),
@@ -38,6 +47,14 @@ const SYNC_KEYS = new Set(['theme', 'accent', 'favoriteInstruments', 'favoriteFu
 /** Девайс-локальные исключения из frame:*: guard перезагрузки чанков и
  *  межвкладочный leader-election аномалий — синкать их бессмысленно/вредно. */
 const EXCLUDE_KEYS = new Set(['frame:chunk-reload-at', 'frame:embed:anomaly:leader']);
+
+/** {ключ: время локального изменения, мс} — изменения, ещё не подтверждённые
+ *  сервером. Префикс `frame_` → сам не синкается. */
+const PENDING_KEY = 'frame_sync_pending';
+/** Старый серверный лимит ключей. Снапшоты больше него сервер отклонял (400),
+ *  то есть локальное состояние таких юзеров новее серверного — см. hydrate. */
+const LEGACY_MAX_KEYS = 1000;
+const LEGACY_DONE_KEY = 'frame_sync_legacy_done';
 
 const DEBOUNCE_MS = 1500;
 
@@ -64,15 +81,64 @@ function hasSession(): boolean {
   }
 }
 
-// Оригинальный setItem — для применения серверного снапшота без ре-триггера пуша.
+// Оригинальные методы — для применения серверного снапшота и служебных
+// записей без ре-триггера пуша.
 const rawSetItem = typeof window !== 'undefined'
   ? Storage.prototype.setItem.bind(window.localStorage)
+  : null;
+const rawRemoveItem = typeof window !== 'undefined'
+  ? Storage.prototype.removeItem.bind(window.localStorage)
   : null;
 
 let installed = false;
 let hydrated = false;
 let dirty = false;
 let timer: number | undefined;
+
+// Кэш в памяти: markPending зовётся на каждую запись, парсить JSON каждый раз
+// незачем. Пишет пометки только top-окно (см. markPending), так что кэш не
+// расходится с хранилищем из-за iframe-панелей.
+let pendingCache: Record<string, number> | null = null;
+
+function readPending(): Record<string, number> {
+  if (pendingCache) return pendingCache;
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    const v = raw ? JSON.parse(raw) : null;
+    pendingCache = v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, number> : {};
+  } catch {
+    pendingCache = {};
+  }
+  return pendingCache;
+}
+
+function writePending(p: Record<string, number>): void {
+  pendingCache = p;
+  if (!rawSetItem || !rawRemoveItem) return;
+  try {
+    if (Object.keys(p).length === 0) rawRemoveItem(PENDING_KEY);
+    else rawSetItem(PENDING_KEY, JSON.stringify(p));
+  } catch { /* quota */ }
+}
+
+function markPending(key: string): void {
+  // iframe-панели песочницы помечать не должны: их запись долетит до top-окна
+  // storage-событием, и пометит уже оно (единственный писатель PENDING_KEY).
+  if (!isTopApp()) return;
+  const p = readPending();
+  p[key] = Date.now();
+  writePending(p);
+}
+
+/** Снять пометку с ключей, изменённых не позже `upTo` (их значение ушло в PUT). */
+function clearPending(upTo: number): void {
+  const p = readPending();
+  let changed = false;
+  for (const [k, ts] of Object.entries(p)) {
+    if (ts <= upTo) { delete p[k]; changed = true; }
+  }
+  if (changed) writePending(p);
+}
 
 function collect(): Record<string, string> {
   const data: Record<string, string> = {};
@@ -90,13 +156,15 @@ function collect(): Record<string, string> {
 async function push(): Promise<void> {
   if (!hydrated || !isTopApp() || !hasSession()) return;
   dirty = false;
+  const startedAt = Date.now();
   try {
     const resp = await apiFetch('/api/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data: collect() }),
     });
-    if (!resp.ok) dirty = true; // повторим при следующем изменении
+    if (resp.ok) clearPending(startedAt);
+    else dirty = true; // повторим при следующем изменении / загрузке
   } catch {
     dirty = true;
   }
@@ -110,7 +178,8 @@ function schedule(): void {
 }
 
 /** Синхронный best-effort пуш при уходе со страницы (keepalive переживает
- *  закрытие вкладки; apiFetch с refresh здесь не успеет). */
+ *  закрытие вкладки; apiFetch с refresh здесь не успеет). Результат неизвестен,
+ *  поэтому пометки pending НЕ снимаем — следующая загрузка их дошлёт. */
 function flushOnHide(): void {
   if (!dirty || !hydrated || !isTopApp() || !hasSession()) return;
   const token = localStorage.getItem('access_token');
@@ -141,20 +210,36 @@ export async function hydrateSettingsFromServer(): Promise<void> {
     const server = body.data;
     hydrated = true;
 
+    const local = collect();
     if (!server || Object.keys(server).length === 0) {
       // Сервер пуст (первый вход с этого аккаунта) — заливаем локальное.
-      if (Object.keys(collect()).length > 0) schedule();
+      if (Object.keys(local).length > 0) schedule();
       return;
     }
 
-    let localOnly = false;
-    for (const key of Object.keys(collect())) {
-      if (!(key in server)) localOnly = true;
+    // Локальные изменения, которые сервер ещё не подтвердил, — не трогаем.
+    const pending = readPending();
+    // Снапшот больше старого лимита сервер отклонял → сервер замёрз, а локальное
+    // состояние новее. Один раз (флаг LEGACY_DONE_KEY) считаем всё локальное
+    // неподтверждённым — дальше обычный режим.
+    if (!localStorage.getItem(LEGACY_DONE_KEY)) {
+      if (Object.keys(local).length > LEGACY_MAX_KEYS) {
+        const now = Date.now();
+        for (const k of Object.keys(local)) if (!(k in pending)) pending[k] = now;
+        writePending(pending);
+      }
+      try { rawSetItem(LEGACY_DONE_KEY, '1'); } catch { /* quota */ }
+    }
+
+    let needPush = Object.keys(pending).length > 0;
+    for (const key of Object.keys(local)) {
+      if (!(key in server)) needPush = true;
     }
     for (const [key, value] of Object.entries(server)) {
       // Применяем только отслеживаемые строки: серверный блоб не должен уметь
       // писать произвольные ключи (access_token и пр.).
       if (typeof value !== 'string' || !isTracked(key)) continue;
+      if (key in pending) { needPush = true; continue; }
       try { rawSetItem(key, value); } catch { /* quota */ }
     }
 
@@ -167,8 +252,9 @@ export async function hydrateSettingsFromServer(): Promise<void> {
       applyPalette(readPalette());
     } catch { /* не критично */ }
 
-    // Локальные ключи, которых нет на сервере, доливаем (мердж-вверх).
-    if (localOnly) schedule();
+    // Локальные ключи, которых нет на сервере, и неподтверждённые изменения
+    // доливаем (мердж-вверх).
+    if (needPush) schedule();
   } catch { /* сеть — молча, синк отключён до следующей загрузки */ }
 }
 
@@ -176,21 +262,25 @@ export async function hydrateSettingsFromServer(): Promise<void> {
  * Ставит перехват записей. Зовётся один раз из main.tsx до рендера.
  */
 export function installSettingsSync(): void {
-  if (installed || typeof window === 'undefined' || !rawSetItem) return;
+  if (installed || typeof window === 'undefined' || !rawSetItem || !rawRemoveItem) return;
   installed = true;
 
   // Собственная запись поверх метода прототипа: все вызовы
-  // localStorage.setItem(...) по проекту попадают сюда.
+  // localStorage.setItem/removeItem(...) по проекту попадают сюда.
   window.localStorage.setItem = (key: string, value: string): void => {
     rawSetItem(key, value);
-    if (isTracked(key)) schedule();
+    if (isTracked(key)) { markPending(key); schedule(); }
+  };
+  window.localStorage.removeItem = (key: string): void => {
+    rawRemoveItem(key);
+    if (isTracked(key)) { markPending(key); schedule(); }
   };
 
   // Записи из iframe-панелей песочницы и других вкладок (storage-событие не
   // стреляет в контексте, который писал, — только в остальных). key=null
   // игнорируем: это clear() либо наше собственное синтетическое событие.
   window.addEventListener('storage', (e) => {
-    if (e.key != null && isTracked(e.key)) schedule();
+    if (e.key != null && isTracked(e.key)) { markPending(e.key); schedule(); }
   });
 
   window.addEventListener('pagehide', flushOnHide);

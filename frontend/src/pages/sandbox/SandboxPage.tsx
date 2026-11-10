@@ -34,7 +34,7 @@ import {
 import './sandbox.css';
 import ThemeGlyph from '../../components/ThemeGlyph';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
-import { EmbedPidCtx } from '../embed/embedPersist';
+import { EmbedPidCtx, gcPanelKeys } from '../embed/embedPersist';
 import { ChartPrefsCtx, type ChartPrefs } from '../../components/chart/lwTypes';
 import { NoChartAnimCtx } from '../../components/chart/chartAnim';
 import FrameLogo from '../../components/FrameLogo';
@@ -417,6 +417,20 @@ export default function SandboxPage() {
     const prev = { de: de.style.overflow, bo: b.style.overflow, bm: b.style.margin };
     de.style.overflow = 'hidden'; b.style.overflow = 'hidden'; b.style.margin = '0';
     return () => { de.style.overflow = prev.de; b.style.overflow = prev.bo; b.style.margin = prev.bm; };
+  }, []);
+
+  // Уборка per-panel ключей закрытых панелей (frame:embed:<инд>:p:<pid>:*).
+  // Они копились бесконечно и раздули синк настроек до серверного лимита —
+  // после чего свежие тумблеры откатывались к старому серверному снимку.
+  // Только на маунте (undo закрытия панели в текущей сессии цел) и только при
+  // реальной сохранённой раскладке: дефолтная (битый/пустой LS_KEY) снесла бы
+  // настройки живых панелей.
+  useEffect(() => {
+    try { if (!localStorage.getItem(LS_KEY)) return; } catch { return; }
+    const live = new Set<string>();
+    for (const arr of Object.values(st.bySheet)) for (const p of arr || []) live.add(p.id);
+    if (live.size > 0) gcPanelKeys(live);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // персист (дебаунс 400мс — драг/ресайз дёргают state часто)

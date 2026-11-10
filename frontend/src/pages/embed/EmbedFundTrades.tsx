@@ -96,7 +96,17 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
     const saved = rd('frame:embed:fundtrades:period', '1m') as string;
     return saved === '3y' ? '1y' : (saved as MoversPeriod);
   });
-  const [selectedMoverFunds, setSelectedMoverFunds] = useState<Set<string>>(new Set());
+  // Выбор фондов «Общего портфеля» — персист (пустой/нет ключа = дефолт ниже).
+  const [selectedMoverFunds, setSelectedMoverFunds] = useState<Set<string>>(() => {
+    const raw = rd('frame:embed:fundtrades:moverFunds', '');
+    return new Set(raw ? raw.split(',').filter(Boolean) : []);
+  });
+  const moverFundsWriteReady = useRef(false);
+  useEffect(() => {
+    if (!moverFundsWriteReady.current) { moverFundsWriteReady.current = true; return; }
+    wr('frame:embed:fundtrades:moverFunds', Array.from(selectedMoverFunds).join(','));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMoverFunds]);
   const [moversData, setMoversData] = useState<FundTradesMovers | null>(null);
   const [moversStatus, setMoversStatus] = useState<LoadStatus>('idle');
 
