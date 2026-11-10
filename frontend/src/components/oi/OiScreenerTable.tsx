@@ -397,7 +397,9 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       whiteSpace: 'nowrap', display: 'inline-block', fontWeight: 800,
       // Шрифт как у «Доли»; акцент только цветом и от STRENGTH_ACCENT_THR (2×)
       // на обоих горизонтах — ниже порога «резко» недельной ленты (3×).
-      color: r.ratio >= STRENGTH_ACCENT_THR ? 'var(--text-primary)' : 'var(--text-muted)',
+      // Сравниваем ПОКАЗАННОЕ значение (до 0,1): 1,96 выводится как «2,0×» и
+      // не должно быть серым рядом с чёрным «2,0×».
+      color: Math.round(r.ratio * 10) / 10 >= STRENGTH_ACCENT_THR ? 'var(--text-primary)' : 'var(--text-muted)',
     };
     if (r.status !== 'sharp') {
       return (
