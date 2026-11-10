@@ -141,8 +141,8 @@ def records(cats: dict, raw: list) -> tuple[date | None, list]:
                 v = bars[-1]["flow"]
                 prev = next((b for b in reversed(bars[:-1]) if sgn * b["flow"] >= sgn * v), None)
                 out.append({**s, "tf": tf, "side": side, "window": w, "day": end, "flow": v,
-                            "start": bars[-1]["period_start"],
-                            "prev_day": prev and prev["period_end"], "prev_start": prev and prev["period_start"],
+                            "start": bars[-1].get("period_start"),
+                            "prev_day": prev and prev["period_end"], "prev_start": prev and prev.get("period_start"),
                             "prev_flow": prev and prev["flow"]})
     return last, out
 

@@ -201,7 +201,7 @@ def pending(cats: dict, raw: list, state: dict) -> tuple[list, dict]:
             if bars[i]["period_end"] > seen:
                 # цифры для повода завода (signals/funds_signal_leads.py): столбец события и сумма серии
                 run = bars[i - e["n"]:i] if e["kind"] == "break" else bars[i - e["n"] + 1:i + 1]
-                new.append({**s, **e, "tf": tf, "flow": bars[i]["flow"], "start": bars[i]["period_start"],
+                new.append({**s, **e, "tf": tf, "flow": bars[i]["flow"], "start": bars[i].get("period_start"),
                             "run_sum": round(sum(b["flow"] for b in run), 4)})
     return new, upd
 
