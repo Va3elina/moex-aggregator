@@ -109,6 +109,9 @@ function pluralAssets(n: number): string {
 // тексты и алерты.
 const STRENGTH_ACCENT_THR = 2;
 
+// Кегль чисел «Доли» и «Силы» — общий, ×1,2 к базовому (2026-11).
+const NUM_FS = 'calc(var(--fs-base) * 1.2)';
+
 const MONO: CSSProperties = {
   fontFamily: 'var(--font-mono, ui-monospace, monospace)',
   fontVariantNumeric: 'tabular-nums',
@@ -402,7 +405,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const ratioCell = (r: OiScreenerRow) => {
     if (r.ratio == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
     const num: CSSProperties = {
-      ...MONO, fontSize: 'var(--fs-base)', letterSpacing: '0.01em',
+      ...MONO, fontSize: NUM_FS, letterSpacing: '0.01em',
       whiteSpace: 'nowrap', display: 'inline-block', fontWeight: 800,
       // Шрифт как у «Доли»; акцент только цветом и от STRENGTH_ACCENT_THR (2×)
       // на обоих горизонтах — ниже порога «резко» недельной ленты (3×).
@@ -673,12 +676,16 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             >
               {t('Позиция {{group}}', { group: groupGen })}{sortArrow('skew')}
             </button>
-            <span
-              style={{ ...headCell, justifySelf: 'center' }}
+            {/* «Доля» — та же сортировка, что «Позиция» (перекос от лонга к шорту):
+                обе колонки показывают одно и то же, клик по любой работает. */}
+            <button
+              type="button"
+              style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, justifySelf: 'center' }}
+              onClick={() => clickSort('skew')}
               title={t('Доля открытых контрактов {{group}} на стороне перевеса: 66% шорт = 66% контрактов короткие. Сверяется с открытыми позициями МосБиржи.', { group: groupGen })}
             >
-              {t('Доля')}
-            </span>
+              {t('Доля')}{sortArrow('skew')}
+            </button>
             {/* Сила — числовая колонка: заголовок и число по центру, чтобы
                 отступы слева (комета) и справа (сигнал) были симметричны. */}
             <button
@@ -790,7 +797,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                   ) : (
                     // Сторона читается по цвету — без слова «лонг/шорт». Кегль как у «Силы»:
                     // обе колонки — голые числа (пилюлю у «Силы» убрали, 2026-11).
-                    <span style={{ fontSize: 'var(--fs-base)', fontWeight: 800, letterSpacing: '0.01em', color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
+                    <span style={{ fontSize: NUM_FS, fontWeight: 800, letterSpacing: '0.01em', color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
                       {Math.round((100 + Math.abs(r.net_pct)) / 2)}%
                     </span>
                   )}
