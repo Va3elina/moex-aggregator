@@ -1,8 +1,8 @@
 /**
  * PositionComet — «комета позиции» строки скринера сигналов ОИ.
  *
- * Ось перекоса ФИКСИРОВАНА −100…+100 (ноль по центру, слева шорт, справа
- * лонг) — строки сравнимы глазами. Три величины закодированы:
+ * Ось ФИКСИРОВАНА: слева 100% шорт, по центру поровну, справа 100% лонг
+ * (X головы = доля лонга = (net_pct + 100) / 2) — строки сравнимы глазами. Три величины закодированы:
  *   • X головы     = ГДЕ стоит толпа сейчас (у края = «полный лонг/шорт»);
  *   • длина хвоста = НА СКОЛЬКО сдвинулись за день: клин тянется от точки
  *     «вчера» к голове ПО САМОЙ ШКАЛЕ, поэтому резкий сдвиг виден резким;
@@ -151,10 +151,20 @@ export default function PositionComet({
     };
   }
 
+  // Подсказка в ДОЛЯХ, а не в перекосе: «шорт 66% / лонг 34%» сверяется с
+  // открытыми позициями МосБиржи один в один, а «перекос 32% шорт» (= 66 − 34)
+  // читали как «32% в шорте» (жалобы в комментариях, 2026-11). Доля стороны =
+  // (100 ± net) / 2 — ровно X головы на дорожке, так что картинка не меняется.
+  // Прошлое значение и сдвиг — в долях ТОЙ ЖЕ стороны, что сегодня.
   const sideWord = (isLong: boolean) => (isLong ? t('лонг') : t('шорт'));
-  const title = t('Перекос сегодня {{pct}} {{side}}', { pct: fmtPct(netPct), side: sideWord(long) })
-    + (netPctPrev != null ? ` · ${prevWord} ${fmtPct(netPctPrev)} ${sideWord(netPctPrev >= 0)}` : '')
-    + (delta != null ? ` · ${deltaWord} ${t('{{delta}} п.п.', { delta: fmtSigned(delta) })}` : '')
+  const share = (net: number) => (long ? 100 + net : 100 - net) / 2;
+  const shareNow = share(netPct);
+  const title = t('Сегодня {{side}} {{pct}} / {{other}} {{otherPct}}', {
+    side: sideWord(long), pct: fmtPct(shareNow),
+    other: sideWord(!long), otherPct: fmtPct(100 - shareNow),
+  })
+    + (netPctPrev != null ? ` · ${prevWord} ${sideWord(long)} ${fmtPct(share(netPctPrev))}` : '')
+    + (netPctPrev != null && delta != null ? ` · ${deltaWord} ${sideWord(long)} ${t('{{delta}} п.п.', { delta: fmtSigned(shareNow - share(netPctPrev)) })}` : '')
     + (ratio != null ? ` · ${t('сила ×{{ratio}}', { ratio: fmtDec(ratio) })}` : '');
 
   // border-box (глобальный preflight): ширина включает ободок 2px → +4 к
