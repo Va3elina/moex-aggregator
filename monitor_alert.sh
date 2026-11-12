@@ -82,7 +82,20 @@ ROWS=$(docker exec "$CONTAINER" psql -U postgres -d moex_db -tA -F'|' -c \
                 THEN interval '76 hours'
            -- Остальное (5-минутные фетчеры, oi_*) крутится непрерывно.
            ELSE interval '26 hours' END)
-   ORDER BY pipeline" 2>/dev/null || true)
+   -- Доставка черновиков завода: готовый черновик, который бот-ревьюер не отправил
+   -- за 2 часа (сам бот ждёт судью максимум 45 мин). Урок 12.11.2026: бот держал
+   -- старый секрет релея, ловил 403, черновики 10–12.11 копились молча — пайплайны
+   -- были зелёные, сломалась только отправка. Окно 7 дней — чтобы старые строки
+   -- без отметки не висели в «проблемных» вечно и не глушили edge-trigger.
+   UNION ALL
+   SELECT 'content_review_delivery', 'не доставлено ' || count(*),
+          round(EXTRACT(EPOCH FROM now()-min(updated_at))/3600, 1)
+   FROM content_candidates
+   WHERE status = 'draft_ready' AND draft_text IS NOT NULL AND reviewer_notified_at IS NULL
+     AND updated_at < now() - interval '2 hours'
+     AND created_at > now() - interval '7 days'
+   HAVING count(*) > 0
+   ORDER BY 1" 2>/dev/null || true)
 
 CURR_NAMES=$(printf '%s\n' "$ROWS" | awk -F'|' '$1 != "" {print $1}' | sort -u)
 PREV_NAMES=$(grep -v '^$' "$STATE_FILE" 2>/dev/null | sort -u || true)
@@ -99,9 +112,14 @@ if [ -n "$NEW" ]; then
 "
     fi
   done <<< "$ROWS"
+  HINT=""
+  if printf '%s\n' "$NEW" | grep -qx 'content_review_delivery'; then
+    HINT="Черновики: смотри \`logs/content_review_bot.log\`; 403 после правки .env = \`systemctl restart frame-content-review-bot frame-alert-bot\`
+"
+  fi
   log "ALERT new failures: $(echo "$NEW" | tr '\n' ' ')"
   send_msg "🔴 *Frame: пайплайн упал*
-${DETAIL}
+${DETAIL}${HINT}
 _Источник: pipeline_runs. Смотри \`docker logs frame-orchestrator-1\` / лог скрипта._"
 fi
 
