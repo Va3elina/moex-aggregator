@@ -1551,7 +1551,9 @@ export type IndicatorInside =
   | { kind: 'funds_money';
       categories: { key: string; people: number; views: number }[];
       views: { key: string; people: number }[];
-      funds: { ticker: string; people: number; name?: string; uk_id?: string | number | null }[] }
+      funds: { ticker: string; people: number; name?: string; uk_id?: string | number | null }[];
+      shown?: { ticker: string; people: number; name?: string; uk_id?: string | number | null }[];
+      actions?: { key: string; people: number; count: number }[] }
   | { kind: 'fund_trades';
       tabs: { key: string; people: number; views: number }[];
       assets: { name: string; people: number }[];
@@ -1601,6 +1603,14 @@ export interface FeaturesReport {
     /** Сколько людей сами сузили набор фондов на графике. */
     narrowed: number;
     funds: FeatureFund[];
+    /** Фонды, которые были на графике (в т.ч. при просмотре всей категории); с 13.11.2026. */
+    shown: FeatureFund[];
+    /** Действия на странице: ключ действия → людей и раз. */
+    actions: { key: string; people: number; count: number }[];
+    /** Поштучные вкл/выкл фондов: on — сколько раз включали, off — выключали. */
+    toggled: (FeatureFund & { on: number; off: number })[];
+    /** Какие замки тарифа видели на странице (featureName окна). */
+    paywalls: FeaturePick[];
   };
   fund_trades: {
     people: number; prev_people: number; tracked: number;
