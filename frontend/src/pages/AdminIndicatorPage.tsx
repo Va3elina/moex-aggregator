@@ -23,6 +23,7 @@ import { usePersistedState } from '../hooks/usePersistedState';
 import { useDelayedFlag } from '../hooks/useDelayedFlag';
 import { IndicatorGlyph, indicatorKey, indicatorPath } from '../components/admin/indicatorMeta';
 import { PAGE_NAMES } from '../components/admin/ActivityBlocks';
+import { FUNDS_ACTION } from '../components/admin/FeaturesBlock';
 import { getIndicator } from '../services/api';
 import type { IndicatorReport } from '../services/api';
 
@@ -232,6 +233,19 @@ function InsideBlock({ data }: { data: IndicatorReport }) {
               }))} empty="" />
             </div>
           )}
+        </Card>
+        <Card padding="md" className="md:p-5">
+          <Eyebrow>Какие фонды на графике</Eyebrow>
+          <Bars rows={(ins.shown ?? []).map(f => ({
+            key: f.ticker, label: f.name || f.ticker, note: f.ticker, value: f.people,
+            icon: <FundLogoChip ticker={f.ticker} ukId={f.uk_id} />,
+          }))} empty="Полный список фондов пишется с 13.11.2026" />
+        </Card>
+        <Card padding="md" className="md:p-5">
+          <Eyebrow>Действия на странице</Eyebrow>
+          <Bars rows={(ins.actions ?? []).map(a => ({
+            key: a.key, label: FUNDS_ACTION[a.key] ?? a.key, value: a.people, extra: `${ru(a.count)} раз`,
+          }))} empty="Действия пишутся с 13.11.2026" />
         </Card>
       </div>
     );

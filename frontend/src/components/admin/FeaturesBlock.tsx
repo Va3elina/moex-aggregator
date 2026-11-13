@@ -25,6 +25,13 @@ const FUND_CATEGORY: Record<string, string> = {
 const FUNDS_VIEW: Record<string, string> = { flows: 'Притоки-Оттоки', aum: 'СЧА' };
 const FUNDS_PERIOD: Record<string, string> = { '1w': '1Н', '1m': '1М', '1y': '1Г', '3y': '3Г', all: 'Всё' };
 const FUNDS_TF: Record<string, string> = { '1d': 'дни', '1w': 'недели', '1m': 'месяцы', '3m': 'кварталы', '1y': 'годы' };
+// Действия на «Деньгах в фондах» (funds_action + экспорт/замок с этой страницы).
+export const FUNDS_ACTION: Record<string, string> = {
+  fund_toggle: 'Вкл/выкл фонд', funds_bulk: 'Выбрали группу фондов', picker_open: 'Открыли выбор фондов',
+  picker_locked: 'Выбор фондов под замком', layer_index: 'Слой «Индекс»', layer_rolling3m: 'Слой «Сумма за 3 мес»',
+  alert_open: 'Открыли сигнал', alert_locked: 'Сигнал под замком', export_image: 'Скачали картинку',
+  export_table: 'Скачали таблицу', paywall: 'Увидели окно тарифа',
+};
 const TRADES_TAB: Record<string, string> = {
   portfolio: 'Общий портфель', company: 'По бумаге', funds: 'Витрина', movers: 'Сделки', snapshots: 'Снимки',
 };
@@ -53,6 +60,13 @@ const HINTS = {
     + 'часть людей заходила раньше или отключила статистику в профиле. Сравнение — с таким же периодом сразу перед выбранным.',
   funds_picked:
     'Фонды, которые человек сам оставил на графике, убрав остальные. Кто смотрит всю категорию целиком, сюда не попадает.',
+  funds_shown:
+    'Сколько разных людей видели фонд на графике: и при просмотре всей категории, и при своей подвыборке. '
+    + 'Полный список пишется с 13.11.2026, до этого — только суженные подвыборки.',
+  funds_actions:
+    'Что делают на странице руками. Первая цифра — людей, серая — сколько раз. Действия пишутся с 13.11.2026, '
+    + 'экспорт и окно тарифа — раньше.',
+  funds_toggled: 'Какие фонды включают и выключают по одному в окне выбора. Серая цифра — сколько раз переключали, в подписи — включали / выключали.',
   terminal:
     'Раскладка — по последнему состоянию терминала человека за период: сколько окон и листов у него в итоге осталось. '
     + '«Добавляли» — сами действия: какой индикатор выносили в новое окно.',
@@ -284,6 +298,7 @@ export default function FeaturesBlock({ data, loading, error }: {
           <PickLine label="Режим" rows={fm.views} names={FUNDS_VIEW} />
           <PickLine label="Период" rows={fm.periods} names={FUNDS_PERIOD} />
           <PickLine label="Шаг" rows={fm.timeframes} names={FUNDS_TF} />
+          <PickLine label="Замки" rows={fm.paywalls ?? []} names={{}} />
           {fm.views.length === 0 && (
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Настроек за период не записано.</p>
           )}
@@ -295,6 +310,17 @@ export default function FeaturesBlock({ data, loading, error }: {
             title={fm.narrowed ? `Фонды, которые оставляют · ${fm.narrowed} чел.` : 'Фонды, которые оставляют'}
             hint={HINTS.funds_picked} hintAlign="right" columns={['людей']}
             items={fundItems(fm.funds)} loading={false} emptyText="Все смотрят категорию целиком" />
+          <TopList title="Какие фонды на графике" hint={HINTS.funds_shown} columns={['людей']}
+            items={fundItems(fm.shown ?? [])} loading={false} emptyText="Снимков с фондами за период нет" />
+          <TopList title="Действия на странице" hint={HINTS.funds_actions} hintAlign="right" columns={['людей', 'раз']}
+            items={(fm.actions ?? []).map((a) => ({ label: FUNDS_ACTION[a.key] ?? a.key, value: a.people, value2: a.count }))}
+            loading={false} emptyText="Действий за период нет" />
+          <TopList title="Какие фонды включают и выключают" hint={HINTS.funds_toggled} columns={['людей', 'раз']}
+            items={(fm.toggled ?? []).map((f) => ({
+              ...fundItems([f])[0], value2: f.on + f.off,
+              note: `${f.ticker} · вкл ${f.on} / выкл ${f.off}`,
+            }))}
+            loading={false} emptyText="Фонды по одному не переключали" />
         </div>
       </section>
     </div>

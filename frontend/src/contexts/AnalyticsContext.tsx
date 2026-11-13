@@ -77,6 +77,7 @@ type EventType =
   | 'funds_view'
   | 'fund_trades_view'
   | 'fund_open'
+  | 'funds_action'
   | 'terminal_layout'
   | 'terminal_panel_add'
   | 'screener_view'

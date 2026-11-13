@@ -95,6 +95,10 @@ ALLOWED_EVENT_TYPES = {
     "funds_view",
     "fund_trades_view",
     "fund_open",
+    # Действия на «Деньгах в фондах» (2026-11-13), {action, category, ...}:
+    #   fund_toggle {fund, on} · funds_bulk {visible_n, total_n} · picker_open {locked}
+    #   layer {layer: index|rolling3m, on, view} · alert_open {locked}
+    "funds_action",
     "terminal_layout",
     "terminal_panel_add",
     # Скринер сигналов — вкладка /oi?tab=screener. Адрес страницы тот же, что у
@@ -1434,7 +1438,7 @@ def get_indicator(
     if path not in INDICATOR_PATHS:
         raise HTTPException(404, "Такого раздела нет")
     rng = _resolve_range(days, date_from, date_to)
-    key = f"admin:indicator:v1:{path}:{rng['d0']}:{rng['d1']}:{segment}:{device}"
+    key = f"admin:indicator:v2:{path}:{rng['d0']}:{rng['d1']}:{segment}:{device}"
     return get_or_compute(key, lambda: _compute_indicator(path, rng, segment, device), ttl=180)
 
 
@@ -1514,10 +1518,52 @@ def get_features(
     это то, с чем он в итоге остался.
     """
     rng = _resolve_range(days, date_from, date_to)
-    key = f"admin:features:v2:{rng['d0']}:{rng['d1']}:{segment}:{device}"
+    key = f"admin:features:v3:{rng['d0']}:{rng['d1']}:{segment}:{device}"
     # 10 минут: настройки внутри разделов меняются медленно, а пересчёт —
     # самый тяжёлый запрос страницы.
     return get_or_compute(key, lambda: _compute_features(rng, segment, device), ttl=600)
+
+
+# «Деньги в фондах»: какие фонды были на графике. shown пишется с 13.11.2026
+# всегда; в старых снимках есть только funds, и пустой funds там = «вся
+# категория» без перечня — такие снимки фонда не дают.
+_FM_SHOWN_SQL = """
+    SELECT f.t, COUNT(DISTINCT ident) FROM ev,
+        LATERAL jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(payload->'shown') = 'array' THEN payload->'shown'
+                 WHEN jsonb_typeof(payload->'funds') = 'array' THEN payload->'funds'
+                 ELSE '[]'::jsonb END) AS f(t)
+    WHERE event_type = 'funds_view'
+    GROUP BY 1 ORDER BY 2 DESC
+"""
+# Действия руками (funds_action) + экспорт и окно тарифа с этой страницы.
+# Экспорт картинкой и таблицей различаем по payload: у CSV/XLSX есть format.
+_FM_ACTIONS_SQL = """
+    SELECT k, COUNT(DISTINCT ident), COUNT(*) FROM (
+        SELECT ident, CASE
+            WHEN event_type = 'chart_export' AND payload->>'format' IS NOT NULL THEN 'export_table'
+            WHEN event_type = 'chart_export' THEN 'export_image'
+            WHEN event_type = 'paywall_show' THEN 'paywall'
+            WHEN payload->>'action' = 'layer' THEN 'layer_' || COALESCE(payload->>'layer', '?')
+            WHEN payload->>'action' = 'alert_open' AND payload->>'locked' = 'true' THEN 'alert_locked'
+            WHEN payload->>'action' = 'picker_open' AND payload->>'locked' = 'true' THEN 'picker_locked'
+            ELSE payload->>'action' END AS k
+        FROM ev
+        WHERE event_type = 'funds_action'
+           OR (event_path = '/funds-money' AND event_type IN ('chart_export', 'paywall_show'))
+    ) s WHERE k IS NOT NULL
+    GROUP BY 1 ORDER BY 2 DESC, 3 DESC
+"""
+# Какие фонды включают и выключают поштучно.
+_FM_TOGGLED_SQL = """
+    SELECT payload->>'fund', COUNT(DISTINCT ident),
+           COUNT(*) FILTER (WHERE payload->>'on' = 'true'),
+           COUNT(*) FILTER (WHERE payload->>'on' = 'false')
+    FROM ev
+    WHERE event_type = 'funds_action' AND payload->>'action' = 'fund_toggle'
+      AND payload->>'fund' IS NOT NULL
+    GROUP BY 1 ORDER BY 2 DESC, COUNT(*) DESC
+"""
 
 
 _FEATURE_PATHS = ("/funds-money", "/fund-trades", "/sandbox", "/oi")
@@ -1544,10 +1590,13 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
             -- и целиком они тут не нужны), из терминала — ещё выбор активов.
             WHERE (event_type = 'pageview' AND event_path = ANY(:paths))
                OR (event_path = '/sandbox' AND event_type IN ('instrument_select', 'asset_view'))
-               OR event_type IN ('funds_view', 'fund_trades_view', 'fund_open',
+               OR event_type IN ('funds_view', 'fund_trades_view', 'fund_open', 'funds_action',
                                  'terminal_layout', 'terminal_panel_add',
                                  'screener_view', 'screener_pick', 'screener_fav',
                                  'screener_alert')
+               -- Экспорт и окно тарифа пишутся общими событиями — берём их
+               -- только с «Денег в фондах», для раздела действий.
+               OR (event_path = '/funds-money' AND event_type IN ('chart_export', 'paywall_show'))
         """), params)
 
         def q(sql: str):
@@ -1598,6 +1647,14 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
                          THEN payload->'funds' ELSE '[]'::jsonb END) AS f(t)
             WHERE event_type = 'funds_view'
             GROUP BY 1 ORDER BY 2 DESC LIMIT 15
+        """)
+        fm_shown = q(_FM_SHOWN_SQL + " LIMIT 20")
+        fm_actions = q(_FM_ACTIONS_SQL)
+        fm_toggled = q(_FM_TOGGLED_SQL + " LIMIT 15")
+        fm_paywalls = q("""
+            SELECT payload->>'feature', COUNT(DISTINCT ident) FROM ev
+            WHERE event_type = 'paywall_show' AND event_path = '/funds-money'
+            GROUP BY 1 ORDER BY 2 DESC
         """)
 
         # ── Сделки фондов ──────────────────────────────────────────────────
@@ -1725,7 +1782,7 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
             FROM ev
         """)[0]
 
-        fund_meta = _fund_meta(conn, [r[0] for r in fm_funds] + [r[0] for r in ft_opened])
+        fund_meta = _fund_meta(conn, [r[0] for r in fm_funds + fm_shown + fm_toggled] + [r[0] for r in ft_opened])
         asset_names = _asset_names(conn, [r[0] for r in t_assets] + [r[0] for r in sc_picks])
 
     def funds(rows) -> list[dict]:
@@ -1763,6 +1820,11 @@ def _compute_features(rng: dict, segment: str, device: str) -> dict:
             "timeframes": pairs(fm_tf),
             "narrowed": int(fm_narrow or 0),
             "funds": funds(fm_funds),
+            "shown": funds(fm_shown),
+            "actions": [{"key": r[0], "people": int(r[1]), "count": int(r[2])} for r in fm_actions],
+            "toggled": [{**f, "on": int(r[2] or 0), "off": int(r[3] or 0)}
+                        for f, r in zip(funds(fm_toggled), fm_toggled)],
+            "paywalls": pairs(fm_paywalls),
         },
         "fund_trades": {
             **section("/fund-trades"),
@@ -1902,12 +1964,16 @@ def _compute_indicator(path: str, rng: dict, segment: str, device: str) -> dict:
                 WHERE event_type = 'funds_view'
                 GROUP BY 1 ORDER BY 2 DESC LIMIT 15
             """), params).fetchall()
-            meta = _fund_meta(conn, [r[0] for r in picked])
+            shown = conn.execute(text(f"{base} {_FM_SHOWN_SQL} LIMIT 15"), params).fetchall()
+            actions = conn.execute(text(f"{base} {_FM_ACTIONS_SQL}"), params).fetchall()
+            meta = _fund_meta(conn, [r[0] for r in picked + shown])
             inside = {
                 "kind": "funds_money",
                 "categories": [{"key": r[0], "people": int(r[1]), "views": int(r[2])} for r in cats],
                 "views": [{"key": r[0], "people": int(r[1])} for r in views],
                 "funds": [{"ticker": r[0], "people": int(r[1]), **meta.get(r[0], {})} for r in picked],
+                "shown": [{"ticker": r[0], "people": int(r[1]), **meta.get(r[0], {})} for r in shown],
+                "actions": [{"key": r[0], "people": int(r[1]), "count": int(r[2])} for r in actions],
             }
 
         elif path == "/fund-trades":

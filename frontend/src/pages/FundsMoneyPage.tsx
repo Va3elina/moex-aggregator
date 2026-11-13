@@ -26,6 +26,7 @@ import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
 import { useSnapshotTracking } from '../hooks/useSnapshotTracking';
+import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import FundPickerModal from '../components/funds/FundPickerModal';
@@ -282,6 +283,10 @@ export default function FundsMoneyPage() {
     // селектора актива на ОИ): таблетка сверху → модалка со списком фондов.
     const [fundPickerOpen, setFundPickerOpen] = useState(false);
     const [showIndex, setShowIndex] = usePersistedState('frame:funds:showIndex', true);
+    // Действия на странице (funds_action): что человек делает руками, помимо
+    // итогового снимка funds_view. Экспорт и окно тарифа пишутся сами
+    // (chart_export, paywall_show) — здесь только то, чего нигде больше нет.
+    const { track } = useAnalytics();
 
     // Onboarding tour. Steps собираются через factory чтобы тур мог
     // автоматически переключать viewMode (СЧА ↔ Притоки) когда подсвечивает
@@ -382,6 +387,9 @@ export default function FundsMoneyPage() {
         funds: visibleAccessibleFunds.length < accessibleFunds.length
             ? visibleAccessibleFunds.map(f => f.ticker).slice(0, 20)
             : [],
+        // Какие фонды реально на графике — всегда, а не только при сужении:
+        // иначе «смотрят всю категорию» не давало ни одного конкретного фонда.
+        shown: visibleAccessibleFunds.map(f => f.ticker).slice(0, 80),
         visible_n: visibleAccessibleFunds.length,
         total_n: accessibleFunds.length,
     } : null);
@@ -519,6 +527,11 @@ export default function FundsMoneyPage() {
 
 
     const toggleFundVisibility = (fundId: number) => {
+        const fund = data?.funds.find(f => f.fund_id === fundId);
+        track('funds_action', {
+            action: 'fund_toggle', category, fund: fund?.ticker ?? String(fundId),
+            on: hiddenFunds.has(fundId),
+        });
         setHiddenFunds(prev => {
             const next = new Set(prev);
             if (next.has(fundId)) {
@@ -528,6 +541,17 @@ export default function FundsMoneyPage() {
             }
             return next;
         });
+    };
+
+    // Массовые действия из окна выбора (все / ни одного / подкатегория целиком).
+    const setHiddenFundsTracked: React.Dispatch<React.SetStateAction<Set<number>>> = (v) => {
+        const next = typeof v === 'function' ? v(hiddenFunds) : v;
+        const total = data?.funds.length ?? 0;
+        track('funds_action', {
+            action: 'funds_bulk', category,
+            visible_n: Math.max(0, total - next.size), total_n: total,
+        });
+        setHiddenFunds(next);
     };
 
     const currentCategory = CATEGORIES.find(c => c.key === category);
@@ -641,7 +665,10 @@ export default function FundsMoneyPage() {
                     // запертого тира список внутри слегка заблюрен, поверх
                     // апселл на Basic (FundPickerModal locked). Так видно, что
                     // именно даёт тариф, вместо голого замка.
-                    onClick={() => setFundPickerOpen(true)}
+                    onClick={() => {
+                        track('funds_action', { action: 'picker_open', category, locked: !canPickFunds });
+                        setFundPickerOpen(true);
+                    }}
                     title={canPickFunds ? t('Выбрать фонды для графика') : t('Выбор фондов — на тарифе Basic или Pro')}
                     className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
                     style={{
@@ -816,7 +843,10 @@ export default function FundsMoneyPage() {
                                 ? t('Линия {{index}} на левой оси', { index: currentCategory?.index ?? t('Индекс') })
                                 : t('Панель {{index}} над гистограммой', { index: currentCategory?.index ?? t('Индекс') }),
                             checked: showIndex,
-                            onChange: setShowIndex,
+                            onChange: (v: boolean) => {
+                                track('funds_action', { action: 'layer', layer: 'index', on: v, category, view: viewMode });
+                                setShowIndex(v);
+                            },
                         },
                         // Низкочастотный тумблер — живёт в «Слоях», а не в
                         // горячем ряду контролов (решение 2026-06-12).
@@ -825,7 +855,10 @@ export default function FundsMoneyPage() {
                             label: t('Сумма за 3 месяца'),
                             hint: t('Столбец — суммарный чистый поток за скользящие 3 месяца, как показывают потоки глобальные управляющие компании. Сглаживает шум и проявляет устойчивые волны притоков и оттоков.'),
                             checked: flowRolling === '3m',
-                            onChange: (v: boolean) => setFlowRolling(v ? '3m' : 'none'),
+                            onChange: (v: boolean) => {
+                                track('funds_action', { action: 'layer', layer: 'rolling3m', on: v, category, view: viewMode });
+                                setFlowRolling(v ? '3m' : 'none');
+                            },
                         }] : []),
                     ]}
                 />
@@ -862,6 +895,7 @@ export default function FundsMoneyPage() {
                             type="button"
                             data-export-ignore="true"
                             onClick={() => {
+                                track('funds_action', { action: 'alert_open', category, locked: alertsLocked });
                                 if (alertsLocked) {
                                     showUpgrade({ tier: 'basic', featureName: t('Сигналы по фондам'), indicator: 'alerts' });
                                     return;
@@ -1017,7 +1051,7 @@ export default function FundsMoneyPage() {
                 <FundPickerModal
                     data={data}
                     hiddenFunds={hiddenFunds}
-                    onSetHiddenFunds={setHiddenFunds}
+                    onSetHiddenFunds={setHiddenFundsTracked}
                     onToggleFundVisibility={toggleFundVisibility}
                     locked={!canPickFunds}
                     onClose={() => setFundPickerOpen(false)}
