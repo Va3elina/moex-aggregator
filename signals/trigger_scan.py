@@ -35,6 +35,7 @@ from sqlalchemy import text  # noqa: E402
 from api.database import SessionLocal  # noqa: E402
 from signals import insight_scan as ins  # noqa: E402
 from signals.insights import cards, data  # noqa: E402
+from signals.insights.detect import CODE  # noqa: E402
 
 TRIGGER_FROM, TRIGGER_TO = 12, 21      # часы МСК: весь торговый день после первых двух часов основной сессии
 TRIGGER_POOL = 25                      # сколько лучших рекордов позиций по акциям проверять
@@ -47,6 +48,12 @@ SURGE_CODES = {"MX", "MM", "IMOEXF", "MY", "RI", "RM", "RB", "Si", "USDRUBF", "C
 MSK = timezone(timedelta(hours=3))
 _TODAY = text("""SELECT thread_key FROM content_candidates
                   WHERE thread_key LIKE 'insight:trigger:%' AND created_at >= :day""")
+
+
+def underlying(sec) -> str:
+    """Базовый актив контракта: «одна бумага — один раз» считается по нему. 04.11 рывок по мини-Brent (BM, 19:55)
+    и через 20 минут по Brent (BR, 20:20) дали два почти одинаковых черновика — ключ треда был по коду контракта."""
+    return CODE.get(sec, sec)
 
 
 def in_window(now_msk) -> bool:
@@ -107,6 +114,7 @@ def best_trigger(pool: list, surges=(), build=cards.build_card, taken=(), log=pr
     """Сильнейшее событие СЕГОДНЯ: повод по живой цене среди рекордов пула или рывок позиции по срезу — (находка,
     спека, поворот) или None. Сила — в долях порога своего типа; бумага, по которой сегодня уже был черновик, — мимо."""
     found = []
+    taken = {underlying(s) for s in taken}
 
     def angles_of(spec, date, title):
         try:
@@ -117,14 +125,14 @@ def best_trigger(pool: list, surges=(), build=cards.build_card, taken=(), log=pr
 
     for x in pool:
         f = x["facts"]
-        if f["sec"] in taken:
+        if underlying(f["sec"]) in taken:
             continue
         spec = {"kind": "positions", "sec": f["sec"], "leg": f["leg"]}
         for a in angles_of(spec, x["date"], x["title"]):
             if a["type"] == "повод" and a.get("live") and a["strength"] >= cards.ANGLE_MIN["повод"]:
                 found.append((a["strength"] / cards.ANGLE_MIN["повод"], x, spec, a))
     for c in list(surges)[:SURGE_POOL]:
-        if c["sec"] in taken:
+        if underlying(c["sec"]) in taken:
             continue
         spec = {"kind": "positions", "sec": c["sec"], "leg": c["leg"]}
         title = f"{c['sec']} {c['leg']} {c['pct']:+.0%} к {c['t']}"
