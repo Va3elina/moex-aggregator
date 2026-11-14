@@ -167,6 +167,11 @@ def _paid_history(db: Session, user_id: int, before_id: int | None = None) -> li
         Subscription.is_trial.is_(False),
         Subscription.yk_payment_id.isnot(None),
         Subscription.amount > 0,
+        # Оплатой считаем только подписку, которая хоть раз активировалась
+        # (started_at ставит activate_from_webhook). Неудачное автопродление
+        # получает failed, а следом вебхук банка об отмене переводил его в
+        # cancelled: каждая попытка списания засчитывалась как оплата.
+        Subscription.started_at.isnot(None),
     )
     if before_id is not None:
         q = q.filter(Subscription.id < before_id)
