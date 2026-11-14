@@ -555,7 +555,10 @@ def cancel_by_webhook(db: Session, event: WebhookEvent) -> Subscription | None:
     if event.event_type == "refund.succeeded":
         sub.status = "refunded"
     else:
-        sub.status = "failed" if sub.status == "pending" else "cancelled"
+        # failed остаётся failed: charge_recurrent уже пометил отказ, а вебхук
+        # CANCELED/REJECTED приходит следом. Раньше он превращал отказ в
+        # cancelled, и такие строки выглядели как оплаченные.
+        sub.status = "failed" if sub.status in ("pending", "failed") else "cancelled"
     sub.cancelled_at = now
 
     db.flush()
