@@ -255,9 +255,15 @@ def list_html(ticker: str, page_url: str) -> list[Doc]:
     return docs
 
 
+# Что пришло в последний раз по адресу страницы: (байт, ссылок <a>). Сканер пишет это в лог, когда
+# справок не нашлось, — чтобы отличить пустую заглушку сайта от сменившейся вёрстки.
+LAST_PAGE_INFO: dict[str, tuple[int, int]] = {}
+
+
 def _list_html_page(ticker: str, page_url: str) -> list[Doc]:
     body, _ = http_get(page_url)
     t = body.decode("utf-8", "ignore")
+    LAST_PAGE_INFO[page_url] = (len(body), t.count("<a "))
     docs = []
     for m in re.finditer(r'<a\b[^>]*href="([^"]+)"[^>]*>(.*?)</a>', t, re.S):
         title = _text(m.group(2))

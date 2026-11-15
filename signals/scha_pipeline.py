@@ -215,6 +215,9 @@ def scan() -> int:
 
 
 SITE_RETRY_SEC = 30   # 18.10: t-capital-funds.ru разово отдал страницу без списка (TMOS), через минуту — норма
+# Пустую страницу ждём дольше: 12–13.11 t-capital-funds.ru отдавал её обе попытки через 30 с,
+# а через пару минут — полный список. Паузы перед 2-й, 3-й и 4-й попыткой; итого до 5 минут на фонд.
+EMPTY_RETRY_SEC = (30, 90, 180)
 
 
 class EmptyPage(RuntimeError):
@@ -223,20 +226,25 @@ class EmptyPage(RuntimeError):
 
 
 def _list_docs(tk: str, kind: str, arg: str) -> dict:
-    """Справки на странице раскрытия; пустой ответ или сбой — ещё одна попытка, потом ошибка.
-    Разовый сбой сайта УК не должен будить Вадима (тревога шлётся только после второй неудачи)."""
-    for attempt in (1, 2):
+    """Справки на странице раскрытия; сбой — ещё одна попытка, пустой ответ — ещё три с растущей
+    паузой, потом ошибка. Разовый сбой сайта УК не должен будить Вадима."""
+    attempt = 0
+    while True:
+        attempt += 1
         try:
             docs = col.one_per_month(col.ADAPTERS[kind](tk, arg))
             if not docs:
-                raise EmptyPage("на странице не нашлось ни одной справки (сменили вёрстку?)")
+                size, links = col.LAST_PAGE_INFO.get(arg, (None, None))
+                seen = f" (ответ {size // 1024} КБ, ссылок {links})" if size is not None else ""
+                raise EmptyPage(f"на странице не нашлось ни одной справки{seen}")
             return docs
         except Exception as e:  # noqa: BLE001
-            if attempt == 2:
+            waits = EMPTY_RETRY_SEC if isinstance(e, EmptyPage) else (SITE_RETRY_SEC,)
+            if attempt > len(waits):
                 raise
-            log(f"{tk}: страница раскрытия — {e}; повтор через {SITE_RETRY_SEC} с")
-            time.sleep(SITE_RETRY_SEC)
-    raise AssertionError("unreachable")
+            wait = waits[attempt - 1]
+            log(f"{tk}: страница раскрытия — {e}; повтор через {wait} с")
+            time.sleep(wait)
 
 
 def _empty_yesterday(conn, tk: str) -> bool:
