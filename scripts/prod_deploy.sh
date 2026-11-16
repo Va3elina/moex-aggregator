@@ -142,9 +142,21 @@ fi
 # Найдено 2026-07-16: без этого правила код бота молча оставался устаревшим
 # после деплоя сколь угодно долго (реальный инцидент — бот не работал НИ РАЗУ
 # с момента создания, т.к. рестарт после фиксов никто не делал вручную).
-if echo "$changed" | grep -qE '^signals/content_review_bot\.py$'; then
-  echo "=== content_review_bot changed -> systemctl restart ==="
+# Бот — долгоживущий процесс: импортированные им модули signals/ (content_ai,
+# config, tg_joins, publish/, ленивые импорты внутри функций) остаются в памяти
+# старыми. 16.11 после #1798 бот держал старый content_ai с 12.11. Поэтому
+# рестарт на ЛЮБУЮ правку signals/*.py — long-poll перезапускается за секунды.
+if echo "$changed" | grep -qE '^signals/.*\.py$'; then
+  echo "=== signals changed -> restart content_review_bot ==="
   systemctl restart frame-content-review-bot
+fi
+
+# tg-bot — отдельный образ из того же Dockerfile, деплой его раньше не
+# пересобирал вовсе (16.11 крутился образ от 05.10 со старым backup_db.sh).
+if echo "$changed" | grep -qE '^(tg_bot\.py|backup_db\.sh|requirements\.txt|Dockerfile$)'; then
+  echo "=== tg-bot code changed -> rebuild ==="
+  docker compose build tg-bot
+  docker compose up -d --no-deps --force-recreate tg-bot
 fi
 
 # nginx — конфиг монтируется в frame-nginx-1; git reset кладёт новый файл, но
