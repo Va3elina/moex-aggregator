@@ -2,8 +2,11 @@
 
 По каждому роботу: результат закрытых сегодня сделок, сколько открыто, итог с начала.
 Рынок РФ — журналы гибридных роботов (/opt/hybrid-bot/state_*/journal.csv, рубли, песочница Т-Инвестиций);
-крипта — журнал Kamaz (/opt/kamaz-bot/bot/state/journal/*.jsonl, события «кампания закрыта», доллары, демо Bybit);
+крипта — журналы трёх стратегий Kamaz (/opt/kamaz-bot/bot/state*/journal/*.jsonl, события «кампания закрыта», доллары,
+у каждой свой демо-счёт Bybit) и строка сравнения трёх с общего старта (первый демо-старт soft3/hold);
 Kamaz бумага — бумажные книги A (state) и B (state_b) с первого старта B, события «цель»/«таймер» с src=бумага.
+Скринер VB — робот robots/vb_bot.py (/opt/vb-bot/state: journal.csv вход/выход по ногам, state.json открытые ноги),
+песочница Т-Инвестиций, 10 млн, плечо ×3; результат ноги = (выход − вход) × бумаг × сторона − комиссия 0,05 % за сторону.
 """
 from __future__ import annotations
 
@@ -20,10 +23,13 @@ import robots_tg as TG  # noqa: E402
 
 MSK = ZoneInfo("Europe/Moscow")
 RU = [("Валюты", pathlib.Path("/opt/hybrid-bot/state_fx/journal.csv")), ("Пятёрка", pathlib.Path("/opt/hybrid-bot/state_five1/journal.csv"))]
-CRYPTO = pathlib.Path("/opt/kamaz-bot/bot/state/journal")
-CRYPTO_STATUS = pathlib.Path("/opt/kamaz-bot/bot/state/status.txt")
+CRYPTO_FEEDS = [("Крипта A", pathlib.Path("/opt/kamaz-bot/bot/state")), ("Крипта soft3", pathlib.Path("/opt/kamaz-bot/bot/state_soft3")),
+                ("Крипта hold", pathlib.Path("/opt/kamaz-bot/bot/state_hold"))]
+CRYPTO = CRYPTO_FEEDS[0][1] / "journal"               # стратегия A (для строки бумажных книг A/B)
 PAPER_B = pathlib.Path("/opt/kamaz-bot/bot/state_b")  # бумажная книга варианта B (служба kamaz-bot-paper-b)
 PAPER_CAP = 100_000  # бумажные книги: 10 ячеек по $10 000
+VB = pathlib.Path("/opt/vb-bot/state")   # робот скринера VB
+VB_CAP = 10_000_000
 
 
 def ddmm(iso: str) -> str:
@@ -69,27 +75,75 @@ def ru_line(name: str, path: pathlib.Path, day: dt.date) -> str:
     return f"{TG.dot(t) if today else TG.icon('нет сделок')} <b>{name}</b> {part}всего {TG.rub(total)}{pct(total, start)}"
 
 
-def crypto_line(day: dt.date) -> str:
+def vb_line(day: dt.date) -> str:
+    """Скринер VB: закрытые сегодня ноги, итог с запуска робота (% от 10 млн), сколько открыто."""
+    j = VB / "journal.csv"
+    st = json.loads((VB / "state.json").read_text()) if (VB / "state.json").exists() else {}
+    n_open = len(st.get("legs", {}))
+    pnl = []                                                      # (день выхода, ₽)
+    if j.exists():
+        rows = list(csv.DictReader(j.open(encoding="utf-8")))
+        ins = {r["key"]: r for r in rows if r["action"] == "вход"}
+        for r in rows:
+            a = ins.get(r["key"])
+            if r["action"] != "выход" or not a or not fnum(r["price"]) or not fnum(a["price"]):
+                continue
+            q, side, pi, po = float(a["qty"]), int(a["side"]), float(a["price"]), float(r["price"])
+            pnl.append((dt.date.fromisoformat(r["ts"][:10]), side * q * (po - pi) - 0.0005 * q * (pi + po)))
+    total = sum(x for _, x in pnl)
+    today = [x for d, x in pnl if d == day]
+    t = sum(today)
+    part = f"{TG.rub(t)}{pct(t, VB_CAP)}, " if today else ""
+    op = f", открыто {n_open}" if n_open else ""
+    since = f" с {ddmm(st['start'])}" if st.get("start") else ""
+    return f"{TG.dot(t) if today else TG.icon('нет сделок')} <b>Скринер VB ×3</b> {part}всего{since} {TG.rub(total)}{pct(total, VB_CAP)}{op}"
+
+
+def crypto_closed(d: pathlib.Path) -> list[dict]:
     ev = []
-    for f in sorted(CRYPTO.glob("*.jsonl")):
+    for f in sorted((d / "journal").glob("*.jsonl")):
         for line in f.read_text().splitlines():
-            if '"кампания закрыта"' in line:
+            if '"кампания закрыта"' in line or '"kind": "старт"' in line:
                 try:
                     ev.append(json.loads(line))
                 except Exception:
                     pass
-    closed = [e for e in ev if e.get("kind") == "кампания закрыта" and e.get("src") == "реал"]
+    return ev
+
+
+def crypto_status(d: pathlib.Path) -> tuple[float | None, int]:
+    """Бюджет и сколько настоящих кампаний открыто — из статуса бота."""
+    import re
+    try:
+        s = (d / "status.txt").read_text()
+        m = re.search(r"бюджет \$(\d+)", s.splitlines()[0]); n = re.search(r"открыто кампаний (\d+)", s)
+        return (float(m.group(1)) if m else None, int(n.group(1)) if n else 0)
+    except Exception:
+        return None, 0
+
+
+def crypto_line(name: str, d: pathlib.Path, day: dt.date) -> str:
+    closed = [e for e in crypto_closed(d) if e.get("kind") == "кампания закрыта" and e.get("src") == "реал"]
     total = sum(float(e.get("result") or 0) for e in closed)
     today = [float(e.get("result") or 0) for e in closed if msk_date(e.get("at")) == day]
-    b = None
-    try:
-        import re
-        m = re.search(r"бюджет \$(\d+)", CRYPTO_STATUS.read_text().splitlines()[0])
-        b = float(m.group(1)) if m else None
-    except Exception:
-        pass
+    b, n_open = crypto_status(d)
     part = f"{TG.usd(sum(today))}{pct(sum(today), b)}, " if today else ""
-    return f"{TG.dot(sum(today)) if today else TG.icon('нет сделок')} <b>Крипта</b> {part}всего {TG.usd(total)}{pct(total, b)}"
+    op = f", открыто {n_open}" if n_open else ""
+    return f"{TG.dot(sum(today)) if today else TG.icon('нет сделок')} <b>{name}</b> {part}всего {TG.usd(total)}{pct(total, b)}{op}"
+
+
+def crypto_compare_line() -> str:
+    """Три стратегии с общего старта (первый демо-старт soft3/hold): итог закрытых в $ и % от бюджета."""
+    starts = [e["at"] for _, d in CRYPTO_FEEDS[1:] for e in crypto_closed(d) if e.get("kind") == "старт" and e.get("mode") == "demo" and e.get("at")]
+    if not starts:
+        return ""
+    t0 = min(starts)
+    parts = []
+    for name, d in CRYPTO_FEEDS:
+        cl = [e for e in crypto_closed(d) if e.get("kind") == "кампания закрыта" and e.get("src") == "реал" and ts(e.get("at")) >= ts(t0)]
+        s = sum(float(e.get("result") or 0) for e in cl); b, _ = crypto_status(d)
+        parts.append(f"{name.split()[-1]} {TG.usd(s)}{pct(s, b)} ({len(cl)})")
+    return f"{TG.icon('итоги')} <b>Kamaz три стратегии</b> с {ddmm(t0)}: " + ", ".join(parts)
 
 
 def ts(t) -> dt.datetime:
@@ -131,7 +185,21 @@ def text(day: dt.date) -> str:
     L = [f"{TG.icon('итоги')} <b>Итоги {day:%d.%m}</b>"]
     for name, path in RU:
         L.append(ru_line(name, path, day))
-    L.append(crypto_line(day))
+    try:
+        L.append(vb_line(day))
+    except Exception as e:  # новый робот не должен ронять сводку
+        L.append(f"<b>Скринер VB</b>: ошибка {TG.esc(e)}")
+    for name, d in CRYPTO_FEEDS:
+        try:
+            L.append(crypto_line(name, d, day))
+        except Exception as e:  # одна стратегия не должна ронять сводку
+            L.append(f"<b>{name}</b>: ошибка {TG.esc(e)}")
+    try:
+        cmp = crypto_compare_line()
+    except Exception as e:
+        cmp = f"Kamaz три стратегии: ошибка {TG.esc(e)}"
+    if cmp:
+        L.append(cmp)
     try:
         ab = paper_ab_line(day)
     except Exception as e:  # строка сравнения не должна ронять сводку
