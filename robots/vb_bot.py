@@ -98,7 +98,7 @@ def instruments(st):
     f = STATE / 'instruments.json'
     if f.exists():
         d = json.loads(f.read_text())
-        if d.get('date') == today: return d['map']
+        if d.get('date') == today and all('dl' in v for v in d['map'].values()): return d['map']   # старый кэш без ставок — перечитать
     r = api('InstrumentsService/Shares', {'instrumentStatus': 'INSTRUMENT_STATUS_BASE'})
     if '_error' in r:
         if f.exists(): return json.loads(f.read_text())['map']
