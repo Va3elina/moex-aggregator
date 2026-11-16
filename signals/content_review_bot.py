@@ -914,7 +914,7 @@ def _tg_joins_tick() -> None:
     if time.monotonic() - _last_tick < tg_joins.TICK_SEC:
         return
     _last_tick = time.monotonic()
-    _with_db(lambda db: tg_joins.hourly_tick(db, _base(), config.ADMIN_USER_ID))
+    _with_db(lambda db: tg_joins.hourly_tick(db, _base(), config.ADMIN_NOTIFY_CHAT_IDS))
 
 
 def process_update(update: dict) -> None:

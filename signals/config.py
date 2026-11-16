@@ -137,6 +137,10 @@ CONTENT_REVIEWER_USER_ID = int(os.getenv("CONTENT_REVIEWER_USER_ID", "0"))
 # скрипты в ADMIN_CHAT_ID и эту переменную не читают.
 CONTENT_DRAFT_EXTRA_CHAT_IDS = [
     int(x) for x in os.getenv("CONTENT_DRAFT_EXTRA_CHAT_IDS", "").split(",") if x.strip()]
+# Получатели служебных уведомлений (дайджест хайпа, всплески подписок) — все админы из ADMIN_CHAT_ID,
+# без него только ADMIN_USER_ID. Вадим 16.11.2026: всё, что шлют боты, дублировать @TorSasha.
+ADMIN_NOTIFY_CHAT_IDS = [
+    int(x) for x in os.getenv("ADMIN_CHAT_ID", "").split(",") if x.strip()] or [ADMIN_USER_ID]
 
 # Коды причин ревью (миграция 054, research/content_pipeline_v2/). Ревью без
 # машиночитаемой причины = потерянный размеченный пример: до 054 единственным

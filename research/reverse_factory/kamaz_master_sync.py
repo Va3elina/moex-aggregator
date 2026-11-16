@@ -222,10 +222,11 @@ for ln in open('/opt/frame/.env', encoding='utf-8'):
 root = env.get('TELEGRAM_API_ROOT') or 'https://api.telegram.org'
 import base64
 text = base64.b64decode(sys.argv[1]).decode()
-data = urllib.parse.urlencode({'chat_id': env['ADMIN_CHAT_ID'], 'text': text[:3500]}).encode()
-req = urllib.request.Request(f"{root}/bot{env['ALERT_BOT_TOKEN']}/sendMessage", data=data,
-                             headers={'User-Agent': 'frame-robots/1.0'})
-print(json.load(urllib.request.urlopen(req, timeout=20)).get('ok'))
+for chat in [c.strip() for c in env['ADMIN_CHAT_ID'].split(',') if c.strip()]:
+    data = urllib.parse.urlencode({'chat_id': chat, 'text': text[:3500]}).encode()
+    req = urllib.request.Request(f"{root}/bot{env['ALERT_BOT_TOKEN']}/sendMessage", data=data,
+                                 headers={'User-Agent': 'frame-robots/1.0'})
+    print(json.load(urllib.request.urlopen(req, timeout=20)).get('ok'))
 """
 
 

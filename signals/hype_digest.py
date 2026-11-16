@@ -102,11 +102,12 @@ def refresh_forwards(rows: list) -> bool:
 def send(body: str) -> None:
     from signals import config
     api_root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
-    r = requests.post(f"{api_root}/bot{config.EDITOR_BOT_TOKEN}/sendMessage",
-                      data={"chat_id": config.ADMIN_USER_ID, "text": body, "parse_mode": "HTML",
-                            "disable_web_page_preview": True}, timeout=20)
-    if not r.ok:
-        print(f"[hype_digest] отправка: {r.status_code} {r.text[:200]}")
+    for chat_id in config.ADMIN_NOTIFY_CHAT_IDS:
+        r = requests.post(f"{api_root}/bot{config.EDITOR_BOT_TOKEN}/sendMessage",
+                          data={"chat_id": chat_id, "text": body, "parse_mode": "HTML",
+                                "disable_web_page_preview": True}, timeout=20)
+        if not r.ok:
+            print(f"[hype_digest] отправка {chat_id}: {r.status_code} {r.text[:200]}")
 
 
 def main() -> None:

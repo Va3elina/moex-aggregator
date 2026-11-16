@@ -49,17 +49,44 @@ def _cfg() -> dict | None:
         if "=" in line and not line.lstrip().startswith("#"):
             k, v = line.split("=", 1); kv[k.strip()] = v.strip().strip('"').strip("'")
     tok = next((kv[k] for k in TOKEN_KEYS if kv.get(k)), None)
-    if not tok or not kv.get("ADMIN_CHAT_ID"):
+    # ADMIN_CHAT_ID — один id или список через запятую: каждое сообщение уходит всем (первый — владелец)
+    chats = [c.strip() for c in kv.get("ADMIN_CHAT_ID", "").split(",") if c.strip()]
+    if not tok or not chats:
         return None
-    return dict(tok=tok, chat=kv["ADMIN_CHAT_ID"], root=kv.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/"))
+    return dict(tok=tok, chats=chats, root=kv.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/"))
 
 
-def _call(method: str, payload: dict) -> dict | None:
+# Номер сообщения у каждого получателя свой. Наружу отдаём номер у первого (владельца), а номера у остальных
+# храним здесь — чтобы ответ (reply_to) и правка (edit) попали в то же сообщение у всех.
+MSG_IDS = EMOJI_IDS.parent / "msg_ids.json"
+
+
+def _msg_map() -> dict:
+    try:
+        return json.loads(MSG_IDS.read_text())
+    except Exception:
+        return {}
+
+
+def _remember(primary: int, per_chat: dict) -> None:
+    if len(per_chat) < 2:
+        return
+    try:
+        m = _msg_map()
+        m[str(primary)] = per_chat
+        m = dict(list(m.items())[-2000:])
+        MSG_IDS.parent.mkdir(parents=True, exist_ok=True)
+        MSG_IDS.write_text(json.dumps(m))
+    except Exception as e:                                    # без карты ответы у остальных уйдут отдельным сообщением
+        print(f"[tg] карта номеров не сохранена: {e}", flush=True)
+
+
+def _call(method: str, payload: dict, chat: str | None = None) -> dict | None:
     c = _cfg()
     if c is None:
         print("[tg] нет /opt/frame/.env — сообщение не отправлено:\n" + payload.get("text", ""), flush=True)
         return None
-    data = json.dumps({"chat_id": c["chat"], **payload}).encode()
+    data = json.dumps({"chat_id": chat or c["chats"][0], **payload}).encode()
     headers = {"Content-Type": "application/json",
                # Cloudflare-релей режет стандартный «Python-urllib» (ошибка 1010) — представляемся явно
                "User-Agent": "Mozilla/5.0 (compatible; frame-robots/1.0)"}
@@ -85,18 +112,38 @@ def _call(method: str, payload: dict) -> dict | None:
 
 def send(text: str, reply_to: int | None = None, silent: bool = False) -> int | None:
     """Отправить сообщение (HTML). silent — без звука. Вернёт номер сообщения — чтобы поправить его или ответить на него."""
-    p = dict(text=text[:4000], parse_mode="HTML", disable_web_page_preview=True, disable_notification=silent)
-    if reply_to:
-        p["reply_parameters"] = {"message_id": reply_to, "allow_sending_without_reply": True}
-    out = _call("sendMessage", p)
-    return (out or {}).get("result", {}).get("message_id")
+    c = _cfg()
+    chats = c["chats"] if c else [None]
+    ids = _msg_map().get(str(reply_to), {}) if reply_to else {}
+    sent, primary = {}, None
+    for i, chat in enumerate(chats):
+        p = dict(text=text[:4000], parse_mode="HTML", disable_web_page_preview=True, disable_notification=silent)
+        rid = reply_to if i == 0 else ids.get(chat)
+        if rid:
+            p["reply_parameters"] = {"message_id": rid, "allow_sending_without_reply": True}
+        mid = ((_call("sendMessage", p, chat) or {}).get("result") or {}).get("message_id")
+        if i == 0:
+            primary = mid
+        if mid and chat:
+            sent[chat] = mid
+    if primary:
+        _remember(primary, sent)
+    return primary
 
 
 def edit(message_id: int, text: str) -> bool:
     if not message_id:
         return False
-    out = _call("editMessageText", dict(message_id=message_id, text=text[:4000], parse_mode="HTML", disable_web_page_preview=True))
-    return bool(out and out.get("ok"))
+    c = _cfg()
+    ids = _msg_map().get(str(message_id), {})
+    ok = False
+    for i, chat in enumerate(c["chats"] if c else [None]):
+        mid = message_id if i == 0 else ids.get(chat)
+        if not mid:
+            continue
+        out = _call("editMessageText", dict(message_id=mid, text=text[:4000], parse_mode="HTML", disable_web_page_preview=True), chat)
+        ok = ok or (i == 0 and bool(out and out.get("ok")))
+    return ok
 
 
 # ---------- оформление
