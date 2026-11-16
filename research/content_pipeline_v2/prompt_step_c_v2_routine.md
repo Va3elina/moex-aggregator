@@ -35,13 +35,13 @@ PATCH'и и не выдумывай значения.
 
 1. Примеры постов канала под эту новость и распределение его структуры:
 
-curl -s -X POST https://framedata.ru/api/internal/content-corpus/similar \
+curl -s -X POST {api_host}/api/internal/content-corpus/similar \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
   -d '{"headline":"...","raw_text":"...","tickers":["..."],"k":3}'
 
 2. Что было верно на дату новости — проверенные факты и информационный фон:
 
-curl -s "https://framedata.ru/api/internal/world-facts?as_of=ДАТА_НОВОСТИ&entities=ТИКЕРЫ&window_days=5&limit_news=8" \
+curl -s "{api_host}/api/internal/world-facts?as_of=ДАТА_НОВОСТИ&entities=ТИКЕРЫ&window_days=5&limit_news=8" \
   -H "X-Internal-Token: TOKEN"
 
 Если запрос упал — скажи об этом явно и продолжай без него: пост без примеров хуже,
@@ -60,21 +60,21 @@ curl -s "https://framedata.ru/api/internal/world-facts?as_of=ДАТА_НОВОС
 
 Кто связан с компанией через одну связь (kind: владеет · держит · упоминает ·
 аномалия_по · вместе_в_новостях · в_секторе), за N дней:
-curl -s -G https://framedata.ru/api/internal/brain/neighbors \
+curl -s -G {api_host}/api/internal/brain/neighbors \
   --data-urlencode "id=company:AFKS" --data-urlencode "kind=владеет" \
   --data-urlencode "since=90" --data-urlencode "limit=20" --data-urlencode "candidate_id=CANDIDATE_ID"
 
 Есть ли связь между двумя компаниями и какая:
-curl -s -G https://framedata.ru/api/internal/brain/path \
+curl -s -G {api_host}/api/internal/brain/path \
   --data-urlencode "a=company:AFKS" --data-urlencode "b=company:SGZH" --data-urlencode "candidate_id=CANDIDATE_ID"
 
 Что писали по смыслу (по новостям базы), например было ли похожее раньше:
-curl -s -G https://framedata.ru/api/internal/brain/search \
+curl -s -G {api_host}/api/internal/brain/search \
   --data-urlencode "q=понижение рейтинга холдинга" --data-urlencode "kind=news" \
   --data-urlencode "mode=meaning" --data-urlencode "limit=5" --data-urlencode "candidate_id=CANDIDATE_ID"
 
 Срез по другой компании из брифа (тот же формат, что блок второй_мозг):
-curl -s -G https://framedata.ru/api/internal/brain/context \
+curl -s -G {api_host}/api/internal/brain/context \
   --data-urlencode "ticker=SGZH" --data-urlencode "days=90" --data-urlencode "candidate_id=CANDIDATE_ID"
 
 Правила те же, что у блока второй_мозг: уровень [A]–[D] стоит в каждой строке, [D]
@@ -279,13 +279,13 @@ curl -s -G https://framedata.ru/api/internal/brain/context \
 - Не писать «сегодня» и «вчера»: пост могут прочитать не в день публикации. Голое
   время (10:24) или дата (15 июля) — можно.
 
-⚠️ Домен в URL — строго framedata.ru (ASCII). Кириллические домены ломают curl.
+⚠️ Адрес сервера — `{api_host}`: подставь значение api_host из данных запуска РОВНО как передано (с https:// и путём, это наш релей). Не заменяй его на framedata.ru: прямой путь из облака рвётся.
 
 # ПРОВЕРЬ СЕБЯ ПЕРЕД ОТПРАВКОЙ — один запрос
 
 Черновик готов — прогони его через профиль стиля, ДО PATCH'а:
 
-curl -s -X POST https://framedata.ru/api/internal/content-news/style-check \
+curl -s -X POST {api_host}/api/internal/content-news/style-check \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
   -d '{"draft":"<твой черновик целиком>"}'
 
@@ -313,14 +313,14 @@ step-c — draft_text. Оба эндпоинта теперь принимают
 
 Черновик готов:
 
-curl -s -X PATCH https://framedata.ru/api/internal/content-news/CANDIDATE_ID/step-c \
+curl -s -X PATCH {api_host}/api/internal/content-news/CANDIDATE_ID/step-c \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
   -d '{"draft_text": "...весь текст поста с переносами строк..."}'
 
 Отказ (честный отказ лучше натянутого поста — если фактуры мало, данные
 противоречат друг другу или связь новости с инструментом не следует из брифа):
 
-curl -s -X PATCH https://framedata.ru/api/internal/content-news/CANDIDATE_ID/step-c \
+curl -s -X PATCH {api_host}/api/internal/content-news/CANDIDATE_ID/step-c \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
   -d '{"declined_reason": "..."}'
 

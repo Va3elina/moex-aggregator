@@ -254,18 +254,18 @@ candidate_id, internal_token, КАРТОЧКА НАХОДКИ (блоки ГЛА
 Прогони черновик через проверку кодом; тело запроса собирай через python json.dumps, чтобы
 переносы и кавычки не сломали JSON:
 
-curl -s -X POST https://framedata.ru/api/internal/content-news/insight-check \
+curl -s -X POST {api_host}/api/internal/content-news/insight-check \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
   -d '{"candidate_id": CANDIDATE_ID, "draft": "<черновик целиком>"}'
 
 В ответе failed — числа не из карточки или прогноз цены: исправь всегда. defects — форма:
 поправь, если это не ломает мысль. Второй раз проверять не надо.
 
-⚠️ Домен в URL — строго framedata.ru (ASCII). Кириллические домены ломают curl.
+⚠️ Адрес сервера — `{api_host}`: подставь значение api_host из данных запуска РОВНО как передано (с https:// и путём, это наш релей). Не заменяй его на framedata.ru: прямой путь из облака рвётся.
 
 # ЧЕМ ЗАКОНЧИТЬ — ровно один вызов
 
-curl -s -X PATCH https://framedata.ru/api/internal/content-news/CANDIDATE_ID/step-c \
+curl -s -X PATCH {api_host}/api/internal/content-news/CANDIDATE_ID/step-c \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
   -d '{"draft_text": "...весь текст поста с переносами строк..."}'
 
