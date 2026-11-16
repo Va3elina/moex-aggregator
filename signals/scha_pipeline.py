@@ -51,7 +51,8 @@ ARCHIVE = ROOT / "data" / "manual_scha" / "auto"        # хост: /opt/frame/d
 ARCHIVE_IN_API = "/data/manual_scha/auto"                # то же в api-контейнере (только чтение)
 AUTO_IMPORT = os.environ.get("SCHA_AUTO_IMPORT", "0") == "1"
 ROUTINE = "SCHA_READER"   # → TRIGGER_ID_SCHA_READER / CLAUDE_ROUTINE_FIRE_TOKEN_SCHA_READER в .env
-API_HOST = "https://framedata.ru"   # ⚠️ только ASCII-домен: кириллица ломает curl внутри рутины
+# Колбэки рутины — через релей (ROUTINE_API_HOST в .env), см. signals/content_ai.py.
+API_HOST = os.environ.get("ROUTINE_API_HOST", "https://framedata.ru").rstrip("/")
 MONTHLY_SOURCES = ("interfax_manual", "vim_sdr")
 MAX_ATTEMPTS = 3          # сбои окружения (контейнер, сеть) — потом 'failed' и сообщение
 LEASE_MIN = 15            # задание взято в работу — другие его не трогают; упал воркер → вернётся само

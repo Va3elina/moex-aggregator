@@ -141,7 +141,11 @@ MAX_DISPATCH_ATTEMPTS = 3    # сколько раз ЭТОТ бэкстоп п�
 # поднять cloud-контейнер — конкуренция за мощность аккаунта роняет часть
 # попыток на этапе провижининга, ещё до старта самой Routine-сессии.
 FIRE_STAGGER_SEC = 8
-INTERNAL_API_HOST = "https://framedata.ru"  # ⚠️ punycode: кириллица ломает curl внутри Routine
+# Адрес, по которому ОБЛАЧНЫЕ рутины шлют колбэки (уходит им в payload как api_host).
+# С 16.11.2026 — через релей в Хельсинки (ROUTINE_API_HOST в .env, с секретным префиксом):
+# прямой путь облако Anthropic → сервер в РФ рвётся на TLS. Сам сервер ходит к себе напрямую.
+SELF_API_HOST = "https://framedata.ru"  # ⚠️ только ASCII: кириллица ломает curl внутри Routine
+INTERNAL_API_HOST = os.environ.get("ROUTINE_API_HOST", SELF_API_HOST).rstrip("/")
 
 _ANTHROPIC_HEADERS_BASE = {
     "anthropic-version": "2023-06-01",
@@ -404,7 +408,7 @@ def _insight_payload(db, row, internal_token: str) -> str:
     ex = db.execute(_SELECT_RUBRIC_POSTS, {"tag": tag}).fetchall()
     examples = "\n\n".join(f"--- {r[0]:%d.%m.%Y}\n{(r[1] or '').strip()}" for r in ex) or "(в рубрике пока нет постов)"
     card = "КАРТОЧКА СЮЖЕТА (жанр «связка»)" if combo else "КАРТОЧКА НАХОДКИ"
-    return (f"candidate_id: {row['id']}\ninternal_token: {internal_token}\napi_host: framedata.ru\n\n"
+    return (f"candidate_id: {row['id']}\ninternal_token: {internal_token}\napi_host: {INTERNAL_API_HOST}\n\n"
             f"# {card}\n\n{row['raw_text']}\n\n"
             f"# ПРИМЕРЫ ПОСТОВ КАНАЛА (последние в рубрике; их цифры и даты к {'сюжету' if combo else 'находке'} "
             f"не относятся)\n\n{examples}\n")
@@ -598,7 +602,7 @@ def _hype_accept(candidate_id: int, internal_token: str) -> None:
     (_notify_hype_colleague в api) остаётся без изменений. Хост достаёт до
     framedata.ru (проверено curl /api/health с сервера)."""
     resp = requests.patch(
-        f"{INTERNAL_API_HOST}/api/internal/content-news/{candidate_id}/hype-filter",
+        f"{SELF_API_HOST}/api/internal/content-news/{candidate_id}/hype-filter",
         headers={"X-Internal-Token": internal_token},
         json={"is_news": True, "reason": "ИИ-фильтр отключён"},
         timeout=30,  # ручка синхронно шлёт пост в Telegram (sendPhoto до 20с)

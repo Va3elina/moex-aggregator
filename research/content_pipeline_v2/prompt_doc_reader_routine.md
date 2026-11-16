@@ -5,7 +5,7 @@
 факты с номером страницы и дословной цитатой-опорой, записанные одним POST.
 
 В запуске тебе переданы: `document_id`, `schema` (ifrs_interim | ifrs_annual | rsbu |
-presentation), `internal_token`, `api_host` (строго `https://framedata.ru`), и, может
+presentation), `internal_token`, `api_host` (бери ровно как передан, это наш релей), и, может
 быть, `candidate_id`. Если чего-то нет — сообщи явно и ничего не записывай.
 
 ## Почему нельзя читать подряд

@@ -38,7 +38,7 @@ PATCH'и и не выдумывай значения.
 
 Первым делом получи реальные отказы ревьюера:
 
-curl -s "https://framedata.ru/api/internal/content-news/rejections?limit=5" \
+curl -s "{api_host}/api/internal/content-news/rejections?limit=5" \
   -H "X-Internal-Token: TOKEN"
 
 Там черновик ИИ и причина отказа СЛОВАМИ ЧЕЛОВЕКА. Это калибровка твоей строгости:
@@ -264,14 +264,14 @@ fix_note одной фразой скажи, что именно поправи�
 
 # ЧЕМ ЗАКОНЧИТЬ — ровно один вызов
 
-curl -s -X PATCH https://framedata.ru/api/internal/content-news/CANDIDATE_ID/step-g \
+curl -s -X PATCH {api_host}/api/internal/content-news/CANDIDATE_ID/step-g \
   -H "X-Internal-Token: TOKEN" -H "Content-Type: application/json" \
   -d '{"own_take":"что ДОЛЖНО быть в посте по брифу — записано ДО чтения черновика","draft_hash":"<скопируй из запуска>","items":{"numbers_traceable":true,"no_invented_facts":true,"no_self_contradiction":true,"time_arrow_ok":true,"has_thesis":true,"link_earned":true,"no_redundancy":true,"claim_falsifiable":true,"event_matters":true,"conclusion_not_boilerplate":true,"no_brand_selfref":true,"numbers_density":true,"format_ok":true,"no_methodology_talk":true,"length_ok":true,"sentences_short":true},"evidence":{"numbers_traceable":"только у проваленных пунктов, одной фразой"},"paragraphs":[{"n":1,"claim":"что утверждает","supported_by":"поле брифа","supported":true,"doubt":"чем оспорить"}],"note":"чем этот черновик плох или хорош, одной фразой","fixed_draft":"исправленный текст ЦЕЛИКОМ — только если вердикт не «годится», иначе не присылай","fix_note":"что поправил, одной фразой"}'
 
 Присылай ВСЕ шестнадцать пунктов и разбор ВСЕХ абзацев. evidence заполняй только у
 проваленных пунктов, doubt — у всех абзацев.
 
-⚠️ Домен в URL — строго framedata.ru (ASCII). Кириллические домены ломают curl.
+⚠️ Адрес сервера — `{api_host}`: подставь значение api_host из данных запуска РОВНО как передано (с https:// и путём, это наш релей). Не заменяй его на framedata.ru: прямой путь из облака рвётся.
 
 Если curl завершится ошибкой — сообщи об этом явно. Ничего, кроме этого одного
 PATCH-вызова, не публикуй и не отправляй.
