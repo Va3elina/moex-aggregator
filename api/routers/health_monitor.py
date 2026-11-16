@@ -79,6 +79,13 @@ _PIPELINE_MAX_AGE_H = {
     # main_orchestrator), а порога у него не было → дефолтные 48 ч делали его
     # «silent» каждую среду. Первая же такая тревога стоила разбора на полчаса.
     "ownership_scan": 9 * 24,  # пн-еженедельный шаг оркестратора + запас
+    # Шаги дневного каскада 19:10, которые НЕ ходят в торги выходного дня:
+    # пт 19:10 → пн 19:10 = 72 ч тишины штатно (как 76 ч в monitor_alert.sh).
+    # Найдено 16.11.2026: каждое утро понедельника они давали overall=fail.
+    "freefloat_cap_daily": 76,
+    "stock_splits_daily": 76,
+    "bond_maturity_daily": 76,
+    "bond_prices_daily": 76,
 }
 # mandate_scan с 08.09.2026 ежедневный (cron 0 8 * * *) — специального порога
 # больше не нужно, дефолтных 48 ч достаточно.
@@ -127,10 +134,14 @@ def health_data(
     # Пул торговых дней (holiday-proof). Берём из index_data по IMOEX: он
     # торгуется каждый торговый день, а таблица маленькая (быстро). НЕ из
     # candles — там нет индекса под begin_time-only, полный скан = десятки сек.
+    # Сб/вс исключены: IMOEX считается и в торги выходного дня, а отраслевые
+    # индексы, сырьё, RUSFAR и NAV фондов — нет. С выходными в календаре
+    # каждое утро понедельника ~20 источников ложно получали лаг 2 и «stale».
     tdays = [
         r.d for r in db.execute(text(
             "SELECT DISTINCT trade_date AS d FROM index_data "
             "WHERE secid = 'IMOEX' AND trade_date >= (CURRENT_DATE - INTERVAL '40 days') "
+            "AND EXTRACT(ISODOW FROM trade_date) < 6 "
             "ORDER BY d"
         )).all()
     ]

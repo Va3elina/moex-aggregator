@@ -645,7 +645,9 @@ def _fire(trigger_id: str, bearer_token: str, text_payload: str, dedup=None) -> 
     if _queue_on() and key:
         from api.database import get_engine
         from signals.routine_queue import enqueue
-        opts = dict(priority=10, timeout_sec=900, max_attempts=1, **_QUEUE_OPTS.get(key, {}))
+        # Свои настройки рутины ПЕРЕКРЫВАЮТ дефолты. Не dict(a=…, **opts): при совпадении
+        # ключа это TypeError — так ночной аудит мозга молча не стрелял с 16.10 по 16.11.2026.
+        opts = {"priority": 10, "timeout_sec": 900, "max_attempts": 1, **_QUEUE_OPTS.get(key, {})}
         with get_engine().begin() as conn:
             enqueue(conn, key, text_payload, source="content",
                     dedup_key=f"{key}:{dedup}" if dedup is not None else key if key == "BRAIN_AUDIT" else None,

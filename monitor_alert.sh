@@ -78,7 +78,9 @@ ROWS=$(docker exec "$CONTAINER" psql -U postgres -d moex_db -tA -F'|' -c \
            WHEN pipeline IN ('breadth_daily', 'contract_calendar', 'dividends_daily',
                              'funds_daily', 'macro_daily', 'market_cap_daily',
                              'index_composition_daily', 'commodity_daily',
-                             'indices_daily', 'index_candles_hourly')
+                             'indices_daily', 'index_candles_hourly',
+                             'stock_splits_daily', 'bond_maturity_daily',
+                             'bond_prices_daily')
                 THEN interval '76 hours'
            -- Остальное (5-минутные фетчеры, oi_*) крутится непрерывно.
            ELSE interval '26 hours' END)
