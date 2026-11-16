@@ -34,11 +34,14 @@ _ids: dict = {"mtime": None, "map": {}}
 # (справки СЧА, календарь, диспетчер рутин) ставят use_duty_bot() → FRAME · Дежурный (@frameadminbot).
 # Последний в списке — старый @framesignalbot: запасной, пока нового токена нет в .env.
 TOKEN_KEYS = ("ROBOTS_BOT_TOKEN", "ALERT_BOT_TOKEN")
+# Кому слать: роботы — только владельцу (первый в ADMIN_CHAT_ID), Дежурный — всем админам (Вадим 16.11.2026).
+ALL_CHATS = False
 
 
 def use_duty_bot() -> None:
-    global TOKEN_KEYS
+    global TOKEN_KEYS, ALL_CHATS
     TOKEN_KEYS = ("BOT_TOKEN", "ALERT_BOT_TOKEN")
+    ALL_CHATS = True
 
 
 def _cfg() -> dict | None:
@@ -49,8 +52,10 @@ def _cfg() -> dict | None:
         if "=" in line and not line.lstrip().startswith("#"):
             k, v = line.split("=", 1); kv[k.strip()] = v.strip().strip('"').strip("'")
     tok = next((kv[k] for k in TOKEN_KEYS if kv.get(k)), None)
-    # ADMIN_CHAT_ID — один id или список через запятую: каждое сообщение уходит всем (первый — владелец)
+    # ADMIN_CHAT_ID — один id или список через запятую (первый — владелец): Дежурный шлёт всем, роботы — владельцу
     chats = [c.strip() for c in kv.get("ADMIN_CHAT_ID", "").split(",") if c.strip()]
+    if not ALL_CHATS:
+        chats = chats[:1]
     if not tok or not chats:
         return None
     return dict(tok=tok, chats=chats, root=kv.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/"))
