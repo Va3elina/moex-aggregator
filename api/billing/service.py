@@ -643,13 +643,19 @@ def expire_overdue(db: Session) -> int:
 
 
 # Повторы продления. Раньше крон дёргал карту каждый час всё окно (за 24ч до
-# конца + 48ч grace после) — до ~72 списаний за 3 суток на одного клиента при
+# конца + grace после) — до ~72 списаний за 3 суток на одного клиента при
 # отказе банка. Платёжные системы ограничивают повторы по одной карте (Visa —
 # ~15 за 30 дней), за превышение штрафует эквайер. Теперь: не больше 3 попыток
 # на одно продление, между попытками ≥23ч (23, а не 24 — запас на дрожание
 # часового крона). Итог: за сутки до конца, в момент конца, через сутки после.
+# Исключение — card-1: после NSF-отказа ГОДОВОГО месячный (другая, меньшая
+# сумма) пробуем на следующем часе, без паузы; в лимит 3 он всё равно входит.
 RENEW_MAX_ATTEMPTS = 3
 RENEW_RETRY_GAP_HOURS = 23
+# Сколько крон ещё пытается после конца доступа. 72ч: триал начинает списывать
+# только в момент конца → попытки в +0, +23, +46ч; с 48ч третья влезала с
+# запасом 2ч и терялась при паре пропущенных запусков крона.
+RENEW_GRACE_HOURS = 72
 
 
 def renewal_attempts(db: Session, sub: Subscription) -> list[Subscription]:
@@ -673,16 +679,39 @@ def renewal_attempts(db: Session, sub: Subscription) -> list[Subscription]:
     ).order_by(Subscription.created_at.asc()).all()
 
 
-def _retry_blocked(attempts: list[Subscription], now: datetime) -> str | None:
-    """Причина пропустить попытку (лимит / рано) или None, если можно списывать."""
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def next_renew_attempt_at(sub: Subscription, attempts: list) -> datetime | None:
+    """
+    Когда крон может сделать следующую попытку продлить `sub`, или None, если
+    попыток больше не будет (лимит или следующая не влезает в окно grace).
+    Пустой `attempts` — первая попытка разрешена сразу (вернёт datetime.min).
+    """
+    if len(attempts) >= RENEW_MAX_ATTEMPTS:
+        return None
+    if not attempts:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    last = attempts[-1]
+    at = _aware(last.created_at)
+    # card-1: годовой отказал по NSF → месячный сразу, без паузы.
+    if not (getattr(sub, "fallback_done", False) and getattr(last, "period", None) == "yearly"):
+        at = at + timedelta(hours=RENEW_RETRY_GAP_HOURS)
+    if sub.expires_at is not None and at >= _aware(sub.expires_at) + timedelta(hours=RENEW_GRACE_HOURS):
+        return None
+    return at
+
+
+def _retry_blocked(sub: Subscription, attempts: list, now: datetime) -> str | None:
+    """Причина пропустить попытку (лимит / рано / окно закрыто) или None, если можно списывать."""
     if len(attempts) >= RENEW_MAX_ATTEMPTS:
         return f"limit {len(attempts)}/{RENEW_MAX_ATTEMPTS}"
-    if attempts:
-        last = attempts[-1].created_at
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        if now - last < timedelta(hours=RENEW_RETRY_GAP_HOURS):
-            return f"last attempt {last.isoformat()} < {RENEW_RETRY_GAP_HOURS}h ago"
+    at = next_renew_attempt_at(sub, attempts)
+    if at is None:
+        return "next attempt falls outside grace window"
+    if now < at:
+        return f"next attempt not before {at.isoformat()}"
     return None
 
 
@@ -700,7 +729,7 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
     - payment_method.deleted_at IS NOT NULL — пропускаем (карта удалена)
 
     Запускать раз в час из orchestrator'а. Окно: от hours_window до конца
-    доступа до 48ч после. Внутри окна — не больше RENEW_MAX_ATTEMPTS попыток
+    доступа до RENEW_GRACE_HOURS после. Внутри окна — не больше RENEW_MAX_ATTEMPTS попыток
     с паузой ≥ RENEW_RETRY_GAP_HOURS (см. renewal_attempts / _retry_blocked).
 
     Возвращает {checked, renewed, failed, skipped}.
@@ -710,12 +739,12 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(hours=hours_window)
 
-    # Grace 48ч НАЗАД: если крон простоял >24ч (рестарт сервера, недоступность
+    # Grace RENEW_GRACE_HOURS НАЗАД: если крон простоял >24ч (рестарт сервера, недоступность
     # T-Bank), подписка успевает истечь и expire_overdue (он идёт ПЕРЕД renew в
     # оркестраторе) переводит её в expired — строгий фильтр status='active'
     # оставлял клиента с валидной картой без единой попытки списания. Включаем
     # недавно-expired: Guard 1 ниже защищает от двойного продления.
-    grace = now - timedelta(hours=48)
+    grace = now - timedelta(hours=RENEW_GRACE_HOURS)
     expiring = db.query(Subscription).filter(
         Subscription.status.in_(("active", "expired")),
         Subscription.cancelled_at.is_(None),
@@ -735,7 +764,7 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
 
         # Триал: заряжаем ТОЛЬКО по факту окончания (expires_at <= now), а НЕ за
         # 24ч вперёд (как платные продления) — иначе спишем раньше конца
-        # бесплатного периода. expire_overdue идёт перед renew, grace-48ч ниже
+        # бесплатного периода. expire_overdue идёт перед renew, grace ниже
         # ловит недавно-истёкший триал → конвертация в течение ~1ч после конца.
         if sub.is_trial and sub.expires_at and sub.expires_at > now:
             summary["skipped"] += 1
@@ -762,7 +791,7 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
             continue
 
         # Лимит повторов: ≤3 попытки на продление, пауза ≥23ч между ними.
-        blocked = _retry_blocked(renewal_attempts(db, sub), now)
+        blocked = _retry_blocked(sub, renewal_attempts(db, sub), now)
         if blocked:
             log.info("renew: sub_%s skip — %s", sub.id, blocked)
             summary["skipped"] += 1
@@ -822,9 +851,9 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
                 err32 = (str(result.get("error_code"))[:32]
                          if result.get("error_code") is not None else None)
                 # Card-1 (N=1): ПЕРВЫЙ NSF-отказ ГОДОВОГО → переключаем подписку на
-                # месячный того же tier. Сам месячный спишется на СЛЕДУЮЩЕМ цикле
-                # попытке крона (см. charge_plan_id выше): годовой отказ — попытка 1
-                # из RENEW_MAX_ATTEMPTS, месячному остаются 2. fallback_done ставим ДО любого
+                # месячный того же tier. Сам месячный спишется на СЛЕДУЮЩЕМ запуске
+                # крона, без паузы 23ч (см. next_renew_attempt_at): годовой отказ —
+                # попытка 1 из RENEW_MAX_ATTEMPTS, месячному остаются 2. fallback_done ставим ДО любого
                 # месячного списания: терминальный маркер, чтобы (а) renew больше
                 # не дёргал год, (б) поздний webhook по годовому PaymentId не
                 # реанимировал годовую подписку (см. activate_from_webhook).
