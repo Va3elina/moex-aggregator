@@ -121,7 +121,7 @@ def snapshot_members(conn, api_base: str, chat_id: int, today) -> None:
     ), {"c": chat_id, "d": today, "m": int(r["result"])})
 
 
-def check_anomaly(conn, api_base: str, admin_chat_id: int, chat_id: int, today, kind: str) -> None:
+def check_anomaly(conn, api_base: str, admin_chat_ids, chat_id: int, today, kind: str) -> None:
     first = conn.execute(text(
         f"SELECT MIN({_DAY_SQL}) FROM tg_channel_joins WHERE chat_id = :c"), {"c": chat_id}).scalar()
     if not first or (today - first).days < ALERT_MIN_HISTORY_DAYS:
@@ -162,7 +162,13 @@ def check_anomaly(conn, api_base: str, admin_chat_id: int, chat_id: int, today, 
             " GROUP BY 1 ORDER BY 2 DESC"), {"c": chat_id, "d": today}).fetchall()
         lines.append("")
         lines += [f"• <code>{src}</code>: {n}" for src, n in srcs]
-    send_html(api_base, admin_chat_id, "\n".join(lines))
+    for admin_chat_id in _as_list(admin_chat_ids):
+        send_html(api_base, admin_chat_id, "\n".join(lines))
+
+
+def _as_list(ids) -> list:
+    """Один id или список получателей."""
+    return list(ids) if isinstance(ids, (list, tuple, set)) else [ids]
 
 
 def send_html(api_base: str, chat_id: int, html: str) -> None:
@@ -172,10 +178,10 @@ def send_html(api_base: str, chat_id: int, html: str) -> None:
                   timeout=15)
 
 
-def hourly_tick(conn, api_base: str, admin_chat_id: int) -> None:
+def hourly_tick(conn, api_base: str, admin_chat_ids) -> None:
     """Снимок подписчиков всех известных каналов и проверка всплесков за сегодня."""
     today = datetime.now(MSK).date()
     for chat_id in _tracked_chats(conn):
         snapshot_members(conn, api_base, chat_id, today)
         for kind in ("join", "leave"):
-            check_anomaly(conn, api_base, admin_chat_id, chat_id, today, kind)
+            check_anomaly(conn, api_base, admin_chat_ids, chat_id, today, kind)
