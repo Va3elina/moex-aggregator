@@ -11,7 +11,8 @@ Cron раз в минуту (signals/routine_dispatch.sh). За прогон:
 все рутины разом (16.07). Один диспетчер на все заводы снимает и то и другое.
 
 Рутина → env: ключ SCHA_CHECK → TRIGGER_ID_SCHA_CHECK + CLAUDE_ROUTINE_FIRE_TOKEN_SCHA_CHECK.
-Релей — CLAUDE_ROUTINE_API_ROOT (api.anthropic.com отдаёт 403 российским IP).
+Путь до Anthropic (api.anthropic.com отдаёт 403 российским IP): основной — VPN TH Wildau
+(ROUTINE_PRIMARY_PROXY), запасной — релей Hetzner CLAUDE_ROUTINE_API_ROOT.
 """
 from __future__ import annotations
 
@@ -41,6 +42,11 @@ FIRING_STUCK_MIN = 5         # 'firing' дольше — прогон упал �
 LOCK_KEY = 0x524F5554        # pg advisory lock «ROUT»: второй прогон выходит сразу
 
 API_ROOT = os.environ.get("CLAUDE_ROUTINE_API_ROOT", "https://api.anthropic.com").rstrip("/")
+# Основной путь до Anthropic — VPN университета (systemd thw-vpn + мост thw-proxy, /opt/thw-vpn),
+# например http://10.250.0.2:3128. Пусто — только релей.
+PRIMARY_PROXY = os.environ.get("ROUTINE_PRIMARY_PROXY", "").strip()
+_NOT_SENT = (requests.exceptions.ProxyError, requests.exceptions.ConnectTimeout,
+             requests.exceptions.SSLError)
 HEADERS = {   # те же, что у signals/content_ai.py
     "anthropic-version": "2023-06-01",
     "anthropic-beta": "experimental-cc-routine-2026-04-01",
@@ -88,14 +94,42 @@ def expire(conn) -> None:
         log(f"#{r.id} {r.routine}: без колбэка → {r.status}")
 
 
+def _routes() -> list[tuple[str, str, str | None]]:
+    """Пути до /fire по порядку. Основной — VPN TH Wildau (мост ROUTINE_PRIMARY_PROXY → прокси
+    университета → api.anthropic.com из Германии), запасной — релей Hetzner CLAUDE_ROUTINE_API_ROOT.
+    Без ROUTINE_PRIMARY_PROXY — только релей, как было."""
+    routes = []
+    if PRIMARY_PROXY:
+        routes.append(("VPN TH Wildau", "https://api.anthropic.com", PRIMARY_PROXY))
+    routes.append(("релей", API_ROOT, None))
+    return routes
+
+
 def _fire(routine: str, payload: str) -> str:
     trig = os.environ.get(f"TRIGGER_ID_{routine}", "")
     tok = os.environ.get(f"CLAUDE_ROUTINE_FIRE_TOKEN_{routine}", "")
     if not trig or not tok:
         raise PermissionError(f"нет TRIGGER_ID_{routine} / CLAUDE_ROUTINE_FIRE_TOKEN_{routine} в .env")
-    r = requests.post(f"{API_ROOT}/v1/claude_code/routines/{trig}/fire",
-                      headers={**HEADERS, "Authorization": f"Bearer {tok}"},
-                      json={"text": payload}, timeout=20)
+    routes = _routes()
+    r = None
+    for i, (name, root, proxy) in enumerate(routes):
+        last = i == len(routes) - 1
+        try:
+            r = requests.post(f"{root}/v1/claude_code/routines/{trig}/fire",
+                              headers={**HEADERS, "Authorization": f"Bearer {tok}"},
+                              json={"text": payload}, timeout=(8, 20),
+                              proxies={"http": proxy, "https": proxy} if proxy else None)
+        except _NOT_SENT as e:
+            # запрос не ушёл (туннель/прокси лежит, TLS не поднялся) — повтор по другому пути
+            # не даст двойного запуска; ReadTimeout сюда не входит: запуск мог уже пройти
+            if last:
+                raise
+            log(f"/fire через {name}: {type(e).__name__} → запасной путь")
+            continue
+        if not last and r.status_code == 403 and "request not allowed" in (r.text or "").lower():
+            log(f"/fire через {name}: гео-отказ 403 → запасной путь")
+            continue
+        break
     if r.status_code >= 400:
         raise requests.HTTPError(f"{r.status_code} {r.text[:300]}", response=r)
     try:
