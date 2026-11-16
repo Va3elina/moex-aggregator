@@ -1,9 +1,11 @@
 """Робот скринера VB (объёмный пробой лонг + шорт, акции TQBR) в песочнице Т-Инвестиций — следует модели один в один.
 
+Плечо — VB_LEVERAGE (по умолчанию ×3, с 16.11.2026): вход, если хватает начальной маржи по ставкам риска Т-Банка на сегодня
+(S.account_margin, тот же код, что в Стенде); VB_GUARD=0.15 — защита «−15 % от пика → новые сделки ×1» (выкл.).
 Решений сам не принимает: каждые 5 минут пересчитывает стратегию тем же кодом, что прогон Стенда
 (backtest/screener_vb.py: данные из БД, сегодняшняя дневная свеча — та, что успела обновиться), и приводит счёт
 к модели: модель открыла сделку — входим рыночной заявкой, модель её закрыла — выходим. Счёт 10 млн, идея = 1 млн
-(тренд-сделки одного дня делят идею), в позициях не больше 10 млн, без плеча.
+(тренд-сделки одного дня делят идею).
 
 Когда входим (МСК): шорт-скальп — по открытию дня T+1 (первый запуск после 07:00); лонг-скальп и тренд-ноги — по
 закрытию T+1, то есть в последние 10 минут сессии (до 23:50 в будни, до 19:00 в выходной), когда объём дня почти полный.
@@ -27,6 +29,8 @@ MSK = ZoneInfo('Europe/Moscow')
 STATE = pathlib.Path(os.environ.get('VB_STATE', ROOT / 'bt_data' / 'vb_bot'))
 CAPITAL, SLOTS = 10_000_000, 10
 SIZE = CAPITAL / SLOTS
+LEVERAGE = float(os.environ.get('VB_LEVERAGE', '3'))         # плечо: идея = 1 млн × плечо, вход при достатке маржи
+GUARD = float(os.environ.get('VB_GUARD', '0')) or None        # 0.15 = после −15 % от пика новые сделки ×1 (выкл. по умолчанию)
 ACCOUNT_NAME = 'vb-screener-x1'
 BASE = 'https://sandbox-invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1.'
 JCOLS = ['ts', 'action', 'key', 'ticker', 'leg', 'side', 'lots', 'qty', 'price', 'model_price', 'model_reason', 'note']
@@ -94,12 +98,13 @@ def instruments(st):
     f = STATE / 'instruments.json'
     if f.exists():
         d = json.loads(f.read_text())
-        if d.get('date') == today: return d['map']
+        if d.get('date') == today and all('dl' in v for v in d['map'].values()): return d['map']   # старый кэш без ставок — перечитать
     r = api('InstrumentsService/Shares', {'instrumentStatus': 'INSTRUMENT_STATUS_BASE'})
     if '_error' in r:
         if f.exists(): return json.loads(f.read_text())['map']
         raise RuntimeError(r['_error'])
-    m = {s['ticker']: {'figi': s['figi'], 'lot': int(s['lot']), 'short': bool(s.get('shortEnabledFlag'))}
+    m = {s['ticker']: {'figi': s['figi'], 'lot': int(s['lot']), 'short': bool(s.get('shortEnabledFlag')),
+                       'dl': q(s.get('dlong')), 'ds': q(s.get('dshort'))}
          for s in r['instruments'] if s.get('classCode') == 'TQBR'}
     f.write_text(json.dumps({'date': today, 'map': m}))
     return m
@@ -128,7 +133,12 @@ def session(now):
     return (dt.time(10, 0), dt.time(19, 0)) if wk else (dt.time(7, 0), dt.time(23, 50))
 
 
-def model(now):
+def rates_from(inst):
+    """Ставки риска Т-Банка на сегодня: тикер → (лонг, шорт или None, если шорт запрещён)."""
+    return {t: (i['dl'] if i.get('dl') else 1.0, i['ds'] if i['short'] and i.get('ds') else None) for t, i in inst.items()}
+
+
+def model(now, st, inst):
     today = now.date().isoformat()
     t_open, t_close = session(now)
     last10 = now.time() >= (dt.datetime.combine(now.date(), t_close) - dt.timedelta(minutes=10)).time()
@@ -137,9 +147,12 @@ def model(now):
     sigs = S.run(tk, mk, dv, vv, final)
     sigs.sort(key=lambda s: (s.entryDate, s.ticker, s.exitMode))
     w = S.cluster_weights(sigs)
-    wa = S.account(sigs, w, SLOTS)
     fresh = tk['SBER'].d[-1] == today if 'SBER' in tk else False
-    return [(s, x) for s, x in zip(sigs, wa) if x], fresh, last10, t_open
+    if LEVERAGE > 1:                                       # счёт с маржой с первого дня робота (тот же код, что в Стенде)
+        nom, forced, _ = S.account_margin(sigs, w, tk, LEVERAGE, rates_from(inst), st['start'], CAPITAL, SIZE, GUARD)
+    else:
+        nom, forced = [x * SIZE for x in S.account(sigs, w, SLOTS)], {}
+    return [(s, x) for s, x in zip(sigs, nom) if x], {key(sigs[i]) for i in forced}, fresh, last10
 
 
 def key(s):
@@ -159,17 +172,17 @@ def run():
     t_open, t_close = session(now)
     if not (t_open <= now.time() <= t_close):
         return
-    exe, fresh, last10, _ = model(now)
+    inst = instruments(st)
+    exe, forced, fresh, last10 = model(now, st, inst)
     if not fresh:
         log('сегодняшних свечей в БД нет — неторговый день или данные встали; ничего не делаю'); return
     today = now.date().isoformat()
-    inst = instruments(st)
     legs, skipped = st.setdefault('legs', {}), st.setdefault('skipped', {})
     allm = {key(s): (s, x) for s, x in exe}
     # выходы: модель закрыла сделку (или её больше нет)
     for k in list(legs):
         s = allm.get(k, (None, 0))[0]
-        if s is not None and s.res['reason'] == 'open': continue
+        if s is not None and s.res['reason'] == 'open' and k not in forced: continue
         L = legs[k]
         px, err = order(st, k, L['figi'], -L['side'], L['lots'], 'out')
         if err:
@@ -190,7 +203,7 @@ def run():
         why = 'нет в справочнике Т-Банка' if not i else ('шорт запрещён брокером' if side < 0 and not i['short'] else None)
         if not why:
             p = last_price(i['figi'])
-            lots = math.floor(SIZE * x / (p * i['lot'])) if p else 0
+            lots = math.floor(x / (p * i['lot'])) if p else 0           # x — стоимость входа модели, ₽
             why = None if lots >= 1 else 'нет цены или меньше 1 лота'
         if why:
             skipped[k] = why; save_state(st)
