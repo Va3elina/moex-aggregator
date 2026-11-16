@@ -36,8 +36,9 @@ MSK = ZoneInfo("Europe/Moscow")
 # доставки чат не должен получить пачку вчерашних новостей.
 MAX_EVENT_AGE_HOURS = 48
 
-# Продление ретраится кроном каждый час до суток: о провале сообщаем один раз,
-# дальше молчим до истечения подписки (придёт «закончилась, не продлена»).
+# Продление: не больше 3 попыток с паузой ≥23ч (service.RENEW_*). Тишина 20ч
+# меньше паузы — в чат уходит каждая попытка («попытка N из 3»), а случайные
+# дубли в пределах одной попытки глушатся.
 RENEW_FAIL_QUIET_HOURS = 20
 
 TIER_NAMES = {"basic": "Basic", "pro": "Pro", "premium": "Premium"}
@@ -273,7 +274,14 @@ def _render_payment_failed(db: Session, ev, sub: Subscription, user, pm) -> str 
     if code:
         lines.append(f"Код банка: {html.escape(str(code))}")
     if is_renewal and base is not None and base.expires_at:
-        lines.append(f"Доступ до {_d(base.expires_at)}, крон пробует каждый час в течение суток")
+        from api.billing.service import RENEW_MAX_ATTEMPTS, renewal_attempts
+        n = sum(1 for a in renewal_attempts(db, base) if a.id <= sub.id)
+        if n >= RENEW_MAX_ATTEMPTS:
+            tail = "больше не пробуем"
+        else:
+            tail = "следующая через сутки"
+        lines.append(f"Доступ до {_d(base.expires_at)}")
+        lines.append(f"Попытка {max(n, 1)} из {RENEW_MAX_ATTEMPTS}, {tail}")
     return "\n".join(lines)
 
 
