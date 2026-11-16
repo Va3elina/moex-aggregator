@@ -109,15 +109,21 @@ if echo "$changed" | grep -qE '^(backtest/|requirements\.txt|Dockerfile$|docker-
 fi
 
 # orchestrator — ОТДЕЛЬНЫЙ image; пересобираем только если менялся его код.
-# ⚠️ Список ОБЯЗАН повторять COPY-строки Dockerfile (кроме frontend/ и api/,
-# которые едут в api-образ). Пропущенный путь = МОЛЧАЛИВЫЙ отказ: CI зелёный,
+# ⚠️ Список ОБЯЗАН повторять COPY-строки Dockerfile (кроме frontend/).
+# api/ тоже лежит в образе оркестратора, и его скрипты импортируют часть api:
+# billing (+ routers/auth через billing/tiers), models, services, brain_core,
+# agent_trace, database, ru_tls, routers/fund_trades. Весь api/ не берём, чтобы
+# не перезапускать оркестратор посреди задач на каждой правке роутеров.
+# Новый `from api.X` в OI/Funds/... или main_orchestrator → добавь X сюда.
+# 16.11 PR #1797 (лимит попыток продления) обновил api, а крон списаний
+# остался на старом коде — поэтому эти пути в regex ниже. Пропущенный путь = МОЛЧАЛИВЫЙ отказ: CI зелёный,
 # деплой «успешен», а оркестратор крутит старый код. Так CBR/ не доезжал до
 # прода — правка парсера ОРФР ушла в main, но ингест шёл старым кодом.
 # Меняешь COPY в Dockerfile → правь и этот regex.
 # ⚠️ Список папок — ЯВНЫЙ, и он уже подводил: Brain/ и Company/ в нём не было, деплой
 # #1413 обновил api, а оркестратор остался на старом brain_sync и раз в 15 минут
 # откатывал слой доверия. Любой новый каталог со скриптами оркестратора — сюда И в Dockerfile.
-if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|Crypto/|CBR/|Company/|Brain/|signals/|main_orchestrator\.py|pipeline_heartbeat\.py|moex_calendar\.py|moex_tls\.py|tg_bot\.py|backup_db\.sh|requirements\.txt|Dockerfile$)'; then
+if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|Crypto/|CBR/|Company/|Brain/|signals/|api/billing/|api/models/|api/services/|api/brain_core|api/agent_trace|api/database\.py|api/ru_tls\.py|api/routers/auth\.py|api/routers/fund_trades\.py|main_orchestrator\.py|pipeline_heartbeat\.py|moex_calendar\.py|moex_tls\.py|tg_bot\.py|backup_db\.sh|requirements\.txt|Dockerfile$)'; then
   echo "=== Orchestrator code changed -> rebuild ==="
   docker rm -f $(docker ps -aq --filter 'name=_frame-orchestrator-1') 2>/dev/null || true
   docker compose build orchestrator
