@@ -550,12 +550,18 @@ def fetch_iss_extra():
 
 
 def run(tickers, mk, divs, dvals, bar_final=lambda d: True):
+    """Все сделки всех бумаг. Позиция в бумаге, которую сняли с торгов (свечей нет > 14 дней при живом рынке),
+    закрывается по последней цене: иначе она навсегда «открыта» и занимает место на счёте (RUALR с 2017, AGRO с 2024)."""
     sigs = []
+    last = max(tk.d[-1] for tk in tickers.values())
+    gone = (date.fromisoformat(last) - timedelta(days=14)).isoformat()
     for t, tk in tickers.items():
         for dir_ in ('long', 'short'):
             for s in scan_full(tk, divs.get(t, []), dir_, mk, None, bar_final):
                 r = simulate(s, tk, divs.get(t, []), dvals.get(t, {}), mk, bar_final)
                 if r:
+                    if r['reason'] == 'open' and tk.d[-1] < gone:
+                        r['reason'] = 'delisted'
                     s.res = r
                     sigs.append(s)
     return sigs
@@ -619,7 +625,8 @@ def curve(sigs, weights, tickers, mk, size, since, until):
 
 
 REASON = {'trailing_stop': 'трейлинг', 'cat_stop': 'кат. стоп', 'max_hold': 'время', 'div_exit': 'до отсечки',
-          'profit_lock': 'защита прибыли', 'donch_break': 'пробой канала', 'regime': 'IMOEX ниже MA50', 'open': 'открыта'}
+          'profit_lock': 'защита прибыли', 'donch_break': 'пробой канала', 'regime': 'IMOEX ниже MA50', 'open': 'открыта',
+          'delisted': 'снята с торгов'}
 LEG = lambda s: ('лонг' if s.dir == 'long' else 'шорт') + ('-тренд' if s.exitMode == 'trend' else '-скальп')
 
 
