@@ -589,6 +589,55 @@ def account(sigs, w, cap_units):
     return out
 
 
+def risk_rates():
+    """Ставки риска Т-Банка (стандартный уровень, КСУР): тикер → (лонг, шорт или None). Снимок 16.11.2026; плечо = 1/ставка."""
+    df = pd.read_csv(DATA / 'tbank_risk_rates.csv.gz')
+    return {r.t: (float(r.dl) if r.dl and r.dl > 0 else 1.0, float(r.ds) if r.short and r.ds and r.ds > 0 else None)
+            for r in df.itertuples()}
+
+
+def account_margin(sigs, w, tickers, k, rates, start, cap0=10_000_000, size=1_000_000, guard=0.15):
+    """Счёт с плечом как у брокера: идея = size × k × вес; вход, если начальная маржа Σ(стоимость × ставка) с новой
+    сделкой ≤ капитала на сегодня (переоценка по закрытию); шорт — только где ставка есть (брокер разрешает);
+    бумага без ставки — лонг на свои. Маржин-колл: капитал < половины маржи → всё закрыть по закрытию дня.
+    guard: капитал ниже пика больше чем на guard → новые сделки ×1, пока не обновится пик (None — без защиты).
+    → (стоимость входа по сделке или 0, {сделка: дата принудительного закрытия}, дневные строки капитала)."""
+    days = sorted({d for tk in tickers.values() for d in tk.d if d >= start and not wk(d)})
+    by_entry = {}
+    for i, s in enumerate(sigs):
+        if s.entryDate >= start:                         # сигналы по дате Стенд отбирает сам; робот — вход с первого дня
+            by_entry.setdefault(s.entryDate, []).append(i)
+    for d in by_entry:
+        by_entry[d].sort(key=lambda i: (-sigs[i].vr, sigs[i].exitMode))
+    close = lambda t, d: tickers[t].c[bisect.bisect_right(tickers[t].d, d) - 1]
+    out, forced, rows = [0.0] * len(sigs), {}, []
+    pos, real, peak = {}, 0.0, cap0
+    for d in days:
+        for i in [i for i in pos if sigs[i].res['reason'] != 'open' and sigs[i].res['exitDate'] <= d]:
+            real += pos.pop(i)['notional'] * sigs[i].res['ret'] / 100
+        mtm = im = 0.0
+        for i, p in pos.items():
+            c = close(sigs[i].ticker, d)
+            mtm += p['side'] * p['notional'] * (c / p['px'] - 1); im += p['qty'] * c * p['rate']
+        eq = cap0 + real + mtm
+        if pos and eq < im / 2:
+            for i in pos: forced[i] = d
+            real += mtm; pos.clear(); eq = cap0 + real; im = 0.0
+        peak = max(peak, eq)
+        kk = 1 if guard and eq < peak * (1 - guard) else k
+        for i in by_entry.get(d, []):
+            s = sigs[i]; side = 1 if s.dir == 'long' else -1
+            dl, ds = rates.get(s.ticker, (1.0, None))
+            r = dl if side > 0 else ds
+            if r is None: continue
+            notional = size * kk * w[i]
+            if im + notional * r > eq: continue
+            pos[i] = {'side': side, 'notional': notional, 'px': s.ep, 'qty': notional / s.ep, 'rate': r}
+            im += notional * r; out[i] = notional
+        rows.append((d, eq, len(pos), sum(p['notional'] for p in pos.values()), im))
+    return out, forced, rows
+
+
 def curve(sigs, weights, tickers, mk, size, since, until):
     """Дневная кривая: реализовано + переоценка открытых по close (шорт — минус набежавший заём). → уровень, позиции, экспозиция"""
     cum, t = {}, date(2011, 1, 1)
@@ -645,12 +694,21 @@ def execute(spec, progress=None):
     sigs.sort(key=lambda s: (s.entryDate, s.ticker, s.exitMode))
     if progress: progress(2, 3)
     w = cluster_weights(sigs)
-    wa = account(sigs, w, slots)
     size = capital / slots
     last = max(tk.d[-1] for tk in tickers.values())
-    days, lvl, pos, expo = curve(sigs, wa, tickers, mk, size, since, until or last)
-    E = pd.DataFrame({'equity': capital + lvl, 'positions': pos.astype(int), 'notional': expo, 'go_used': 0.0, 'margin_call': 0},
-                     index=pd.to_datetime(days)).rename_axis('d')
+    lev = float(spec.get('leverage') or 1.0)
+    guard = spec.get('guard')                               # None — без защиты
+    if lev > 1:                                              # плечо: счёт с маржой по ставкам риска брокера
+        nom, forced, rows = account_margin(sigs, w, tickers, lev, risk_rates(), since, capital, size, guard)
+        wa = [x / size for x in nom]
+        E = pd.DataFrame(rows, columns=['d', 'equity', 'positions', 'notional', 'go_used']).assign(margin_call=0)
+        E['d'] = pd.to_datetime(E.d); E = E.set_index('d')
+        for d in set(forced.values()): E.loc[pd.Timestamp(d), 'margin_call'] = 1
+    else:
+        wa = account(sigs, w, slots)
+        days, lvl, pos, expo = curve(sigs, wa, tickers, mk, size, since, until or last)
+        E = pd.DataFrame({'equity': capital + lvl, 'positions': pos.astype(int), 'notional': expo, 'go_used': 0.0, 'margin_call': 0},
+                         index=pd.to_datetime(days)).rename_axis('d')
     c_side = (P['commission'] + P['slippage'])
     T = pd.DataFrame([dict(n=i, st=s.ticker, d=pd.Timestamp(s.entryDate), secid=s.ticker, side=1 if s.dir == 'long' else -1,
                            move=None, thr_up=None, thr_dn=None, px_in=s.ep, d_out=pd.Timestamp(s.res['exitDate']),
@@ -663,7 +721,7 @@ def execute(spec, progress=None):
                            equity_in=None, comm_rub=size * wa[i] * 2 * P['commission'], spread_rub=size * wa[i] * 2 * P['slippage'],
                            pnl_rub=size * wa[i] * sigs[i].res['ret'] / 100, go_cut=False) for i in ex],
                      columns=['n', 'd', 'st', 'qty', 'notional', 'go', 'equity_in', 'comm_rub', 'spread_rub', 'pnl_rub', 'go_cut'])
-    K = pd.DataFrame([dict(n=i, d=T.d[i], st=sigs[i].ticker, side=T.side[i], reason='нет места на счёте')
+    K = pd.DataFrame([dict(n=i, d=T.d[i], st=sigs[i].ticker, side=T.side[i], reason='не хватает маржи' if lev > 1 else 'нет места на счёте')
                       for i, x in enumerate(wa) if not x], columns=['n', 'd', 'st', 'side', 'reason'])
     legs = {}
     for s, x in zip(sigs, w):
@@ -673,7 +731,8 @@ def execute(spec, progress=None):
         legs[k] = (n0 + 1, r0 + 1e6 * x * s.res['ret'] / 100)
     full = {**spec, 'strategy': 'screener_vb', 'capital': capital, 'slots': slots, 'since': since, 'until': until,
             'universe': sorted({s.ticker for s in sigs}), 'exec': 'T+1', 'tariff': '0.05 % + 0.1 % за сторону',
-            'spread': 'в проскальзывании', 'go': 'не нужно (акции)', 'leverage': 1.0, 'go_mult': 1.0,
+            'spread': 'в проскальзывании', 'go': 'ставки риска Т-Банка (КСУР)' if lev > 1 else 'не нужно (акции)',
+            'leverage': lev, 'guard': guard if lev > 1 else None, 'go_mult': 1.0,
             'rule': {'id': 'screener_vb', 'name': spec.get('name') or 'Скринер VB: объёмный пробой лонг + шорт (TQBR)'}}
     res = {'kind': 'screener', 'period': [since, str(T.d_out.max().date()) if len(T) else since], 'signals': len(sigs),
            'per_trade': metrics.per_trade(T) if len(T) else {'сделок': 0},

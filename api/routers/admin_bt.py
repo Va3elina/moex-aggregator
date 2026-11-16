@@ -38,6 +38,7 @@ class RunIn(BaseModel):
     rule: Any = Field(None, description="имя пресета или правило целиком (см. backtest/rules.py)")
     code: Optional[str] = Field(None, max_length=60_000, description="стратегия на Python (backtest/pyengine.py); исполняется в bt-sandbox")
     strategy: Optional[str] = Field(None, description="готовая стратегия Стенда: screener_vb (backtest/screener_vb.py)")
+    guard: Optional[float] = Field(None, ge=0, le=0.9, description="screener_vb с плечом: просадка от пика, после которой новые сделки ×1")
     params: Optional[dict] = None
     name: Optional[str] = None
     exec: str = 'close'

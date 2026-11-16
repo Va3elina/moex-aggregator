@@ -21,7 +21,8 @@ pd.set_option('display.width', 220); pd.set_option('display.max_columns', 40)
 
 def _spec(a):
     if getattr(a, 'strategy', None):             # готовая стратегия Стенда (backtest/screener_vb.py): правила внутри
-        return {'strategy': a.strategy, 'name': a.name, 'capital': a.capital, 'slots': a.slots, 'since': a.since, 'until': a.until}
+        return {'strategy': a.strategy, 'name': a.name, 'capital': a.capital, 'slots': a.slots, 'since': a.since, 'until': a.until,
+                'leverage': a.leverage, 'guard': a.guard}
     base = {'name': a.name, 'exec': a.exec, 'universe': a.universe.split(',') if a.universe else None,
             'since': a.since, 'until': a.until, 'tariff': a.tariff, 'spread': a.spread, 'capital': a.capital,
             'slots': a.slots, 'go': a.go, 'go_limit': a.go_limit}
@@ -54,6 +55,7 @@ def main():
         p.add_argument('--capital', type=float, default=1_000_000); p.add_argument('--slots', type=int, default=6)
         p.add_argument('--go', default='mr1', choices=['mr1', 'snapshot', 'tv100', 'none'])
         p.add_argument('--go-limit', type=float, default=1.0); p.add_argument('--name')
+        p.add_argument('--leverage', type=float, default=1.0); p.add_argument('--guard', type=float, default=None)
         if c == 'submit': p.add_argument('--no-wait', action='store_true')
     p = sp.add_parser('show'); p.add_argument('id', type=int); p.add_argument('--trades'); p.add_argument('--last', type=int, default=15)
     a = ap.parse_args()

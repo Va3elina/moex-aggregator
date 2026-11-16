@@ -124,14 +124,19 @@ function PyParams({ spec, busy, onApply, close }: { spec: Spec; busy: boolean; o
 /** Готовая стратегия (spec.strategy): правила внутри Стенда, меняются только капитал и число одновременных идей. */
 function StrategyAccount({ spec, busy, onApply, close }: { spec: Spec; busy: boolean; onApply: (s: Spec) => void; close: () => void }) {
   const [cap, setCap] = useState<number>(spec.capital ?? 10_000_000); const [slots, setSlots] = useState<number>(spec.slots ?? 10);
+  const [lev, setLev] = useState<number>(spec.leverage ?? 1); const [guard, setGuard] = useState<boolean>(spec.guard != null);
   return (
     <div className="bt-form bt-set">
       <div className="row">
         <label>Капитал, ₽<input type="number" min={100000} step={1000000} value={cap} onChange={e => setCap(Number(e.target.value))} /></label>
         <label>Идей одновременно<input type="number" min={1} max={30} value={slots} onChange={e => setSlots(Number(e.target.value))} /></label>
       </div>
-      <div className="hint">Идея = капитал ÷ число идей; тренд-сделки одного дня и стороны делят одну идею. В позициях не больше капитала — лишняя идея пропускается. Без плеча и реинвеста.</div>
-      <Foot dirty={cap !== (spec.capital ?? 10_000_000) || slots !== (spec.slots ?? 10)} busy={busy} close={close} onApply={() => onApply({ ...spec, capital: cap, slots })} />
+      <div className="row">
+        <label>Плечо<select value={lev} onChange={e => setLev(Number(e.target.value))}>{[1, 1.5, 2, 3, 4, 5].map(x => <option key={x} value={x}>{x === 1 ? 'без плеча' : `×${x}`}</option>)}</select></label>
+        <label>Защита<select value={guard ? '1' : '0'} disabled={lev === 1} onChange={e => setGuard(e.target.value === '1')}><option value="0">нет</option><option value="1">−15 % от пика → ×1</option></select></label>
+      </div>
+      <div className="hint">Идея = капитал ÷ число идей × плечо; тренд-сделки одного дня и стороны делят одну идею. Без плеча в позициях не больше капитала; с плечом — вход, если хватает маржи по ставкам риска Т-Банка (снимок 16.11.2026). Лишняя идея пропускается.</div>
+      <Foot dirty={cap !== (spec.capital ?? 10_000_000) || slots !== (spec.slots ?? 10) || lev !== (spec.leverage ?? 1) || guard !== (spec.guard != null)} busy={busy} close={close} onApply={() => onApply({ ...spec, capital: cap, slots, leverage: lev, guard: lev > 1 && guard ? 0.15 : null })} />
     </div>
   );
 }
@@ -139,11 +144,11 @@ function StrategyAccount({ spec, busy, onApply, close }: { spec: Spec; busy: boo
 export default function RunSettings({ run, meta, busy, onApply }: { run: BtRun; meta: BtMeta | null; busy: boolean; onApply: (spec: Spec) => void }) {
   if (!meta || run.kind === 'sweep' || !run.spec) return null;
   if (run.spec.strategy) {
-    const spec: Spec = { strategy: run.spec.strategy, name: run.spec.name, capital: run.spec_full?.capital, slots: run.spec_full?.slots, since: run.spec.since ?? null, until: run.spec.until ?? null };
+    const spec: Spec = { strategy: run.spec.strategy, name: run.spec.name, capital: run.spec_full?.capital, slots: run.spec_full?.slots, since: run.spec.since ?? null, until: run.spec.until ?? null, leverage: run.spec_full?.leverage ?? 1, guard: run.spec_full?.guard ?? null };
     const period = run.result?.period;
     return (<>
       <Menu className="chip" tall label={<>{period ? `${fmtDate(period[0])} — ${fmtDate(period[1])}` : 'период'} ▾</>} title="Период теста — нажми, чтобы изменить">{close => <Period spec={spec} busy={busy} onApply={onApply} close={close} />}</Menu>
-      <Menu className="chip" tall label={<>{num((spec.capital ?? 0) / 1e6, 2)} млн ₽ · идей одновременно: до {spec.slots} ▾</>} title="Капитал и число одновременных идей">{close => <StrategyAccount spec={spec} busy={busy} onApply={onApply} close={close} />}</Menu>
+      <Menu className="chip" tall label={<>{num((spec.capital ?? 0) / 1e6, 2)} млн ₽ · идей: до {spec.slots}{spec.leverage > 1 ? ` · плечо ×${spec.leverage}${spec.guard ? ' · защита' : ''}` : ''} ▾</>} title="Капитал и число одновременных идей">{close => <StrategyAccount spec={spec} busy={busy} onApply={onApply} close={close} />}</Menu>
       <span className="bt-chip-static" title="правила зашиты в стратегию (backtest/screener_vb.py)">правила скринера, без подбора</span>
     </>);
   }
