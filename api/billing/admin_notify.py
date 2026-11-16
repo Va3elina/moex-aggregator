@@ -36,9 +36,11 @@ MSK = ZoneInfo("Europe/Moscow")
 # доставки чат не должен получить пачку вчерашних новостей.
 MAX_EVENT_AGE_HOURS = 48
 
-# Продление ретраится кроном каждый час до суток: о провале сообщаем один раз,
-# дальше молчим до истечения подписки (придёт «закончилась, не продлена»).
-RENEW_FAIL_QUIET_HOURS = 20
+# Продление: не больше 3 попыток (service.RENEW_*), обычно с паузой ≥23ч, но
+# месячный после годового NSF-отказа идёт уже через час. Тишина 30 мин меньше
+# любой паузы — в чат уходит каждая попытка («попытка N из 3»), а дубли одной
+# попытки (отказ + поздний webhook) глушатся.
+RENEW_FAIL_QUIET_MINUTES = 30
 
 TIER_NAMES = {"basic": "Basic", "pro": "Pro", "premium": "Premium"}
 PERIOD_NAMES = {"monthly": "месяц", "yearly": "год", "trial": "пробный период"}
@@ -246,9 +248,9 @@ def _render_payment_failed(db: Session, ev, sub: Subscription, user, pm) -> str 
             SELECT 1 FROM billing_events
             WHERE user_id = :uid AND kind = 'payment_failed' AND NOT skipped
               AND notified_at IS NOT NULL
-              AND created_at > now() - make_interval(hours => :h)
+              AND created_at > now() - make_interval(mins => :m)
             LIMIT 1
-        """), {"uid": sub.user_id, "h": RENEW_FAIL_QUIET_HOURS}).first()
+        """), {"uid": sub.user_id, "m": RENEW_FAIL_QUIET_MINUTES}).first()
         if quiet:
             return None
     # Код ошибки банка кладётся на продлеваемую (старую) подписку.
@@ -273,7 +275,22 @@ def _render_payment_failed(db: Session, ev, sub: Subscription, user, pm) -> str 
     if code:
         lines.append(f"Код банка: {html.escape(str(code))}")
     if is_renewal and base is not None and base.expires_at:
-        lines.append(f"Доступ до {_d(base.expires_at)}, крон пробует каждый час в течение суток")
+        from api.billing.service import (
+            RENEW_MAX_ATTEMPTS, next_renew_attempt_at, renewal_attempts,
+        )
+        # Сама эта попытка — последняя в списке; если её статус ещё не
+        # долетел до failed/cancelled, считаем её вручную.
+        done = [a for a in renewal_attempts(db, base) if a.id <= sub.id] or [sub]
+        n = len(done)
+        nxt = next_renew_attempt_at(base, done)
+        if nxt is None:
+            tail = "больше не пробуем"
+        elif base.fallback_done and done[-1].period == "yearly":
+            tail = "дальше месячный тариф в течение часа"
+        else:
+            tail = f"следующая не раньше {nxt.astimezone(MSK):%d.%m %H:%M} МСК"
+        lines.append(f"Доступ до {_d(base.expires_at)}")
+        lines.append(f"Попытка {n} из {RENEW_MAX_ATTEMPTS}, {tail}")
     return "\n".join(lines)
 
 
