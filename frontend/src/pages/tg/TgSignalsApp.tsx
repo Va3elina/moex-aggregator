@@ -23,6 +23,8 @@ interface TgWebApp {
   BackButton: TgButton;
   MainButton: TgButton & { setParams(p: { text?: string; color?: string; text_color?: string }): void };
   HapticFeedback?: { selectionChanged(): void };
+  onEvent?(name: string, cb: () => void): void;
+  offEvent?(name: string, cb: () => void): void;
 }
 
 const SDK = 'https://telegram.org/js/telegram-web-app.js';
@@ -285,17 +287,27 @@ export default function TgSignalsApp() {
     document.addEventListener('visibilitychange', sync);
     window.addEventListener('focus', sync);
     window.addEventListener('storage', sync);
-    return () => { document.removeEventListener('visibilitychange', sync); window.removeEventListener('focus', sync); window.removeEventListener('storage', sync); };
-  }, [isAuthenticated, refreshUser]);
-  const waitSecret = !isAuthenticated ? wait?.secret : undefined;
+    tg?.onEvent?.('activated', sync);
+    return () => {
+      document.removeEventListener('visibilitychange', sync); window.removeEventListener('focus', sync); window.removeEventListener('storage', sync);
+      tg?.offEvent?.('activated', sync);
+    };
+  }, [isAuthenticated, refreshUser, tg]);
+  // Опрашиваем только когда SDK Telegram готов: без подписи окна сервер отвечает 422 (17.11, видно в логах)
+  const waitSecret = !isAuthenticated && ready ? wait?.secret : undefined;
   useEffect(() => {
     if (!waitSecret) return;
     let dead = false;
     const ask = async () => {
+      // Вход мог уже забрать соседний экземпляр окна — тогда он лежит в хранилище, берём его сразу
+      if (localStorage.getItem('access_token') || localStorage.getItem('refresh_token')) {
+        localStorage.removeItem(WAIT_KEY); setWait(null); await refreshUser(); return;
+      }
       if (pollBusy) return;
       pollBusy = true;
       try {
-        const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: waitSecret, init_data: tg?.initData ?? '' }) });
+        // Короткий таймаут: запрос, «замёрзший» пока окно было в фоне, не должен держать опрос 20 секунд
+        const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: waitSecret, init_data: tg?.initData ?? '' }) }, 6000);
         const j = r.ok ? await r.json() : null;
         if (!j) return;
         if (j.status === 'approved') {
@@ -320,11 +332,17 @@ export default function TgSignalsApp() {
       } catch { /* сеть: спросим на следующем круге */ } finally { pollBusy = false; }
     };
     (async () => { await ask(); })();          // окно открыли заново — спрашиваем сразу, не ждём круга
-    const id = window.setInterval(ask, 3000);
-    const onShow = () => { if (document.visibilityState === 'visible') void ask(); };   // вернулся из браузера — тоже сразу
+    const id = window.setInterval(ask, 2000);
+    // Вернулся из браузера — спрашиваем сразу. В окне Telegram на Android надёжнее его событие «activated»
+    const onShow = () => { if (document.visibilityState === 'visible') void ask(); };
     document.addEventListener('visibilitychange', onShow);
     window.addEventListener('focus', onShow);
-    return () => { dead = true; window.clearInterval(id); document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow); };
+    tg?.onEvent?.('activated', onShow);
+    return () => {
+      dead = true; window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow);
+      tg?.offEvent?.('activated', onShow);
+    };
   }, [waitSecret, tg, login, refreshUser, say]);
   const confirmThen = (question: string, run: () => void) => {
     if (tg?.showConfirm) tg.showConfirm(question, (ok) => { if (ok) run(); });
