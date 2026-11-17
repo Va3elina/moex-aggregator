@@ -1,0 +1,96 @@
+/* Мини-приложение Telegram «FRAME · Сигналы» (/tg). Свой набор стилей под корнем .tgs — сайт не задевает.
+   Цвета берём из темы Telegram (--tg-theme-*), запасные значения — тёмная тема iOS. */
+.tgs {
+  --bg: var(--tg-theme-secondary-bg-color, #000);
+  --sec: var(--tg-theme-section-bg-color, #1c1c1d);
+  --text: var(--tg-theme-text-color, #fff);
+  --hint: var(--tg-theme-hint-color, #8e8e93);
+  --sep: var(--tg-theme-section-separator-color, #2c2c2e);
+  --link: var(--tg-theme-link-color, #3e88f7);
+  --danger: var(--tg-theme-destructive-text-color, #ff453a);
+  --accent: #ff5c2b;
+  --accent-text: #ff7a4d;
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, 'SF Pro Text', system-ui, Roboto, 'Helvetica Neue', sans-serif;
+  font-size: 17px;
+  line-height: 22px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+.tgs * { box-sizing: border-box; }
+.tgs button, .tgs input { font-family: inherit; }
+/* сайт задаёт кнопкам минимальный размер под палец — здесь размеры свои */
+.tgs button { min-width: 0; min-height: 0; }
+.tgs-col { max-width: 520px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; }
+
+/* Шапка — только вне Telegram: внутри её рисует сам Telegram */
+.tgs-bar { position: sticky; top: 0; z-index: 2; height: 56px; padding: 0 16px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; background: var(--sec); }
+.tgs-bar-l { justify-self: start; height: 44px; padding: 0; border: 0; background: none; color: var(--link); font-size: 17px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.tgs-bar-t { text-align: center; font-weight: 600; line-height: 20px; }
+.tgs-bar-t small { display: block; font-weight: 400; font-size: 12px; line-height: 14px; color: var(--hint); }
+
+.tgs-pg { flex: 1; padding: 0 16px 24px; }
+.tgs-h { font-size: 13px; line-height: 16px; color: var(--hint); text-transform: uppercase; padding: 20px 16px 7px; }
+.tgs-f { font-size: 13px; line-height: 17px; color: var(--hint); padding: 7px 16px 0; }
+.tgs-gap { height: 20px; }
+.tgs-sec { background: var(--sec); border-radius: 12px; overflow: hidden; }
+.tgs-row { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 10px 16px; border: 0; background: none; color: var(--text); font-size: 17px; line-height: 22px; text-align: left; text-decoration: none; }
+button.tgs-row, a.tgs-row { cursor: pointer; }
+button.tgs-row:active, a.tgs-row:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.tgs-row + .tgs-row::before { content: ''; position: absolute; left: 16px; right: 0; top: 0; height: 1px; background: var(--sep); }
+.tgs-row.tgs-thumbed + .tgs-row.tgs-thumbed::before { left: 76px; }
+.tgs-g { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tgs-s { font-size: 13px; line-height: 17px; color: var(--hint); }
+.tgs-1l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tgs-v { flex: none; color: var(--hint); }
+.tgs-dim { color: var(--hint); }
+.tgs-accent { color: var(--accent-text); }
+.tgs-center { justify-content: center; }
+.tgs-danger { color: var(--danger); }
+.tgs-tm { flex: none; align-self: flex-start; font-size: 13px; line-height: 22px; color: var(--hint); }
+.tgs-th { flex: none; width: 48px; height: 36px; border-radius: 6px; background: color-mix(in srgb, var(--text) 6%, transparent); }
+
+.tgs-sw { flex: none; position: relative; width: 51px; height: 31px; padding: 0; border: 0; border-radius: 16px; background: color-mix(in srgb, var(--hint) 45%, transparent); cursor: pointer; transition: background 0.2s; }
+.tgs-sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 14px; background: #fff; box-shadow: 0 2px 4px rgb(0 0 0 / 0.25); transition: left 0.2s; }
+.tgs-sw.on { background: var(--accent); }
+.tgs-sw.on::after { left: 22px; }
+
+.tgs-lg { flex: none; width: 36px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; }
+.tgs-lg.off { background: color-mix(in srgb, var(--hint) 35%, transparent) !important; color: var(--hint); }
+.tgs-plus { background: none; color: var(--accent-text); font-size: 26px; font-weight: 300; }
+
+.tgs-seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); padding: 2px; border-radius: 9px; background: var(--sec); }
+.tgs-seg button { height: 32px; padding: 0 4px; border: 0; border-radius: 7px; background: none; color: var(--text); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.tgs-seg button.on { background: color-mix(in srgb, var(--hint) 55%, transparent); font-weight: 600; }
+
+.tgs-in { flex: none; width: 130px; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--hint) 22%, transparent); color: var(--text); font-size: 17px; text-align: right; }
+.tgs-lk { flex: none; height: 44px; margin: -10px 0; padding: 0; border: 0; background: none; color: var(--accent-text); font-size: 17px; cursor: pointer; }
+
+.tgs-mb { position: sticky; bottom: 0; padding: 8px 16px 20px; background: var(--bg); }
+.tgs-mb button { width: 100%; height: 50px; border: 0; border-radius: 12px; background: var(--accent); color: #fff; font-size: 17px; font-weight: 600; cursor: pointer; }
+
+.tgs-me { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 22px 0 20px; }
+.tgs-ava { width: 72px; height: 72px; border-radius: 36px; background: #8a4831; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600; }
+.tgs-name { margin-top: 8px; font-size: 22px; line-height: 28px; font-weight: 600; }
+
+.tgs-demo { padding: 18px 16px 0; text-align: center; font-size: 12px; line-height: 16px; color: var(--hint); }
+.tgs-toast { position: fixed; left: 50%; bottom: 96px; z-index: 5; transform: translateX(-50%); max-width: calc(100% - 48px); padding: 10px 16px; border-radius: 12px; background: color-mix(in srgb, var(--sec) 92%, var(--text)); color: var(--text); font-size: 14px; line-height: 19px; text-align: center; box-shadow: 0 6px 24px rgb(0 0 0 / 0.35); }
+
+/* Вход: та же форма, что на сайте, в его тёмной теме */
+.tgs-login { display: flex; flex-direction: column; gap: 16px; padding: 20px 0 0; font-family: Inter, system-ui, sans-serif; }
+.tgs-card { display: flex; flex-direction: column; gap: 14px; padding: 24px 20px; border: 1.5px solid #3a3a40; border-radius: 20px; background: #17171a; color: #f5f1e8; }
+.tgs-card h1 { margin: 0; font-size: 24px; line-height: 30px; font-weight: 800; text-align: center; }
+.tgs-card p { margin: 0; font-size: 14px; line-height: 20px; color: #9a9a9a; text-align: center; }
+.tgs-ob { height: 52px; border: 1.5px solid #4a4a50; border-radius: 14px; background: #101012; color: #f5f1e8; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; }
+.tgs-or { display: flex; align-items: center; gap: 12px; font-size: 13px; color: #6b6b72; }
+.tgs-or::before, .tgs-or::after { content: ''; flex: 1; height: 1px; background: #3a3a40; }
+.tgs-fl { display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; font-weight: 600; color: #c9c5bc; }
+.tgs-fl input { height: 48px; padding: 0 16px; border: 1.5px solid #4a4a50; border-radius: 14px; background: #101012; color: #f5f1e8; font-size: 15px; font-weight: 400; }
+.tgs-fl input::placeholder { color: #6b6b72; }
+.tgs-pr { height: 52px; border: 0; border-radius: 14px; background: #ff5c2b; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+.tgs-tl { align-self: center; height: 44px; margin: -8px 0; padding: 0 8px; border: 0; background: none; color: #ff7a4d; font-size: 14px; font-weight: 700; cursor: pointer; }
+.tgs-alt { height: 52px; border: 1.5px dashed color-mix(in srgb, var(--hint) 60%, transparent); border-radius: 14px; background: none; color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer; }
