@@ -32,6 +32,7 @@ if "@db:" in _db:  # host-side: docker-hostname → localhost
 
 from sqlalchemy import text  # noqa: E402
 from api.database import SessionLocal  # noqa: E402  (импорт ПОСЛЕ DB_URL override)
+from api.services.tg_webapp import send_sticker  # noqa: E402  фирменные стикеры Фрейма
 
 BOT_TOKEN = os.environ["ALERT_BOT_TOKEN"]
 # TELEGRAM_API_ROOT — релей (Cloudflare Worker) для обхода РКН без зависимости от IPv6
@@ -225,8 +226,7 @@ def link_account(token: str, chat_id: int, username) -> bool:
 
 
 # ── DB helpers (host-side, через text() как остальной файл) ─────────────────
-_CABINET_KB = [[{"text": "Войти в кабинет", "web_app": {"url": WEBAPP_URL}}]]
-_OPEN_KB = [[{"text": "Открыть кабинет", "web_app": {"url": WEBAPP_URL}}]]
+_CABINET_KB = [[{"text": "Войти", "web_app": {"url": WEBAPP_URL}}]]
 LOGIN_PREFIX = "in_"           # /start in_<билет> — возврат из браузера после входа (api/services/browser_login.py)
 
 
@@ -244,9 +244,10 @@ def _finish_browser_login(chat_id: int, ticket: str, username) -> None:
     if ok:
         # Без кнопки «Открыть кабинет»: окно, из которого человек входил, ещё открыто и само получит вход;
         # кнопка здесь открывала ВТОРОЕ окно кабинета (Вадим 17.11).
-        send(chat_id, "✅ <b>Вы вошли в кабинет Фрейма</b>\nВернитесь в окно кабинета — оно уже открыто. Сигналы будут приходить в этот чат.")
+        send(chat_id, "✅ Готово. Сигналы будут приходить сюда.")
+        send_sticker(chat_id, "done")
     else:
-        send_kb(chat_id, "Ссылка входа устарела. Откройте кабинет и нажмите «Войти» ещё раз.", _OPEN_KB)
+        send_kb(chat_id, "Ссылка устарела. Попробуйте ещё раз.", _CABINET_KB)
 
 
 def _ensure_tables() -> None:
@@ -267,9 +268,8 @@ def _ensure_tables() -> None:
 def _start_unlinked(chat_id: int) -> None:
     """«Запустить» без привязки: одно сообщение, одна кнопка — вход в кабинет."""
     send_kb(chat_id,
-            "👋 <b>FRAME · Сигналы</b>\n\n"
-            "Сюда приходят сигналы Фрейма по рынку МосБиржи.\n"
-            "Войдите в аккаунт — и чат подключится сам.",
+            "Сигналы Фрейма по рынку МосБиржи.\n"
+            "Войдите, чтобы получать их здесь.",
             _CABINET_KB)
     db = SessionLocal()
     try:
@@ -308,7 +308,7 @@ def _remind_unfinished() -> None:
         db.close()
     for chat_id, linked in rows:
         if not linked:
-            send_kb(chat_id, "Вы не закончили подключение. Войдите в кабинет — и сигналы начнут приходить сюда.", _CABINET_KB)
+            send_kb(chat_id, "Вы не закончили вход.", _CABINET_KB)
 
 
 def _user_id_by_chat(db, chat_id: int):
@@ -842,13 +842,10 @@ def process_update(update: dict) -> None:
             ok = link_account(arg, chat_id, username)
             if ok:
                 # send_persistent ставит постоянный нижний бар (кнопки навсегда).
-                send_persistent(chat_id,
-                                 "✅ Аккаунт Фрейм подключён. Алерты будут приходить сюда.\n\n"
-                                 + _welcome_text())
+                send_persistent(chat_id, "✅ Готово. Сигналы будут приходить сюда.")
+                send_sticker(chat_id, "done")
             else:
-                send(chat_id,
-                     "⚠️ Ссылка недействительна или истекла.\n"
-                     "Сгенерируйте новую на сайте: ЛК → Подключить Telegram.")
+                send_kb(chat_id, "Ссылка устарела. Попробуйте ещё раз.", _CABINET_KB)
         else:
             # /start без токена: привязанным — приветствие + постоянный нижний бар,
             # остальным — одна кнопка входа в кабинет (там чат привяжется сам).

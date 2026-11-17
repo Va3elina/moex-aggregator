@@ -345,7 +345,7 @@ export default function TgSignalsApp() {
       <div className="tgs-welcome">
         {mark}
         <h1>Подтвердите вход в браузере</h1>
-        <p>На сайте нажмите «Подтвердить», затем «Вернуться в Telegram» и «Запустить» в чате с ботом. Кабинет откроется со входом.</p>
+        <p>Потом вернитесь в Telegram.</p>
         <div className="tgs-spin" role="status" aria-label="Ждём подтверждения" />
         <button type="button" className="tgs-alt" onClick={() => openApprove(wait.code)}>Открыть браузер ещё раз</button>
         <button type="button" className="tgs-tl" onClick={stopWait}>Отмена</button>
@@ -355,7 +355,7 @@ export default function TgSignalsApp() {
         {mark}
         {/* Только логотип, строка и одна кнопка (Вадим 17.11: заголовок и подсказки лишние). В Telegram вход
             идёт через обычный браузер — там сохранённые пароли; регистрация — на той же странице сайта. */}
-        <p>Войдите в аккаунт — и сигналы будут приходить в этот чат.</p>
+        <p>Войдите, чтобы получать сигналы.</p>
         <button type="button" className="tgs-pr" onClick={tg ? browserLogin : () => window.location.assign(LOGIN_URL)}>Войти</button>
       </div>
     );
