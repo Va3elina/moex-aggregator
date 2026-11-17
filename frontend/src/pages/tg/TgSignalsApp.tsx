@@ -323,13 +323,22 @@ export default function TgSignalsApp() {
           <div className="tgs-name">{name}</div>
           <div className="tgs-s" style={{ fontSize: 15, lineHeight: '20px' }}>{user.requires_email_setup ? 'почта не указана' : user.email}</div>
         </div>
-        <div className="tgs-sec">
-          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/pricing`)}>
-            <span className="tgs-g"><span>Тариф {tier}</span><span className="tgs-s">{until ? `${plan?.is_trial ? 'пробный период до' : plan?.cancelled_at ? 'действует до' : 'продлится'} ${until}` : 'Подписки нет'}</span></span>
-            <span className="tgs-v tgs-accent">{until ? 'Изменить' : 'Выбрать'}</span><Chevron />
-          </button>
-        </div>
-        <div className="tgs-f">Оплата открывается на сайте.</div>
+        {/* Админу тариф выбирать незачем: доступ даёт роль, а не подписка */}
+        {user.role === 'admin' ? (
+          <div className="tgs-sec">
+            <div className="tgs-row"><span className="tgs-g"><span>Доступ администратора</span><span className="tgs-s">Все разделы открыты</span></span></div>
+          </div>
+        ) : (
+          <>
+          <div className="tgs-sec">
+            <button type="button" className="tgs-row" onClick={() => open(`${SITE}/pricing`)}>
+              <span className="tgs-g"><span>Тариф {tier}</span><span className="tgs-s">{until ? `${plan?.is_trial ? 'пробный период до' : plan?.cancelled_at ? 'действует до' : 'продлится'} ${until}` : 'Подписки нет'}</span></span>
+              <span className="tgs-v tgs-accent">{until ? 'Изменить' : 'Выбрать'}</span><Chevron />
+            </button>
+          </div>
+          <div className="tgs-f">Оплата открывается на сайте.</div>
+          </>
+        )}
         <div className="tgs-h">Уведомления</div>
         <div className="tgs-sec">
           {link?.linked
