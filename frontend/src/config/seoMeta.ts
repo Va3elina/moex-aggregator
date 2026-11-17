@@ -269,6 +269,8 @@ export const SEO_META: Record<string, SeoMeta> = {
     '/billing/redeem': { title: 'Активация промо-кода | FRAME', description: '', noindex: true },
     // Внутренние инструменты — никогда не индексируем.
     '/signal-export': { title: 'Signal Export | FRAME', description: '', noindex: true },
+    // Мини-приложение Telegram (бот @framesignalbot). В SEO_META — чтобы бэкенд отдавал HTML по /tg.
+    '/tg': { title: 'FRAME · Сигналы', description: '', noindex: true },
     '/style-preview': { title: 'Style Preview | FRAME', description: '', noindex: true },
     '/api-docs': { title: 'API Документация | FRAME', description: '', noindex: true },
     // Пока не индексируем: SEO-описание/intro не заполнены. Когда будет готова

@@ -12,6 +12,7 @@ Disallow: /auth/
 Disallow: /login
 Disallow: /profile
 Disallow: /style-preview
+Disallow: /tg
 Disallow: /signal-export
 Disallow: /api-docs
 Disallow: /admin/
@@ -29,6 +30,7 @@ Disallow: /auth/
 Disallow: /login
 Disallow: /profile
 Disallow: /style-preview
+Disallow: /tg
 Disallow: /signal-export
 Disallow: /api-docs
 Disallow: /admin/
