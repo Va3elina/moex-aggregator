@@ -225,38 +225,48 @@ def get_gzip_json(key: str) -> Any | None:
         return None
 
 
-def get_all_gzip_by_prefix(prefix: str) -> dict[str, Any]:
-    """Все записи gzip-кеша с префиксом, распакованные. {key: data}
+def iter_gzip_by_prefix(prefix: str):
+    """Записи gzip-кеша с префиксом, распакованные, ПО ОДНОЙ: (key, data).
 
-    Читаем ПООЧЕРЁДНО, а не mget-пачкой: chart-ключи весят до 6.5 МБ каждый в
-    распакованном виде, и одновременный разбор всех разом раздувал бы RSS
-    воркера на сотни мегабайт при 8 ГБ на всей машине.
+    Сначала список ключей (scan), потом get → разбор → отдать → забыть. В памяти
+    одна запись, а не все: 250 chart-ключей = 112 МБ JSON и +424 МБ RSS при
+    разборе разом. ⚠️ 17.11.2026 словарь со всеми записями (прежний
+    get_all_gzip_by_prefix) собирался в каждом из трёх воркеров на каждый NOTIFY
+    5min/hourly — воркеры по ~1 ГБ, OOM и час недоступности прода.
     """
-    result = {}
     try:
         r = _get_redis_bytes()
-        cursor = 0
+        keys, cursor = [], 0
         while True:
-            cursor, keys = r.scan(cursor, match=f"{prefix}*".encode(), count=200)
-            for k in keys:
-                # try ВНУТРИ цикла: один нечитаемый ключ не должен рвать обход.
-                # ⚠️ Так и случилось 2026-08-10: служебный счётчик спроса лежал
-                # под chart:demand, GET на ZSET дал WRONGTYPE (это RedisError,
-                # не ValueError), и внешний except обрывал скан — cache_updater
-                # видел 54 ключа из 257, остальные не обновлялись и тихо
-                # истекали по TTL. Счётчики с тех пор живут под chartmeta:,
-                # но защита остаётся: маска префикса — не гарантия типа.
-                try:
-                    gz = r.get(k)
-                    if gz is None:
-                        continue
-                    result[k.decode()] = json.loads(gzip.decompress(gz))
-                except (redis.RedisError, OSError, ValueError, UnicodeDecodeError):
-                    continue      # чужой тип/битый формат — пропускаем молча
+            cursor, part = r.scan(cursor, match=f"{prefix}*".encode(), count=200)
+            keys.extend(part)
             if cursor == 0:
                 break
     except (redis.RedisError, ConnectionError) as e:
-        logger.warning(f"Redis error on get_all_gzip_by_prefix: {e}")
+        logger.warning(f"Redis error on iter_gzip_by_prefix: {e}")
+        return
+    for k in dict.fromkeys(keys):           # scan может вернуть ключ дважды
+        # try ВНУТРИ цикла: один нечитаемый ключ не должен рвать обход.
+        # ⚠️ Так и случилось 2026-08-10: служебный счётчик спроса лежал
+        # под chart:demand, GET на ZSET дал WRONGTYPE (это RedisError,
+        # не ValueError), и внешний except обрывал скан — cache_updater
+        # видел 54 ключа из 257, остальные не обновлялись и тихо
+        # истекали по TTL. Счётчики с тех пор живут под chartmeta:,
+        # но защита остаётся: маска префикса — не гарантия типа.
+        try:
+            gz = r.get(k)
+            if gz is None:
+                continue
+            data = json.loads(gzip.decompress(gz))
+            del gz
+        except (redis.RedisError, ConnectionError, OSError, ValueError, UnicodeDecodeError):
+            continue      # чужой тип/битый формат/обрыв — пропускаем молча
+        yield k.decode(), data
+
+
+def get_all_gzip_by_prefix(prefix: str) -> dict[str, Any]:
+    """Все записи разом {key: data}. ⚠️ Для chart: не использовать — см. iter_gzip_by_prefix."""
+    result = dict(iter_gzip_by_prefix(prefix))
     return result
 
 
@@ -401,6 +411,28 @@ def try_lock(name: str, ttl: int) -> bool:
         return bool(_get_redis().set(f"lock:{name}", "1", nx=True, ex=ttl))
     except (redis.RedisError, ConnectionError):
         return False      # Redis недоступен → прогрев пропускаем, это не критично
+
+
+def release_lock(name: str) -> None:
+    try:
+        _get_redis().delete(f"lock:{name}")
+    except (redis.RedisError, ConnectionError):
+        pass              # лок сам истечёт по ttl
+
+
+def set_flag(name: str, ttl: int) -> None:
+    try:
+        _get_redis().set(f"flag:{name}", "1", ex=ttl)
+    except (redis.RedisError, ConnectionError):
+        pass
+
+
+def pop_flag(name: str) -> bool:
+    """Снять флаг атомарно. True — флаг был."""
+    try:
+        return bool(_get_redis().delete(f"flag:{name}"))
+    except (redis.RedisError, ConnectionError):
+        return False
 
 
 def get_raw(key: str) -> str | None:

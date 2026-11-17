@@ -20,7 +20,8 @@ from sqlalchemy import text
 
 import json
 
-from api.cache import get_all_gzip_by_prefix, set_gzip, touch, DEFAULT_TTL
+from api.cache import (iter_gzip_by_prefix, set_gzip, touch, DEFAULT_TTL,
+                       try_lock, release_lock, set_flag, pop_flag)
 from api.database import SessionLocal
 from api.services.chart_live import (append_live_points, append_stretched_price,
                                      strip_live_points, strip_stretched_points)
@@ -300,26 +301,45 @@ def update_chart_caches(source: str = "5min"):
     Инкрементально обновляет все закешированные chart-ответы.
     Sync-функция — вызывается из async обёртки через run_in_executor.
     """
-    t0 = time.time()
-    entries = get_all_gzip_by_prefix("chart:")
-
-    if not entries:
+    # Один пересчёт на весь api, а не на воркер: NOTIFY получают все три
+    # воркера, а 5min и hourly приходят с разницей в 2 с — без лока шло до шести
+    # одинаковых проходов разом (17.11.2026: воркеры по ~1 ГБ, OOM). Что
+    # пересчитывать, от source не зависит: событие во время прохода — флаг,
+    # и владелец лока сделает ещё один проход (данные события могли лечь в БД
+    # уже после того, как проход миновал свой ключ).
+    if not try_lock(_LOCK, ttl=_LOCK_TTL):
+        set_flag(_RERUN, ttl=_LOCK_TTL)
         return
+    try:
+        _update_pass(source)
+        for _ in range(3):                       # предохранитель от бесконечной цепочки
+            if not pop_flag(_RERUN):
+                break
+            _update_pass(source + "+rerun")
+    finally:
+        release_lock(_LOCK)
 
-    log.info(f"Cache updater: {len(entries)} chart entries to update (source={source})")
 
+_LOCK, _RERUN, _LOCK_TTL = "chart_updater", "chart_updater_rerun", 600
+
+
+def _update_pass(source: str):
+    t0 = time.time()
     db = SessionLocal()
-    updated = 0
+    total = updated = 0
     memo: dict = {}
     try:
-        for key, cached_response in entries.items():
+        # По одной записи: в памяти один график, а не все 250 (+424 МБ RSS).
+        for key, cached_response in iter_gzip_by_prefix("chart:"):
+            total += 1
             if _update_single_entry(db, key, cached_response, memo):
                 updated += 1
+            del cached_response
     finally:
         db.close()
 
     elapsed = (time.time() - t0) * 1000
-    log.info(f"Cache updater done: {updated}/{len(entries)} updated in {elapsed:.0f}ms")
+    log.info(f"Cache updater done: {updated}/{total} updated in {elapsed:.0f}ms (source={source})")
 
 
 async def async_update_chart_caches(source: str = "5min"):
