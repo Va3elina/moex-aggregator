@@ -32,6 +32,7 @@ if "@db:" in _db:  # host-side: docker-hostname → localhost
 
 from sqlalchemy import text  # noqa: E402
 from api.database import SessionLocal  # noqa: E402  (импорт ПОСЛЕ DB_URL override)
+from api.services.tg_webapp import DONE_TEXT, FRAME_LOGO  # noqa: E402  фирменные эмодзи Фрейма
 
 BOT_TOKEN = os.environ["ALERT_BOT_TOKEN"]
 # TELEGRAM_API_ROOT — релей (Cloudflare Worker) для обхода РКН без зависимости от IPv6
@@ -127,22 +128,12 @@ def send_kb(chat_id, text_msg: str, inline_keyboard: list) -> None:
         print(f"[alert_bot] send_kb error: {_redact(e)}")
 
 
-# ── Постоянная reply-клавиатура (нижний бар, висит ВСЕГДА — без повторного /start) ──
-# Кнопки шлют свой ТЕКСТ обычным сообщением → ловим в process_update по тексту.
-# URL-кнопок reply-клавиатура НЕ поддерживает (только inline) → сайт остаётся
-# ссылкой в тексте. is_persistent=True держит бар постоянно даже когда поле ввода
-# в фокусе; resize_keyboard подгоняет высоту. Подписи — как в inline-меню (единообразно).
-_REPLY_KB = {
-    "keyboard": [[{"text": "📋 Мои алерты"}, {"text": "❓ Помощь"}]],
-    "resize_keyboard": True,
-    "is_persistent": True,
-}
 
 
 def send_persistent(chat_id, text_msg: str) -> None:
-    """sendMessage + постоянная нижняя клавиатура (устанавливает/обновляет бар).
-    Бар сохраняется для всех последующих сообщений (вкл. сигналы с inline-кнопками,
-    они на него не влияют) — пока не заменить другой reply-клавиатурой."""
+    """sendMessage, который СНИМАЕТ нижнюю клавиатуру «Мои алерты / Помощь» (Вадим 17.11: убрать).
+    Клавиатура у старых пользователей висит, пока бот не пришлёт remove_keyboard, — поэтому все
+    приветствия идут через эту функцию. Имя прежнее, чтобы не трогать вызовы."""
     try:
         requests.post(
             f"{API_BASE}/sendMessage",
@@ -151,7 +142,7 @@ def send_persistent(chat_id, text_msg: str) -> None:
                 "text": text_msg,
                 "parse_mode": "HTML",
                 "disable_web_page_preview": True,
-                "reply_markup": _REPLY_KB,
+                "reply_markup": {"remove_keyboard": True},
             },
             timeout=15,
         )
@@ -225,8 +216,7 @@ def link_account(token: str, chat_id: int, username) -> bool:
 
 
 # ── DB helpers (host-side, через text() как остальной файл) ─────────────────
-_CABINET_KB = [[{"text": "Войти в кабинет", "web_app": {"url": WEBAPP_URL}}]]
-_OPEN_KB = [[{"text": "Открыть кабинет", "web_app": {"url": WEBAPP_URL}}]]
+_CABINET_KB = [[{"text": "Войти", "web_app": {"url": WEBAPP_URL}}]]
 LOGIN_PREFIX = "in_"           # /start in_<билет> — возврат из браузера после входа (api/services/browser_login.py)
 
 
@@ -244,9 +234,9 @@ def _finish_browser_login(chat_id: int, ticket: str, username) -> None:
     if ok:
         # Без кнопки «Открыть кабинет»: окно, из которого человек входил, ещё открыто и само получит вход;
         # кнопка здесь открывала ВТОРОЕ окно кабинета (Вадим 17.11).
-        send(chat_id, "✅ <b>Вы вошли в кабинет Фрейма</b>\nВернитесь в окно кабинета — оно уже открыто. Сигналы будут приходить в этот чат.")
+        send(chat_id, DONE_TEXT)
     else:
-        send_kb(chat_id, "Ссылка входа устарела. Откройте кабинет и нажмите «Войти» ещё раз.", _OPEN_KB)
+        send_kb(chat_id, "Ссылка устарела. Попробуйте ещё раз.", _CABINET_KB)
 
 
 def _ensure_tables() -> None:
@@ -267,9 +257,9 @@ def _ensure_tables() -> None:
 def _start_unlinked(chat_id: int) -> None:
     """«Запустить» без привязки: одно сообщение, одна кнопка — вход в кабинет."""
     send_kb(chat_id,
-            "👋 <b>FRAME · Сигналы</b>\n\n"
-            "Сюда приходят сигналы Фрейма по рынку МосБиржи.\n"
-            "Войдите в аккаунт — и чат подключится сам.",
+            f"{FRAME_LOGO}\n"
+            "Сигналы FRAME по рынку МосБиржи.\n"
+            "Войдите, чтобы получать их здесь.",
             _CABINET_KB)
     db = SessionLocal()
     try:
@@ -308,7 +298,7 @@ def _remind_unfinished() -> None:
         db.close()
     for chat_id, linked in rows:
         if not linked:
-            send_kb(chat_id, "Вы не закончили подключение. Войдите в кабинет — и сигналы начнут приходить сюда.", _CABINET_KB)
+            send_kb(chat_id, "Вы не закончили вход.", _CABINET_KB)
 
 
 def _user_id_by_chat(db, chat_id: int):
@@ -499,7 +489,7 @@ def _view_menu():
     kb = [
         [{"text": "📋 Мои алерты", "callback_data": "la"}],
         [{"text": "❓ Помощь", "callback_data": "help"}],
-        [{"text": "🌐 Открыть Фрейм", "url": SITE}],
+        [{"text": "🌐 Открыть FRAME", "url": SITE}],
     ]
     return txt, kb
 
@@ -508,10 +498,8 @@ def _welcome_text() -> str:
     """Текст приветствия для /start и /menu — шлётся с постоянной нижней
     клавиатурой (send_persistent). Сайт — ссылкой (URL-кнопку reply-бар не держит)."""
     return (
-        "👋 <b>Frame Signal</b>\n\n"
-        "Здесь приходят алерты по рынку MOEX и можно ими управлять.\n"
-        f"Новые создаются на сайте — <a href=\"{SITE}\">в Личном кабинете</a>.\n\n"
-        "Кнопки снизу всегда под рукой 👇"
+        f"{FRAME_LOGO}\n"
+        "Сигналы FRAME по рынку МосБиржи приходят сюда."
     )
 
 
@@ -530,7 +518,7 @@ def _view_list_root(db, user_id: int):
             "Создайте первый на сайте: Личный кабинет → Алерты."
         )
         kb = [
-            [{"text": "🌐 Открыть Фрейм", "url": SITE}],
+            [{"text": "🌐 Открыть FRAME", "url": SITE}],
             [{"text": "← Меню", "callback_data": "m"}],
         ]
         return txt, kb
@@ -704,7 +692,7 @@ def process_callback(cb: dict) -> None:
             edit_kb(chat_id, message_id,
                     "Аккаунт не привязан. Откройте сайт → Личный кабинет → "
                     "«Подключить Telegram».",
-                    [[{"text": "🌐 Открыть Фрейм", "url": SITE}]])
+                    [[{"text": "🌐 Открыть FRAME", "url": SITE}]])
             answer_cb(cb_id)
             return
 
@@ -797,7 +785,7 @@ def _handle_alerts(chat_id) -> None:
             send_kb(chat_id,
                     "Аккаунт не привязан. Откройте сайт → Личный кабинет → "
                     "«Подключить Telegram».",
-                    [[{"text": "🌐 Открыть Фрейм", "url": SITE}]])
+                    [[{"text": "🌐 Открыть FRAME", "url": SITE}]])
         else:
             txt_list, kb = _view_list_root(db, user_id)
             send_kb(chat_id, txt_list, kb)
@@ -842,13 +830,9 @@ def process_update(update: dict) -> None:
             ok = link_account(arg, chat_id, username)
             if ok:
                 # send_persistent ставит постоянный нижний бар (кнопки навсегда).
-                send_persistent(chat_id,
-                                 "✅ Аккаунт Фрейм подключён. Алерты будут приходить сюда.\n\n"
-                                 + _welcome_text())
+                send_persistent(chat_id, DONE_TEXT)
             else:
-                send(chat_id,
-                     "⚠️ Ссылка недействительна или истекла.\n"
-                     "Сгенерируйте новую на сайте: ЛК → Подключить Telegram.")
+                send_kb(chat_id, "Ссылка устарела. Попробуйте ещё раз.", _CABINET_KB)
         else:
             # /start без токена: привязанным — приветствие + постоянный нижний бар,
             # остальным — одна кнопка входа в кабинет (там чат привяжется сам).

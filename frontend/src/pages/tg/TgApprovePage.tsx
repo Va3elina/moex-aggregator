@@ -67,8 +67,8 @@ export default function TgApprovePage() {
           {stage === 'ask' && user && (
             <div className="tgs-welcome">
               {mark}
-              <h1>Войти в кабинет в Telegram?</h1>
-              <p>Аккаунт <b>{user.requires_email_setup ? (user.display_name || 'Фрейм') : user.email}</b>{who?.username ? <> откроется в Telegram у <b>@{who.username}</b>.</> : who?.name ? <> откроется в Telegram у пользователя «{who.name}» (ник не задан).</> : <> откроется в окне бота Фрейма в Telegram.</>}</p>
+              <h1>Войти в Telegram?</h1>
+              <p>Аккаунт <b>{user.requires_email_setup ? (user.display_name || 'FRAME') : user.email}</b>{who?.username ? <> откроется у <b>@{who.username}</b>.</> : who?.name ? <> откроется у пользователя «{who.name}» (ник не задан).</> : <> откроется в окне бота FRAME в Telegram.</>}</p>
               <button type="button" className="tgs-pr" disabled={busy} onClick={approve}>Подтвердить</button>
               <button type="button" className="tgs-alt" onClick={() => navigate('/', { replace: true })}>Отмена</button>
               <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Подтверждайте, только если вы сами только что нажали «Войти» в боте. Ссылку прислал кто-то другой — нажмите «Отмена».</div>
@@ -77,8 +77,8 @@ export default function TgApprovePage() {
           {stage === 'done' && (
             <div className="tgs-welcome">
               {mark}
-              <h1>Остался один шаг</h1>
-              <p>Вернитесь в Telegram и нажмите «Запустить» в чате с ботом — кабинет откроется со входом.</p>
+              <h1>Почти готово</h1>
+              <p>Вернитесь в Telegram и нажмите «Запустить».</p>
               <a className="tgs-pr tgs-btn-link" href={returnUrl}>Вернуться в Telegram</a>
               <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Кнопка работает один раз и только в вашем Telegram. Не пересылайте эту ссылку.</div>
             </div>

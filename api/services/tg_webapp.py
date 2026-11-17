@@ -56,11 +56,21 @@ def send_linked_message(chat_id: int) -> None:
         return
     root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/")
     try:
+        # Без кнопки: привязка идёт из открытого окна кабинета, кнопка открыла бы второе
         requests.post(f"{root}/bot{token}/sendMessage", timeout=10, json={
-            "chat_id": chat_id,
-            "text": "✅ <b>Аккаунт Фрейма подключён</b>\nСигналы будут приходить в этот чат.",
-            "parse_mode": "HTML",
-            "reply_markup": {"inline_keyboard": [[{"text": "Открыть кабинет", "web_app": {"url": WEBAPP_URL}}]]},
+            "chat_id": chat_id, "text": DONE_TEXT, "parse_mode": "HTML",
         })
     except requests.RequestException as e:
         print(f"[tg_webapp] не отправил подтверждение привязки: {str(e).replace(token, '<REDACTED>')}")
+
+
+# ── Фирменные эмодзи Фрейма в тексте (пак t.me/addemoji/Frametool; стикеры Вадиму не понравились — 17.11) ──
+# Бот вставляет свои эмодзи из любого пака (проверено 17.11). Без поддержки покажется запасной обычный эмодзи.
+def _e(emoji_id: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+FRAME_MARK = _e("5454077045321538338", "◽️")                    # рамка-логотип Фрейма
+FRAME_LOGO = (_e("5456376948768936418", "◽️") + _e("5456183761139961304", "F")
+              + _e("5454037394183462308", "E"))                   # логотип FRAME из трёх плиток
+DONE_TEXT = f"{FRAME_MARK} Готово. Сигналы будут приходить сюда."

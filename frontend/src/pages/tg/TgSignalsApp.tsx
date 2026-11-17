@@ -345,7 +345,7 @@ export default function TgSignalsApp() {
       <div className="tgs-welcome">
         {mark}
         <h1>Подтвердите вход в браузере</h1>
-        <p>На сайте нажмите «Подтвердить», затем «Вернуться в Telegram» и «Запустить» в чате с ботом. Кабинет откроется со входом.</p>
+        <p>Потом вернитесь в Telegram.</p>
         <div className="tgs-spin" role="status" aria-label="Ждём подтверждения" />
         <button type="button" className="tgs-alt" onClick={() => openApprove(wait.code)}>Открыть браузер ещё раз</button>
         <button type="button" className="tgs-tl" onClick={stopWait}>Отмена</button>
@@ -355,7 +355,7 @@ export default function TgSignalsApp() {
         {mark}
         {/* Только логотип, строка и одна кнопка (Вадим 17.11: заголовок и подсказки лишние). В Telegram вход
             идёт через обычный браузер — там сохранённые пароли; регистрация — на той же странице сайта. */}
-        <p>Войдите в аккаунт — и сигналы будут приходить в этот чат.</p>
+        <p>Войдите, чтобы получать сигналы.</p>
         <button type="button" className="tgs-pr" onClick={tg ? browserLogin : () => window.location.assign(LOGIN_URL)}>Войти</button>
       </div>
     );
@@ -413,7 +413,7 @@ export default function TgSignalsApp() {
         <div className="tgs-sec">
           <div className="tgs-row"><span className="tgs-g"><span>{enabled ? 'Сигналы включены' : 'Сигналы на паузе'}</span><span className="tgs-s">{enabled ? 'Выключите — всё встанет на паузу' : 'Ничего не приходит, настройки сохранены'}</span></span>{sw(enabled, 'Сигналы включены', setEnabled)}</div>
         </div>
-        <div className="tgs-h">Подборки Фрейма</div>
+        <div className="tgs-h">Подборки FRAME</div>
         <div className="tgs-sec">
           <div className="tgs-row"><span className="tgs-g">Рекорды позиций</span>{sw(sets.records, 'Рекорды позиций', (v) => setSets({ ...sets, records: v }))}</div>
           <div className="tgs-row"><span className="tgs-g">Резкие сдвиги</span>{sw(sets.moves, 'Резкие сдвиги', (v) => setSets({ ...sets, moves: v }))}</div>
