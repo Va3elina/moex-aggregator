@@ -3,8 +3,8 @@
 
   POST /start    — окно бота берёт одноразовый код (без входа)
   GET  /info     — страница подтверждения: жив ли код (нужен вход на сайте)
-  POST /approve  — вошедший человек разрешает окну войти под собой
-  POST /poll     — окно забирает сессию после подтверждения (один раз)
+  POST /approve  — вошедший человек разрешает окну войти под собой и получает код из 4 цифр
+  POST /poll     — окно забирает сессию: после подтверждения и только с этим кодом (один раз)
 
 Префикс не /api/auth: там лимит 10 запросов в минуту, а окно опрашивает /poll раз в несколько секунд.
 """
@@ -37,6 +37,7 @@ class CodeRequest(BaseModel):
 class PollRequest(BaseModel):
     secret: str = Field(min_length=32, max_length=128, pattern=_CODE)
     init_data: str = Field(min_length=1, max_length=4096)
+    pin: str | None = Field(default=None, pattern=r"^\d{4}$")
 
 
 def _tg_user(init_data: str) -> dict:
@@ -88,15 +89,17 @@ def info(code: str, user: User = Depends(get_current_user)):
 
 @router.post("/approve")
 def approve(data: CodeRequest, user: User = Depends(get_current_user)):
-    if not browser_login.approve(_redis(), data.code, user.id):
+    pin = browser_login.approve(_redis(), data.code, user.id)
+    if pin is None:
         raise HTTPException(status_code=404, detail="Ссылка устарела")
     logger.info(f"tg-login: user {user.id} подтвердил вход в окне бота")
-    return {"ok": True}
+    # Код видит только подтвердивший — его нужно ввести в окне бота, иначе сессию не отдадим
+    return {"ok": True, "pin": pin}
 
 
 @router.post("/poll")
 def poll(data: PollRequest, request: Request, db: Session = Depends(get_db)):
-    state, user_id = browser_login.take(_redis(), data.secret, _tg_user(data.init_data)["id"])
+    state, user_id = browser_login.take(_redis(), data.secret, _tg_user(data.init_data)["id"], data.pin)
     if state != "approved":
         return {"status": state}
     user = db.query(User).filter(User.id == user_id).first()

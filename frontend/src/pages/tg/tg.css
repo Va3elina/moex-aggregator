@@ -95,3 +95,4 @@ button.tgs-row:active, a.tgs-row:active { background: color-mix(in srgb, var(--t
 .tgs-pin { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 0 0 8px; padding: 12px; border-radius: 12px; background: var(--sec); }
 .tgs-pin span { font-size: 13px; line-height: 17px; color: var(--hint); }
 .tgs-pin b { font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: 0.2em; color: var(--text); font-variant-numeric: tabular-nums; }
+.tgs-pin input { width: 100%; padding: 4px 0; border: 0; background: none; color: var(--text); font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: 0.3em; text-align: center; font-variant-numeric: tabular-nums; outline: none; }

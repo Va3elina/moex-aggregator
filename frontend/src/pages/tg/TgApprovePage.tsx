@@ -34,20 +34,19 @@ export default function TgApprovePage() {
         const j = r.ok ? await r.json() : null;
         if (dead) return;
         setWho(j?.who ?? null);
-        setPin(j?.pin ?? '');
         setStage(j ? 'ask' : 'stale');
       } catch { if (!dead) setStage('stale'); }
     })();
     return () => { dead = true; };
   }, [isAuthenticated, code]);
 
-  const back = () => { window.location.href = `tg://resolve?domain=${BOT}`; };
   const approve = async () => {
     setBusy(true);
     try {
       const r = await apiFetch('/api/tg-login/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
-      setStage(r.ok ? 'done' : 'stale');
-      if (r.ok) back();          // сразу пробуем вернуть в Telegram; не сработает — на экране есть кнопка
+      const j = r.ok ? await r.json() : null;
+      setPin(j?.pin ?? '');      // код видит только подтвердивший; его вводят в окне бота
+      setStage(j?.pin ? 'done' : 'stale');
     } catch { setStage('stale'); } finally { setBusy(false); }
   };
 
@@ -64,17 +63,17 @@ export default function TgApprovePage() {
               {mark}
               <h1>Войти в кабинет в Telegram?</h1>
               <p>Аккаунт <b>{user.requires_email_setup ? (user.display_name || 'Фрейм') : user.email}</b>{who?.username ? <> откроется в Telegram у <b>@{who.username}</b>.</> : who?.name ? <> откроется в Telegram у пользователя «{who.name}» (ник не задан).</> : <> откроется в окне бота Фрейма в Telegram.</>}</p>
-              <div className="tgs-pin"><span>Тот же код должен быть в окне бота</span><b>{pin}</b></div>
               <button type="button" className="tgs-pr" disabled={busy} onClick={approve}>Подтвердить</button>
               <button type="button" className="tgs-alt" onClick={() => navigate('/', { replace: true })}>Отмена</button>
-              <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Подтверждайте, только если вы сами только что нажали «Войти через браузер» в боте и код совпадает. Если ссылку прислал кто-то другой — нажмите «Отмена».</div>
+              <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Подтверждайте, только если вы сами только что нажали «Войти через браузер» в боте. Ссылку прислал кто-то другой — нажмите «Отмена».</div>
             </div>
           )}
           {stage === 'done' && (
             <div className="tgs-welcome">
               {mark}
-              <h1>Готово</h1>
-              <p>Вернитесь в Telegram — кабинет уже открыт.</p>
+              <h1>Введите код в окне бота</h1>
+              <p>Вернитесь в Telegram и введите эти четыре цифры. Никому их не сообщайте.</p>
+              <div className="tgs-pin"><span>Код</span><b>{pin}</b></div>
               <a className="tgs-pr tgs-btn-link" href={`https://t.me/${BOT}`}>Вернуться в Telegram</a>
             </div>
           )}

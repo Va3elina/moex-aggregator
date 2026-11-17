@@ -8,21 +8,24 @@
   code   — публичный, едет в адресе страницы подтверждения; по нему сессию получить нельзя;
   secret — остаётся в окне, по нему окно забирает сессию; в Redis лежит только его sha256;
   tg_id  — чьё это окно (из подписанных данных мини-приложения): сессию отдаём только ему;
-  pin    — 4 цифры, видны и в окне, и на странице подтверждения: человек сверяет, что это его попытка.
+  pin    — 4 цифры: появляются ТОЛЬКО на странице сайта после подтверждения, вводятся в окне бота.
+           Так окно доказывает, что перед ним тот же человек, что подтвердил; MAX_PIN_TRIES ошибок — и всё.
 Живёт TTL_SEC, сессия по подтверждённому коду выдаётся один раз.
 
 Защита от чужой ссылки («подтвердите вход» присылает злоумышленник): попытку можно начать только из
-окна бота, страница показывает, в чьём Telegram откроется кабинет, и код для сверки; забрать сессию
-может только тот же Telegram-аккаунт.
+окна бота, страница показывает, в чьём Telegram откроется кабинет; забрать сессию может только тот же
+Telegram-аккаунт и только с кодом, который видел подтвердивший — злоумышленник страницы жертвы не видит.
 """
 import hashlib
+import hmac
 import json
 import secrets
 
 TTL_SEC = 600
 MAX_STARTS = 10        # попыток на один Telegram-аккаунт за TTL_SEC
+MAX_PIN_TRIES = 3      # неверных кодов на одну попытку
 _R = "tglogin:r:"      # tg_id → счётчик попыток
-_S = "tglogin:s:"      # sha256(secret) → {"code", "user_id", "tg_id", "who", "pin"}
+_S = "tglogin:s:"      # sha256(secret) → {"code", "user_id", "tg_id", "who", "pin", "tries"}
 _C = "tglogin:c:"      # code → sha256(secret)
 
 
@@ -39,10 +42,9 @@ def start(r, tg_id: int, who: dict) -> dict | None:
     if n > MAX_STARTS:
         return None
     code, secret = secrets.token_urlsafe(16), secrets.token_urlsafe(32)
-    pin = f"{secrets.randbelow(10000):04d}"
-    r.set(_S + _h(secret), json.dumps({"code": code, "user_id": None, "tg_id": tg_id, "who": who, "pin": pin}), ex=TTL_SEC)
+    r.set(_S + _h(secret), json.dumps({"code": code, "user_id": None, "tg_id": tg_id, "who": who, "pin": None, "tries": 0}), ex=TTL_SEC)
     r.set(_C + code, _h(secret), ex=TTL_SEC)
-    return {"code": code, "secret": secret, "pin": pin, "expires_in": TTL_SEC}
+    return {"code": code, "secret": secret, "expires_in": TTL_SEC}
 
 
 def _load(r, code: str) -> tuple[str, dict] | None:
@@ -56,27 +58,37 @@ def info(r, code: str) -> dict | None:
     got = _load(r, code)
     if not got or got[1]["user_id"] is not None:
         return None
-    return {"who": got[1]["who"], "pin": got[1]["pin"]}
+    return {"who": got[1]["who"]}
 
 
-def approve(r, code: str, user_id: int) -> bool:
-    """Вошедший на сайте человек разрешает окну войти под собой. Подтвердить можно один раз."""
-    got = _load(r, code)
-    if not got or got[1]["user_id"] is not None:
-        return False
-    key, state = got
-    state["user_id"] = user_id
+def _save(r, key: str, state: dict) -> None:
     ttl = r.ttl(_S + key)
     r.set(_S + key, json.dumps(state), ex=ttl if ttl and ttl > 0 else TTL_SEC)
-    return True
 
 
-def take(r, secret: str, tg_id: int) -> tuple[str, int | None]:
-    """Окно спрашивает, подтвердили ли. ('pending', None) | ('expired', None) | ('approved', user_id).
-    Отвечаем только окну того же Telegram-аккаунта, что начал попытку. 'approved' отдаётся ровно
-    один раз: ключ удаляем, и второй опрос уже 'expired'."""
-    key = _S + _h(secret)
-    raw = r.get(key)
+def approve(r, code: str, user_id: int) -> str | None:
+    """Вошедший на сайте человек разрешает окну войти под собой. Возвращает код из 4 цифр — его
+    показывают ТОЛЬКО подтвердившему, а вводят в окне бота. None — код устарел или уже подтверждён."""
+    got = _load(r, code)
+    if not got or got[1]["user_id"] is not None:
+        return None
+    key, state = got
+    state["user_id"] = user_id
+    state["pin"] = f"{secrets.randbelow(10000):04d}"
+    _save(r, key, state)
+    return state["pin"]
+
+
+def take(r, secret: str, tg_id: int, pin: str | None = None) -> tuple[str, int | None]:
+    """Окно спрашивает, подтвердили ли, и забирает сессию.
+      ('pending', None)   — ещё не подтвердили;
+      ('need_pin', None)  — подтвердили, окно должно прислать код со страницы сайта;
+      ('wrong_pin', None) — код не тот (после MAX_PIN_TRIES ошибок попытка сгорает);
+      ('approved', id)    — ровно один раз: ключ удаляем, дальше 'expired';
+      ('expired', None)   — попытки нет, она чужая или сгорела.
+    Отвечаем только окну того же Telegram-аккаунта, что начал попытку."""
+    hk = _h(secret)
+    raw = r.get(_S + hk)
     if not raw:
         return "expired", None
     state = json.loads(raw)
@@ -84,7 +96,17 @@ def take(r, secret: str, tg_id: int) -> tuple[str, int | None]:
         return "expired", None
     if state["user_id"] is None:
         return "pending", None
-    if r.delete(key) != 1:           # параллельный опрос уже забрал сессию
+    if not pin:
+        return "need_pin", None
+    if not hmac.compare_digest(pin, state["pin"]):
+        state["tries"] += 1
+        if state["tries"] >= MAX_PIN_TRIES:
+            r.delete(_S + hk)
+            r.delete(_C + state["code"])
+            return "expired", None
+        _save(r, hk, state)
+        return "wrong_pin", None
+    if r.delete(_S + hk) != 1:        # параллельный опрос уже забрал сессию
         return "expired", None
     r.delete(_C + state["code"])
     return "approved", int(state["user_id"])

@@ -243,23 +243,26 @@ export default function TgSignalsApp() {
   }, [needLink, linkHere, say]);
   // Вход через обычный браузер: в окне Telegram нет сохранённых паролей и входа в Яндекс/VK, а там есть.
   // Берём одноразовый код, открываем с ним сайт в браузере и ждём, пока человек подтвердит (browser_login.py).
-  const [wait, setWait] = useState<{ secret: string; code: string; pin: string } | null>(() => {
+  const [wait, setWait] = useState<{ secret: string; code: string } | null>(() => {
     try { return JSON.parse(sessionStorage.getItem(WAIT_KEY) ?? 'null'); } catch { return null; }
   });
-  const stopWait = useCallback(() => { sessionStorage.removeItem(WAIT_KEY); setWait(null); }, []);
+  // Подтвердили на сайте — сайт показал человеку код из 4 цифр, его вводят здесь: без него сессию не отдадут
+  const [needPin, setNeedPin] = useState(false);
+  const [pin, setPin] = useState('');
+  const stopWait = () => { sessionStorage.removeItem(WAIT_KEY); setWait(null); setNeedPin(false); setPin(''); };
   const openApprove = useCallback((code: string) => open(`${SITE}/tg/approve?c=${code}`), [open]);
   const browserLogin = async () => {
     try {
       const r = await apiFetch('/api/tg-login/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ init_data: tg?.initData ?? '' }) });
       if (r.status === 429) { say('Слишком много попыток. Подождите 10 минут'); return; }
       if (!r.ok) throw new Error(String(r.status));
-      const { code, secret, pin } = await r.json();
-      sessionStorage.setItem(WAIT_KEY, JSON.stringify({ secret, code, pin }));
-      setWait({ secret, code, pin });
+      const { code, secret } = await r.json();
+      sessionStorage.setItem(WAIT_KEY, JSON.stringify({ secret, code }));
+      setWait({ secret, code });
       openApprove(code);
     } catch { say('Не получилось. Попробуйте ещё раз или введите логин здесь'); }
   };
-  const waitSecret = !isAuthenticated ? wait?.secret : undefined;
+  const waitSecret = !isAuthenticated && !needPin ? wait?.secret : undefined;
   useEffect(() => {
     if (!waitSecret) return;
     let dead = false;
@@ -268,16 +271,27 @@ export default function TgSignalsApp() {
         const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: waitSecret, init_data: tg?.initData ?? '' }) });
         const j = r.ok ? await r.json() : null;
         if (dead || !j) return;
-        if (j.status === 'approved') { stopWait(); await login({ access_token: j.access_token, refresh_token: j.refresh_token }); }
-        else if (j.status === 'expired') { stopWait(); say('Время вышло. Нажмите «Войти через браузер» ещё раз'); }
+        if (j.status === 'need_pin') setNeedPin(true);
+        else if (j.status === 'expired') { sessionStorage.removeItem(WAIT_KEY); setWait(null); say('Время вышло. Нажмите «Войти через браузер» ещё раз'); }
       } catch { /* сеть: спросим на следующем круге */ }
     };
+    (async () => { await ask(); })();          // окно открыли заново — спрашиваем сразу, не ждём круга
     const id = window.setInterval(ask, 3000);
-    const onShow = () => { if (document.visibilityState === 'visible') void ask(); };   // вернулся из браузера — спрашиваем сразу
+    const onShow = () => { if (document.visibilityState === 'visible') void ask(); };   // вернулся из браузера — тоже сразу
     document.addEventListener('visibilitychange', onShow);
     window.addEventListener('focus', onShow);
     return () => { dead = true; window.clearInterval(id); document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow); };
-  }, [waitSecret, tg, login, stopWait, say]);
+  }, [waitSecret, tg, say]);
+  const sendPin = async () => {
+    if (!wait || pin.length !== 4) return;
+    try {
+      const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: wait.secret, init_data: tg?.initData ?? '', pin }) });
+      const j = r.ok ? await r.json() : null;
+      if (j?.status === 'approved') { stopWait(); await login({ access_token: j.access_token, refresh_token: j.refresh_token }); }
+      else if (j?.status === 'wrong_pin') { setPin(''); say('Код не подошёл. Проверьте цифры на сайте'); }
+      else { stopWait(); say('Попытка сгорела. Нажмите «Войти через браузер» ещё раз'); }
+    } catch { say('Не получилось. Попробуйте ещё раз'); }
+  };
 
   const confirmThen = (question: string, run: () => void) => {
     if (tg?.showConfirm) tg.showConfirm(question, (ok) => { if (ok) run(); });
@@ -294,12 +308,20 @@ export default function TgSignalsApp() {
     body = null;
   } else if (!isAuthenticated || !user) {
     const mark = <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M7 7h6.5v2.6H9.6v3.9H7zM25 7h-6.5v2.6h3.9v3.9H25zM7 25h6.5v-2.6H9.6v-3.9H7zM25 25h-6.5v-2.6h3.9v-3.9H25z" fill="#fff" /></svg>;
-    body = wait ? (
+    body = wait && needPin ? (
+      <div className="tgs-welcome">
+        {mark}
+        <h1>Введите код с сайта</h1>
+        <p>Четыре цифры, которые сайт показал после «Подтвердить».</p>
+        <label className="tgs-pin"><span>Код</span><input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={4} autoFocus value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></label>
+        <button type="button" className="tgs-pr" disabled={pin.length !== 4} onClick={sendPin}>Войти</button>
+        <button type="button" className="tgs-tl" onClick={stopWait}>Отмена</button>
+      </div>
+    ) : wait ? (
       <div className="tgs-welcome">
         {mark}
         <h1>Подтвердите вход в браузере</h1>
-        <p>Там откроется сайт Фрейма: нажмите «Подтвердить» и вернитесь сюда. Кабинет откроется сам.</p>
-        <div className="tgs-pin"><span>Код для сверки</span><b>{wait.pin}</b></div>
+        <p>Там откроется сайт Фрейма: нажмите «Подтвердить», запомните код из четырёх цифр и вернитесь сюда.</p>
         <div className="tgs-spin" role="status" aria-label="Ждём подтверждения" />
         <button type="button" className="tgs-alt" onClick={() => openApprove(wait.code)}>Открыть браузер ещё раз</button>
         <button type="button" className="tgs-tl" onClick={stopWait}>Отмена</button>

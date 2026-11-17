@@ -36,36 +36,49 @@ WHO = {"username": "vadim", "name": "Вадим"}
 def test_full_path_gives_session_once():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
+    assert "pin" not in s                                      # окно кода не знает
     assert bl.take(r, s["secret"], 42) == ("pending", None)
-    assert bl.info(r, s["code"]) == {"who": WHO, "pin": s["pin"]}
-    assert len(s["pin"]) == 4 and s["pin"].isdigit()
-    assert bl.approve(r, s["code"], 7)
-    assert bl.take(r, s["secret"], 42) == ("approved", 7)
-    assert bl.take(r, s["secret"], 42) == ("expired", None)   # второй раз сессию не отдаём
+    assert bl.info(r, s["code"]) == {"who": WHO}               # и страница до подтверждения — тоже
+    pin = bl.approve(r, s["code"], 7)
+    assert pin and len(pin) == 4 and pin.isdigit()
+    assert bl.take(r, s["secret"], 42) == ("need_pin", None)
+    assert bl.take(r, s["secret"], 42, pin) == ("approved", 7)
+    assert bl.take(r, s["secret"], 42, pin) == ("expired", None)   # второй раз сессию не отдаём
+
+
+def test_wrong_pin_burns_attempt_after_three_tries():
+    r = FakeRedis()
+    s = bl.start(r, 42, WHO)
+    pin = bl.approve(r, s["code"], 7)
+    bad = "0000" if pin != "0000" else "1111"
+    assert bl.take(r, s["secret"], 42, bad) == ("wrong_pin", None)
+    assert bl.take(r, s["secret"], 42, bad) == ("wrong_pin", None)
+    assert bl.take(r, s["secret"], 42, bad) == ("expired", None)
+    assert bl.take(r, s["secret"], 42, pin) == ("expired", None)   # верный код уже не поможет
 
 
 def test_other_telegram_account_cannot_take_session():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
-    bl.approve(r, s["code"], 7)
-    assert bl.take(r, s["secret"], 99) == ("expired", None)   # секрет утёк — чужому окну не поможет
-    assert bl.take(r, s["secret"], 42) == ("approved", 7)
+    pin = bl.approve(r, s["code"], 7)
+    assert bl.take(r, s["secret"], 99, pin) == ("expired", None)   # секрет и код утекли — чужому окну не помогут
+    assert bl.take(r, s["secret"], 42, pin) == ("approved", 7)
 
 
 def test_public_code_cannot_take_session():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
-    bl.approve(r, s["code"], 7)
-    assert bl.take(r, s["code"], 42) == ("expired", None)     # код из адреса страницы — не секрет окна
+    pin = bl.approve(r, s["code"], 7)
+    assert bl.take(r, s["code"], 42, pin) == ("expired", None)     # код из адреса страницы — не секрет окна
 
 
 def test_code_approved_only_once_and_unknown_rejected():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
     assert bl.approve(r, s["code"], 7)
-    assert not bl.approve(r, s["code"], 8)                    # чужой не перехватит уже подтверждённый
+    assert bl.approve(r, s["code"], 8) is None                # чужой не перехватит уже подтверждённый
     assert bl.info(r, s["code"]) is None
-    assert not bl.approve(r, "нет-такого-кода", 7)
+    assert bl.approve(r, "нет-такого-кода", 7) is None
     assert bl.take(r, "x" * 43, 42) == ("expired", None)
 
 
