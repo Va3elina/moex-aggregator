@@ -1,8 +1,12 @@
-// Мини-приложение Telegram «FRAME · Сигналы» (/tg) — настройка сигналов из бота @framesignalbot.
-// ПОКА ТОЛЬКО ИНТЕРФЕЙС (Вадим 17.11.2026): данные демо, сервер не подключён, изменения живут до закрытия.
-// Карта продукта и экраны: https://claude.ai/artifact/NDXgE94mSgqDgaTVzg2Zp9
+// Мини-приложение Telegram «FRAME · Сигналы» (/tg) — кабинет Фрейма внутри бота @framesignalbot.
+// Вход — ТОЛЬКО обычной страницей входа сайта (/login?next=/tg): входить «по Telegram» нельзя (406-ФЗ, см. oauth.py).
+// Telegram здесь — канал уведомлений: привязка идёт прежней ссылкой с одноразовым кодом (/api/alerts/telegram/link).
+// Кабинет (аккаунт, тариф, привязка) — настоящие данные; настройка сигналов пока демо, сервер к ней не подключён.
+// Карта продукта: https://claude.ai/artifact/NDXgE94mSgqDgaTVzg2Zp9
 // Внутри Telegram шапку, «Назад» и главную кнопку рисует сам Telegram (SDK); в обычном браузере — свои.
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { apiFetch } from '../../services/api';
 import './tg.css';
 
 interface TgButton { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void }
@@ -11,6 +15,7 @@ interface TgWebApp {
   ready(): void;
   expand(): void;
   openLink(url: string): void;
+  openTelegramLink?(url: string): void;
   close(): void;
   setHeaderColor?(color: string): void;
   showConfirm?(message: string, cb: (ok: boolean) => void): void;
@@ -44,7 +49,7 @@ function useTelegram(): TgWebApp | null {
   return tg;
 }
 
-type Screen = 'login' | 'home' | 'rule' | 'asset' | 'sets' | 'history' | 'account' | 'quiet';
+type Screen = 'cabinet' | 'signals' | 'rule' | 'asset' | 'sets' | 'quiet';
 type Group = 'fiz' | 'yur' | 'all';
 type Kind = 'level' | 'move' | 'record';
 interface Rule {
@@ -68,28 +73,13 @@ const POWERS: [2 | 3 | 5, string, string][] = [[2, 'Заметное · 2×', '�
 const PERIODS: [Rule['period'], string][] = [['half', 'Полгода'], ['year', 'Год'], ['all', 'Всё время']];
 const EVERY: [Rule['every'], string][] = [['5m', '5 минут'], ['1h', 'Час'], ['1d', 'День']];
 const RULE_LIMIT = 20;
+const TIERS: Record<string, string> = { guest: 'Free', free: 'Free', basic: 'Basic', pro: 'Pro', premium: 'Premium', admin: 'Админ' };
 
 const DEMO_RULES: Rule[] = [
   { id: 1, asset: 'Si', group: 'fiz', kind: 'move', power: 3, level: 10000, period: 'year', repeat: true, every: '5m', paused: false, last: 'вчера' },
   { id: 2, asset: 'CNY', group: 'fiz', kind: 'level', power: 3, level: 12000, period: 'year', repeat: false, every: '1d', paused: false, last: 'ждёт' },
   { id: 3, asset: 'NG', group: 'fiz', kind: 'record', power: 3, level: 10000, period: 'year', repeat: true, every: '1d', paused: true, last: 'пауза' },
 ];
-const HISTORY: { day: string; items: { asset: string; text: string; set: boolean; time: string; up: boolean }[] }[] = [
-  { day: 'Сегодня', items: [
-    { asset: 'Si', text: 'Физлица резко нарастили позицию · 3,4×', set: false, time: '14:35', up: true },
-    { asset: 'VK', text: 'рекордный шорт за всё время', set: true, time: '10:55', up: false },
-    { asset: 'GD', text: 'рекорд лонга за полгода', set: true, time: '10:00', up: true },
-  ] },
-  { day: 'Вчера', items: [
-    { asset: 'NG', text: 'рекорд лонга за год', set: true, time: '17:20', up: true },
-    { asset: 'Si', text: 'Физлица резко сократили позицию · 3,1×', set: false, time: '12:05', up: false },
-    { asset: 'BR', text: 'рекорд лонга за полгода', set: true, time: '09:40', up: true },
-  ] },
-  { day: '15 ноября', items: [
-    { asset: 'CNY', text: 'Позиция физлиц пересекла 12 000', set: false, time: '11:15', up: true },
-  ] },
-];
-
 const title = (code: string) => (code === ASSETS[code].name ? code : `${ASSETS[code].name} · ${code}`);
 const groupWord = (g: Group) => GROUPS.find(([k]) => k === g)![1].toLowerCase();
 function ruleSub(r: Rule): string {
@@ -108,13 +98,6 @@ const Check = () => (
 const Logo = ({ code, off }: { code: string; off?: boolean }) => (
   <span className={`tgs-lg${off ? ' off' : ''}`} style={{ background: ASSETS[code].color }}>{ASSETS[code].mark}</span>
 );
-const Thumb = ({ up }: { up: boolean }) => (
-  <svg className="tgs-th" viewBox="0 0 48 36" aria-hidden="true">
-    <path d={up ? 'M4 27L12 24 20 26 28 19 36 20 44 9' : 'M4 9L12 13 20 11 28 18 36 16 44 27'} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    <circle cx="44" cy={up ? 9 : 27} r="2.5" fill="var(--accent)" />
-  </svg>
-);
-
 function Seg<T extends string | number>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
   return (
     <div className="tgs-seg">
@@ -127,16 +110,17 @@ function Seg<T extends string | number>({ value, options, onChange }: { value: T
 
 export default function TgSignalsApp() {
   const tg = useTelegram();
-  const [stack, setStack] = useState<Screen[]>(() => (new URLSearchParams(window.location.search).get('screen') === 'login' ? ['login'] : ['home']));
+  const { user, loading, isAuthenticated, logout } = useAuth();
+  const [stack, setStack] = useState<Screen[]>(['cabinet']);
   const screen = stack[stack.length - 1];
   const [enabled, setEnabled] = useState(true);
   const [sets, setSets] = useState({ records: true, moves: false, season: false, minWindow: 'half', groups: ['Акции', 'Валюта', 'Сырьё'], digest: false });
   const [muted, setMuted] = useState([{ asset: 'VK', until: 'тихо до 18 ноября, 14:35' }]);
   const [rules, setRules] = useState(DEMO_RULES);
   const [draft, setDraft] = useState<Rule | null>(null);
-  const [filter, setFilter] = useState<'all' | 'mine' | 'sets'>('all');
   const [quiet, setQuiet] = useState({ on: true, from: '23:00', to: '08:00' });
-  const [send, setSend] = useState({ telegram: true, site: true, news: false });
+  const [plan, setPlan] = useState<{ tier: string; expires_at: string | null; cancelled_at: string | null; is_trial: boolean } | null>(null);
+  const [link, setLink] = useState<{ linked: boolean; username: string | null } | null>(null);
   const [toast, setToast] = useState('');
 
   const say = useCallback((text: string) => setToast(text), []);
@@ -188,37 +172,102 @@ export default function TgSignalsApp() {
   };
   const removeRule = () => {
     if (!draft) return;
-    const run = (ok: boolean) => { if (!ok) return; setRules((rs) => rs.filter((r) => r.id !== draft.id)); say('Правило удалено'); back(); };
-    if (tg?.showConfirm) tg.showConfirm(`Удалить правило по «${title(draft.asset)}»?`, run);
-    else run(window.confirm(`Удалить правило по «${title(draft.asset)}»?`));
+    confirmThen(`Удалить правило по «${title(draft.asset)}»?`, () => { setRules((rs) => rs.filter((r) => r.id !== draft.id)); say('Правило удалено'); back(); });
   };
   const patch = (p: Partial<Rule>) => setDraft((d) => (d ? { ...d, ...p } : d));
-  const history = useMemo(
-    () => HISTORY.map((d) => ({ ...d, items: d.items.filter((i) => filter === 'all' || (filter === 'sets') === i.set) })).filter((d) => d.items.length),
-    [filter],
-  );
+
+  // Кабинет: тариф и привязка Telegram — настоящие. Перечитываем при возврате в окно (после привязки в боте).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let dead = false;
+    const load = async () => {
+      try {
+        const [b, t] = await Promise.all([apiFetch('/api/billing/status'), apiFetch('/api/alerts/telegram/status')]);
+        const [bj, tj] = [b.ok ? await b.json() : null, t.ok ? await t.json() : null];
+        if (dead) return;
+        if (bj) setPlan(bj);
+        if (tj) setLink(tj);
+      } catch { /* сеть: оставляем прежние значения */ }
+    };
+    (async () => { await load(); })();
+    const onShow = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('focus', onShow);
+    return () => { dead = true; document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow); };
+  }, [isAuthenticated]);
+
+  const connect = async () => {
+    try {
+      const r = await apiFetch('/api/alerts/telegram/link', { method: 'POST' });
+      if (!r.ok) throw new Error(String(r.status));
+      const { deep_link } = await r.json();
+      // Бот получит одноразовый код и ответит «Аккаунт подключён»; мини-приложение при этом закроется
+      if (tg?.openTelegramLink) tg.openTelegramLink(deep_link); else window.open(deep_link, '_blank', 'noopener');
+    } catch { say('Не получилось. Попробуйте ещё раз'); }
+  };
+  const confirmThen = (question: string, run: () => void) => {
+    if (tg?.showConfirm) tg.showConfirm(question, (ok) => { if (ok) run(); });
+    else if (window.confirm(question)) run();
+  };
+  const disconnect = () => confirmThen('Отвязать Telegram? Сигналы перестанут приходить в этот чат.', async () => {
+    const r = await apiFetch('/api/alerts/telegram', { method: 'DELETE' });
+    if (r.ok) { setLink({ linked: false, username: null }); say('Telegram отвязан'); } else say('Не получилось. Попробуйте ещё раз');
+  });
+  const signOut = () => confirmThen('Выйти из аккаунта?', () => { void logout(); setStack(['cabinet']); });
 
   let body: ReactNode = null;
-  if (screen === 'login') {
+  if (loading) {
+    body = null;
+  } else if (!isAuthenticated || !user) {
     body = (
-      <div className="tgs-login">
-        <div className="tgs-card">
-          <h1>Войти в аккаунт</h1>
-          <p>Чтобы получать сигналы в этот чат</p>
-          <button type="button" className="tgs-ob" onClick={() => say('Демо: вход пока не подключён')}>Войти через Яндекс</button>
-          <button type="button" className="tgs-ob" onClick={() => say('Демо: вход пока не подключён')}>Войти через ВКонтакте</button>
-          <div className="tgs-or">или по email</div>
-          <label className="tgs-fl">Email<input type="email" placeholder="you@example.com" autoComplete="off" /></label>
-          <label className="tgs-fl">Пароль<input type="password" placeholder="••••••••" autoComplete="off" /></label>
-          <button type="button" className="tgs-pr" onClick={() => { say('Демо: вошли без проверки'); setStack(['home']); }}>Войти →</button>
-          <button type="button" className="tgs-tl" onClick={() => open(`${SITE}/forgot-password`)}>Забыли пароль?</button>
-          <p>Нет аккаунта? <button type="button" className="tgs-tl" style={{ margin: 0, height: 'auto', padding: 0 }} onClick={() => open(`${SITE}/login`)}>Зарегистрироваться</button></p>
-        </div>
-        <button type="button" className="tgs-alt" onClick={() => open(`${SITE}/profile`)}>Я уже вошёл в браузере</button>
-        <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Откроем профиль на сайте: оттуда бот подключается одной кнопкой.</div>
+      <div className="tgs-welcome">
+        <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M7 7h6.5v2.6H9.6v3.9H7zM25 7h-6.5v2.6h3.9v3.9H25zM7 25h6.5v-2.6H9.6v-3.9H7zM25 25h-6.5v-2.6h3.9v-3.9H25z" fill="#fff" /></svg>
+        <h1>Кабинет Фрейма</h1>
+        <p>Войдите в аккаунт, чтобы подключить уведомления в этот чат и управлять подпиской.</p>
+        <button type="button" className="tgs-pr" onClick={() => window.location.assign('/login?next=/tg')}>Войти</button>
+        <button type="button" className="tgs-alt" onClick={() => window.location.assign('/login?mode=register&next=/tg')}>Зарегистрироваться</button>
+        <button type="button" className="tgs-tl" onClick={() => open(`${SITE}/profile`)}>Я уже вошёл в браузере</button>
+        <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Вход — как на сайте: почта, Яндекс или ВКонтакте.</div>
       </div>
     );
-  } else if (screen === 'home') {
+  } else if (screen === 'cabinet') {
+    const name = user.display_name || user.email.split('@')[0];
+    const tier = TIERS[plan?.tier ?? ''] ?? '—';
+    const until = plan?.expires_at ? new Date(plan.expires_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
+    body = (
+      <>
+        <div className="tgs-me">
+          <div className="tgs-ava">{name[0].toUpperCase()}</div>
+          <div className="tgs-name">{name}</div>
+          <div className="tgs-s" style={{ fontSize: 15, lineHeight: '20px' }}>{user.requires_email_setup ? 'почта не указана' : user.email}</div>
+        </div>
+        <div className="tgs-sec">
+          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/pricing`)}>
+            <span className="tgs-g"><span>Тариф {tier}</span><span className="tgs-s">{until ? `${plan?.is_trial ? 'пробный период до' : plan?.cancelled_at ? 'действует до' : 'продлится'} ${until}` : 'Подписки нет'}</span></span>
+            <span className="tgs-v tgs-accent">{until ? 'Изменить' : 'Выбрать'}</span><Chevron />
+          </button>
+        </div>
+        <div className="tgs-f">Оплата открывается на сайте.</div>
+        <div className="tgs-h">Уведомления</div>
+        <div className="tgs-sec">
+          {link?.linked
+            ? <div className="tgs-row"><span className="tgs-g"><span>Telegram подключён</span><span className="tgs-s">{link.username ? `@${link.username}` : 'сигналы приходят в этот чат'}</span></span><Check /></div>
+            : <button type="button" className="tgs-row tgs-accent" onClick={connect}><span className="tgs-g"><span>Подключить Telegram</span><span className="tgs-s">Бот попросит нажать «Запустить» — и готово</span></span><Chevron /></button>}
+          <button type="button" className="tgs-row" onClick={() => go('signals')}><span className="tgs-g"><span>Настройка сигналов</span><span className="tgs-s">Демо: пока не сохраняется</span></span><Chevron /></button>
+        </div>
+        <div className="tgs-gap" />
+        <div className="tgs-sec">
+          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/profile`)}><span className="tgs-g">Профиль на сайте</span><Chevron /></button>
+          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/contacts`)}><span className="tgs-g">Написать в поддержку</span><Chevron /></button>
+        </div>
+        <div className="tgs-gap" />
+        <div className="tgs-sec">
+          {link?.linked && <button type="button" className="tgs-row tgs-center tgs-danger" onClick={disconnect}>Отвязать Telegram</button>}
+          <button type="button" className="tgs-row tgs-center tgs-danger" onClick={signOut}>Выйти из аккаунта</button>
+        </div>
+      </>
+    );
+  } else if (screen === 'signals') {
     body = (
       <>
         <div className="tgs-gap" />
@@ -244,11 +293,9 @@ export default function TgSignalsApp() {
         </div>
         <div className="tgs-gap" />
         <div className="tgs-sec">
-          <button type="button" className="tgs-row" onClick={() => go('history')}><span className="tgs-g">История</span><span className="tgs-v">3 сегодня</span><Chevron /></button>
           <button type="button" className="tgs-row" onClick={() => go('quiet')}><span className="tgs-g">Тихие часы</span><span className="tgs-v">{quiet.on ? `${quiet.from}–${quiet.to}` : 'выключены'}</span><Chevron /></button>
-          <button type="button" className="tgs-row" onClick={() => go('account')}><span className="tgs-g">Аккаунт</span><span className="tgs-v">Basic</span><Chevron /></button>
         </div>
-        <div className="tgs-demo">Демо-версия: данные условные, изменения не сохраняются.</div>
+        <div className="tgs-demo">Демо: данные условные, изменения не сохраняются. Настоящая настройка — следующим шагом.</div>
       </>
     );
   } else if (screen === 'rule' && draft) {
@@ -353,28 +400,6 @@ export default function TgSignalsApp() {
         )}
       </>
     );
-  } else if (screen === 'history') {
-    body = (
-      <>
-        <div className="tgs-gap" />
-        <Seg value={filter} options={[['all', 'Все'], ['mine', 'Мои правила'], ['sets', 'Подборки']]} onChange={setFilter} />
-        {history.map((d) => (
-          <div key={d.day}>
-            <div className="tgs-h">{d.day}</div>
-            <div className="tgs-sec">
-              {d.items.map((i) => (
-                <button key={i.asset + i.time} type="button" className="tgs-row tgs-thumbed" onClick={() => open(`${SITE}/oi?instrument=${i.asset}&clgroup=FIZ`)}>
-                  <Thumb up={i.up} />
-                  <span className="tgs-g"><span>{title(i.asset)}</span><span className="tgs-s">{i.set && <><span className="tgs-accent">Подборка</span> · </>}{i.text}</span></span>
-                  <span className="tgs-tm">{i.time}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-        <div className="tgs-f">Хранится 30 дней. Нажмите на строку — откроется график на сайте.</div>
-      </>
-    );
   } else if (screen === 'quiet') {
     body = (
       <>
@@ -385,37 +410,6 @@ export default function TgSignalsApp() {
           {quiet.on && <label className="tgs-row"><span className="tgs-g">До</span><input className="tgs-in" type="time" value={quiet.to} onChange={(e) => setQuiet({ ...quiet, to: e.target.value })} /></label>}
         </div>
         <div className="tgs-f">В это время сигналы приходят без звука. Время московское.</div>
-      </>
-    );
-  } else if (screen === 'account') {
-    body = (
-      <>
-        <div className="tgs-me">
-          <div className="tgs-ava">Д</div>
-          <div className="tgs-name">Демо-аккаунт</div>
-          <div className="tgs-s" style={{ fontSize: 15, lineHeight: '20px' }}>здесь будут почта и Telegram</div>
-        </div>
-        <div className="tgs-sec">
-          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/pricing`)}><span className="tgs-g"><span>Тариф Basic</span><span className="tgs-s">{rules.length} из {RULE_LIMIT} правил</span></span><span className="tgs-v tgs-accent">Pro</span><Chevron /></button>
-        </div>
-        <div className="tgs-h">Куда присылать сигналы</div>
-        <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g">Telegram</span>{sw(send.telegram, 'Telegram', (telegram) => setSend({ ...send, telegram }))}</div>
-          <div className="tgs-row"><span className="tgs-g">Колокол на сайте</span>{sw(send.site, 'Колокол на сайте', (site) => setSend({ ...send, site }))}</div>
-        </div>
-        <div className="tgs-gap" />
-        <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g">Новости Фрейма</span>{sw(send.news, 'Новости Фрейма', (news) => setSend({ ...send, news }))}</div>
-        </div>
-        <div className="tgs-f">Редкие сообщения о новых разделах и данных. Отключается здесь же.</div>
-        <div className="tgs-gap" />
-        <div className="tgs-sec">
-          <button type="button" className="tgs-row" onClick={() => open(SITE)}><span className="tgs-g">Открыть framedata.ru</span><Chevron /></button>
-          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/contacts`)}><span className="tgs-g">Написать в поддержку</span><Chevron /></button>
-        </div>
-        <div className="tgs-gap" />
-        <div className="tgs-sec"><button type="button" className="tgs-row tgs-center tgs-danger" onClick={() => { say('Демо: показываем экран входа'); setStack(['login']); }}>Отвязать Telegram</button></div>
-        <div className="tgs-f">Сигналы перестанут приходить в этот чат. Правила сохранятся.</div>
       </>
     );
   }
