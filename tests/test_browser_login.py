@@ -10,8 +10,11 @@ class FakeRedis:
     def __init__(self):
         self.d = {}
 
-    def set(self, k, v, ex=None):
+    def set(self, k, v, ex=None, xx=False, keepttl=False):
+        if xx and k not in self.d:
+            return None
         self.d[k] = v
+        return True
 
     def get(self, k):
         return self.d.get(k)
@@ -93,3 +96,25 @@ def test_secret_not_stored_in_clear():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
     assert all(s["secret"] not in str(k) and s["secret"] not in str(v) for k, v in r.d.items())
+
+
+def test_parallel_wrong_pins_cannot_exceed_limit():
+    """Пачка одновременных неверных кодов: счётчик отдельным ключом, состояние не перезаписывается."""
+    r = FakeRedis()
+    s = bl.start(r, 42, WHO)
+    pin = bl.approve(r, s["code"], 7)
+    wrong = [f"{i:04d}" for i in range(20) if f"{i:04d}" != pin]
+    results = [bl.take(r, s["secret"], 42, w)[0] for w in wrong]
+    assert results.count("wrong_pin") == bl.MAX_PIN_TRIES - 1
+    assert set(results[bl.MAX_PIN_TRIES - 1:]) == {"expired"}
+    assert bl.take(r, s["secret"], 42, pin) == ("expired", None)
+
+
+def test_burned_attempt_is_not_revived_by_late_write():
+    r = FakeRedis()
+    s = bl.start(r, 42, WHO)
+    assert bl.take(r, s["secret"], 99) == ("expired", None)        # чужое окно ничего не меняет
+    key = next(k for k in r.d if k.startswith("tglogin:s:"))
+    del r.d[key]                                                   # попытка сгорела
+    assert bl.approve(r, s["code"], 7) is None                     # и запоздалое подтверждение её не вернёт
+    assert key not in r.d

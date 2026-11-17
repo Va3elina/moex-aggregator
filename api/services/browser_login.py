@@ -25,8 +25,9 @@ TTL_SEC = 600
 MAX_STARTS = 10        # попыток на один Telegram-аккаунт за TTL_SEC
 MAX_PIN_TRIES = 3      # неверных кодов на одну попытку
 _R = "tglogin:r:"      # tg_id → счётчик попыток
-_S = "tglogin:s:"      # sha256(secret) → {"code", "user_id", "tg_id", "who", "pin", "tries"}
+_S = "tglogin:s:"      # sha256(secret) → {"code", "user_id", "tg_id", "who", "pin"}
 _C = "tglogin:c:"      # code → sha256(secret)
+_T = "tglogin:t:"      # sha256(secret) → сколько раз присылали код (атомарный счётчик)
 
 
 def _h(secret: str) -> str:
@@ -42,7 +43,7 @@ def start(r, tg_id: int, who: dict) -> dict | None:
     if n > MAX_STARTS:
         return None
     code, secret = secrets.token_urlsafe(16), secrets.token_urlsafe(32)
-    r.set(_S + _h(secret), json.dumps({"code": code, "user_id": None, "tg_id": tg_id, "who": who, "pin": None, "tries": 0}), ex=TTL_SEC)
+    r.set(_S + _h(secret), json.dumps({"code": code, "user_id": None, "tg_id": tg_id, "who": who, "pin": None}), ex=TTL_SEC)
     r.set(_C + code, _h(secret), ex=TTL_SEC)
     return {"code": code, "secret": secret, "expires_in": TTL_SEC}
 
@@ -62,8 +63,8 @@ def info(r, code: str) -> dict | None:
 
 
 def _save(r, key: str, state: dict) -> None:
-    ttl = r.ttl(_S + key)
-    r.set(_S + key, json.dumps(state), ex=ttl if ttl and ttl > 0 else TTL_SEC)
+    # XX + KEEPTTL: только обновить живую попытку — сгоревшую или забранную запись не воскрешаем
+    r.set(_S + key, json.dumps(state), xx=True, keepttl=True)
 
 
 def approve(r, code: str, user_id: int) -> str | None:
@@ -98,13 +99,20 @@ def take(r, secret: str, tg_id: int, pin: str | None = None) -> tuple[str, int |
         return "pending", None
     if not pin:
         return "need_pin", None
+    # Счётчик попыток — отдельным ключом и ДО сравнения: INCR атомарен, поэтому пачка одновременных
+    # запросов не переберёт больше MAX_PIN_TRIES кодов (состояние в этой ветке не перезаписываем).
+    n = r.incr(_T + hk)
+    if n == 1:
+        r.expire(_T + hk, TTL_SEC)
+    if n > MAX_PIN_TRIES:
+        r.delete(_S + hk)
+        r.delete(_C + state["code"])
+        return "expired", None
     if not hmac.compare_digest(pin, state["pin"]):
-        state["tries"] += 1
-        if state["tries"] >= MAX_PIN_TRIES:
+        if n == MAX_PIN_TRIES:        # последняя попытка потрачена — сжигаем сразу
             r.delete(_S + hk)
             r.delete(_C + state["code"])
             return "expired", None
-        _save(r, hk, state)
         return "wrong_pin", None
     if r.delete(_S + hk) != 1:        # параллельный опрос уже забрал сессию
         return "expired", None
