@@ -260,7 +260,7 @@ export default function TgSignalsApp() {
       sessionStorage.setItem(WAIT_KEY, JSON.stringify({ secret, code }));
       setWait({ secret, code });
       openApprove(code);
-    } catch { say('Не получилось. Попробуйте ещё раз или введите логин здесь'); }
+    } catch { say('Не получилось. Попробуйте ещё раз'); }
   };
   const waitSecret = !isAuthenticated && !needPin ? wait?.secret : undefined;
   useEffect(() => {
@@ -272,7 +272,7 @@ export default function TgSignalsApp() {
         const j = r.ok ? await r.json() : null;
         if (dead || !j) return;
         if (j.status === 'need_pin') setNeedPin(true);
-        else if (j.status === 'expired') { sessionStorage.removeItem(WAIT_KEY); setWait(null); say('Время вышло. Нажмите «Войти через браузер» ещё раз'); }
+        else if (j.status === 'expired') { sessionStorage.removeItem(WAIT_KEY); setWait(null); say('Время вышло. Нажмите «Войти» ещё раз'); }
       } catch { /* сеть: спросим на следующем круге */ }
     };
     (async () => { await ask(); })();          // окно открыли заново — спрашиваем сразу, не ждём круга
@@ -289,7 +289,7 @@ export default function TgSignalsApp() {
       const j = r.ok ? await r.json() : null;
       if (j?.status === 'approved') { stopWait(); await login({ access_token: j.access_token, refresh_token: j.refresh_token }); }
       else if (j?.status === 'wrong_pin') { setPin(''); say('Код не подошёл. Проверьте цифры на сайте'); }
-      else { stopWait(); say('Попытка сгорела. Нажмите «Войти через браузер» ещё раз'); }
+      else { stopWait(); say('Попытка сгорела. Нажмите «Войти» ещё раз'); }
     } catch { say('Не получилось. Попробуйте ещё раз'); }
   };
 
@@ -331,12 +331,10 @@ export default function TgSignalsApp() {
         {mark}
         <h1>Кабинет Фрейма</h1>
         <p>Войдите в аккаунт — и сигналы будут приходить в этот чат.</p>
-        {tg
-          ? <button type="button" className="tgs-pr" onClick={browserLogin}>Войти через браузер</button>
-          : <button type="button" className="tgs-pr" onClick={() => window.location.assign(LOGIN_URL)}>Войти</button>}
-        {tg && <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Быстрее всего: в браузере уже есть ваши пароли и вход в Яндекс.</div>}
-        {tg && <button type="button" className="tgs-alt" onClick={() => window.location.assign(LOGIN_URL)}>Ввести логин здесь</button>}
-        <button type="button" className="tgs-tl" onClick={() => window.location.assign('/login?mode=register&next=/tg')}>Зарегистрироваться</button>
+        {/* Одна кнопка (Вадим 17.11: лишние вводят в ступор). В Telegram вход идёт через обычный браузер —
+            там сохранённые пароли и вход в Яндекс/VK; регистрация — на той же странице сайта. */}
+        <button type="button" className="tgs-pr" onClick={tg ? browserLogin : () => window.location.assign(LOGIN_URL)}>Войти</button>
+        <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>{tg ? 'Откроется браузер. Нет аккаунта — там же можно зарегистрироваться.' : 'Нет аккаунта — на странице входа можно зарегистрироваться.'}</div>
       </div>
     );
   } else if (screen === 'cabinet') {

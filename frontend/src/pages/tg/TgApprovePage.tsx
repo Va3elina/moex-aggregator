@@ -65,7 +65,7 @@ export default function TgApprovePage() {
               <p>Аккаунт <b>{user.requires_email_setup ? (user.display_name || 'Фрейм') : user.email}</b>{who?.username ? <> откроется в Telegram у <b>@{who.username}</b>.</> : who?.name ? <> откроется в Telegram у пользователя «{who.name}» (ник не задан).</> : <> откроется в окне бота Фрейма в Telegram.</>}</p>
               <button type="button" className="tgs-pr" disabled={busy} onClick={approve}>Подтвердить</button>
               <button type="button" className="tgs-alt" onClick={() => navigate('/', { replace: true })}>Отмена</button>
-              <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Подтверждайте, только если вы сами только что нажали «Войти через браузер» в боте. Ссылку прислал кто-то другой — нажмите «Отмена».</div>
+              <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Подтверждайте, только если вы сами только что нажали «Войти» в боте. Ссылку прислал кто-то другой — нажмите «Отмена».</div>
             </div>
           )}
           {stage === 'done' && (
@@ -81,7 +81,7 @@ export default function TgApprovePage() {
             <div className="tgs-welcome">
               {mark}
               <h1>Ссылка устарела</h1>
-              <p>Вернитесь в бота и нажмите «Войти через браузер» ещё раз.</p>
+              <p>Вернитесь в бота и нажмите «Войти» ещё раз.</p>
               <a className="tgs-pr tgs-btn-link" href={`https://t.me/${BOT}`}>Открыть бота</a>
             </div>
           )}
