@@ -275,6 +275,8 @@ services:
       - BOT_TOKEN=${BOT_TOKEN:-}
       - EDITOR_BOT_TOKEN=${EDITOR_BOT_TOKEN:-}   # мандат-кандидаты → FRAME · Редакция
       - BILLING_BOT_TOKEN=${BILLING_BOT_TOKEN:-}  # события биллинга → FRAME · Касса (api/billing/admin_notify.py)
+      # Бот сигналов: проверка подписи мини-приложения при привязке чата (api/services/tg_webapp.py)
+      - ALERT_BOT_TOKEN=${ALERT_BOT_TOKEN:-}
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-}
       # Бесплатный пробный период (free trial). TRIAL_ENABLED=1 включает /trial/*
       # и trial_eligible в /status. TRIAL_HASH_SALT — соль для хешей идентичности

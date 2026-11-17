@@ -4,6 +4,7 @@
 Phase 1 (привязка Telegram):
   POST   /api/alerts/telegram/link    — сгенерировать deep-link токен привязки (auth)
   GET    /api/alerts/telegram/status  — привязан ли Telegram у юзера (auth)
+  POST   /api/alerts/telegram/link-webapp — привязка из мини-приложения бота, без кода (auth)
   DELETE /api/alerts/telegram         — отвязать Telegram (auth)
 
 Phase 2 добавит CRUD алертов (создать/список/пауза/удалить) с квота-гейтом по тарифу
@@ -18,13 +19,14 @@ from datetime import datetime, timedelta, timezone
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.services.market_delay import cutoff_for_interval
 from api.services.session_close import is_live_viewer
+from api.services import tg_webapp
 from api.database import get_db
 from api.models import User, Alert, AlertEvent
 from api.models.telegram_link_token import TelegramLinkToken
@@ -86,6 +88,44 @@ def telegram_status(user: User = Depends(get_current_user)):
         linked=user.telegram_chat_id is not None,
         username=user.telegram_username,
     )
+
+
+class WebAppLink(BaseModel):
+    init_data: str = Field(min_length=1, max_length=4096)
+
+
+@router.post("/telegram/link-webapp", response_model=TelegramStatus)
+def link_from_webapp(
+    data: WebAppLink,
+    background: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Привязать чат бота к вошедшему пользователю по данным мини-приложения — без кода и /start.
+
+    Пользователь уже вошёл обычным способом; Telegram здесь только называет чат для уведомлений
+    (подпись initData проверяем токеном бота). Сессию по этим данным не выдаём — см. tg_webapp.py.
+    """
+    token = tg_webapp.bot_token()
+    if not token:
+        raise HTTPException(status_code=503, detail="Привязка временно недоступна")
+    tg_user = tg_webapp.parse_init_data(data.init_data, token)
+    if tg_user is None:
+        raise HTTPException(status_code=400, detail="Откройте кабинет из бота заново")
+    chat_id = tg_user["id"]            # личный чат с ботом == id пользователя Telegram
+    was_linked = user.telegram_chat_id == chat_id
+    # один Telegram-чат = один аккаунт (как link_account в signals/alert_bot.py)
+    db.query(User).filter(User.telegram_chat_id == chat_id, User.id != user.id).update(
+        {User.telegram_chat_id: None, User.telegram_username: None, User.telegram_linked_at: None})
+    user.telegram_chat_id = chat_id
+    user.telegram_username = (tg_user.get("username") or None)
+    if not was_linked:
+        user.telegram_linked_at = datetime.now(timezone.utc)
+    db.query(TelegramLinkToken).filter(TelegramLinkToken.user_id == user.id).delete()
+    db.commit()
+    if not was_linked:
+        background.add_task(tg_webapp.send_linked_message, chat_id)
+    return TelegramStatus(linked=True, username=user.telegram_username)
 
 
 @router.delete("/telegram")

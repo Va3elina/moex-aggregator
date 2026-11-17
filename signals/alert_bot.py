@@ -38,6 +38,10 @@ API_ROOT = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
 API_BASE = f"{API_ROOT}/bot{BOT_TOKEN}"
 
 SITE = "https://framedata.ru"
+# Кабинет Фрейма — мини-приложение бота (frontend/src/pages/tg): вход как на сайте, привязка чата сама.
+WEBAPP_URL = f"{SITE}/tg"
+REMIND_AFTER_MIN = 60          # не вошёл за час после «Запустить» — одно напоминание, больше не пишем
+REMIND_CHECK_SEC = 300
 
 HELP_TEXT = (
     "🔔 <b>Frame Signal</b> — алерты по рынку MOEX.\n\n"
@@ -219,6 +223,71 @@ def link_account(token: str, chat_id: int, username) -> bool:
 
 
 # ── DB helpers (host-side, через text() как остальной файл) ─────────────────
+_CABINET_KB = [[{"text": "Войти в кабинет", "web_app": {"url": WEBAPP_URL}}]]
+
+
+def _ensure_tables() -> None:
+    """Кто нажал «Запустить», но ещё не вошёл: для одного напоминания (как tg_joins.ensure_tables — без миграции)."""
+    db = SessionLocal()
+    try:
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS tg_bot_starts (
+                chat_id BIGINT PRIMARY KEY,
+                started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                reminded_at TIMESTAMPTZ
+            )"""))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _start_unlinked(chat_id: int) -> None:
+    """«Запустить» без привязки: одно сообщение, одна кнопка — вход в кабинет."""
+    send_kb(chat_id,
+            "👋 <b>FRAME · Сигналы</b>\n\n"
+            "Сюда приходят сигналы Фрейма по рынку МосБиржи.\n"
+            "Войдите в аккаунт — и чат подключится сам.",
+            _CABINET_KB)
+    db = SessionLocal()
+    try:
+        db.execute(text("INSERT INTO tg_bot_starts (chat_id) VALUES (:c) ON CONFLICT (chat_id) DO NOTHING"), {"c": chat_id})
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[alert_bot] start log error: {_redact(e)}")
+    finally:
+        db.close()
+
+
+_last_remind = 0.0
+
+
+def _remind_unfinished() -> None:
+    """Раз в REMIND_CHECK_SEC: кто нажал «Запустить» больше часа назад и так и не вошёл — одно напоминание."""
+    global _last_remind
+    if time.monotonic() - _last_remind < REMIND_CHECK_SEC:
+        return
+    _last_remind = time.monotonic()
+    db = SessionLocal()
+    try:
+        rows = db.execute(text("""
+            UPDATE tg_bot_starts s SET reminded_at = now()
+            WHERE s.reminded_at IS NULL AND s.started_at < now() - make_interval(mins => :m)
+            RETURNING s.chat_id,
+                      EXISTS (SELECT 1 FROM users u WHERE u.telegram_chat_id = s.chat_id) AS linked
+        """), {"m": REMIND_AFTER_MIN}).fetchall()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[alert_bot] remind error: {_redact(e)}")
+        return
+    finally:
+        db.close()
+    for chat_id, linked in rows:
+        if not linked:
+            send_kb(chat_id, "Вы не закончили подключение. Войдите в кабинет — и сигналы начнут приходить сюда.", _CABINET_KB)
+
+
 def _user_id_by_chat(db, chat_id: int):
     row = db.execute(
         text("SELECT id FROM users WHERE telegram_chat_id = :c"),
@@ -756,8 +825,17 @@ def process_update(update: dict) -> None:
                      "⚠️ Ссылка недействительна или истекла.\n"
                      "Сгенерируйте новую на сайте: ЛК → Подключить Telegram.")
         else:
-            # /start без токена — приветствие + постоянный нижний бар.
-            send_persistent(chat_id, _welcome_text())
+            # /start без токена: привязанным — приветствие + постоянный нижний бар,
+            # остальным — одна кнопка входа в кабинет (там чат привяжется сам).
+            db = SessionLocal()
+            try:
+                linked = _user_id_by_chat(db, chat_id) is not None
+            finally:
+                db.close()
+            if linked:
+                send_persistent(chat_id, _welcome_text())
+            else:
+                _start_unlinked(chat_id)
     elif cmd == "/menu":
         send_persistent(chat_id, _welcome_text())
     elif cmd == "/help":
@@ -807,9 +885,11 @@ def process_update(update: dict) -> None:
 
 def main() -> None:
     print(f"[{datetime.now(timezone.utc)}] alert_bot started")
+    _ensure_tables()
     offset = None
     while True:
         try:
+            _remind_unfinished()
             # allowed_updates — JSON-массив (требование Telegram для GET-параметра).
             # long-poll 20с (не 30): ходим через CF-worker relay, на 30с Telegram
             # отдаёт ответ впритык к нашему requests-таймауту и edge-лимитам

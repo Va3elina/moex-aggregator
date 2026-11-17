@@ -12,6 +12,7 @@ import './tg.css';
 interface TgButton { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void }
 interface TgWebApp {
   platform: string;
+  initData: string;
   ready(): void;
   expand(): void;
   openLink(url: string): void;
@@ -27,27 +28,39 @@ interface TgWebApp {
 const SDK = 'https://telegram.org/js/telegram-web-app.js';
 const SITE = 'https://framedata.ru';
 
-/** SDK Telegram; null — открыто в обычном браузере (SDK там есть, но platform = unknown). */
-function useTelegram(): TgWebApp | null {
-  const [tg, setTg] = useState<TgWebApp | null>(null);
+/** SDK Telegram. tg = null — открыто в обычном браузере (SDK там есть, но platform = unknown);
+ *  ready = false, пока SDK не загрузился: до этого не знаем, в Telegram мы или нет. */
+function useTelegram(): { tg: TgWebApp | null; ready: boolean } {
+  const [state, setState] = useState<{ tg: TgWebApp | null; ready: boolean }>({ tg: null, ready: false });
   useEffect(() => {
     const pick = () => {
       const w = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
-      if (w && w.platform && w.platform !== 'unknown') {
+      const inside = !!w && !!w.platform && w.platform !== 'unknown';
+      if (inside) {
         w.ready();
         w.expand();
         w.setHeaderColor?.('secondary_bg_color');
-        setTg(w);
       }
+      setState({ tg: inside ? w : null, ready: true });
     };
-    if (document.querySelector(`script[src="${SDK}"]`)) { pick(); return; }
+    const old = document.querySelector<HTMLScriptElement>(`script[src="${SDK}"]`);
+    if (old) {
+      // Скрипт остался от прошлого захода на страницу: SDK уже в window
+      const id = window.setTimeout(pick, 0);
+      return () => window.clearTimeout(id);
+    }
     const s = document.createElement('script');
     s.src = SDK;
     s.onload = pick;
+    s.onerror = pick;          // SDK не загрузился (блокировка) — работаем как в браузере
     document.head.appendChild(s);
   }, []);
-  return tg;
+  return state;
 }
+
+/** Человек сам отвязал Telegram в этом окне — не привязываем обратно при следующем открытии. */
+const NO_AUTOLINK = 'tg_no_autolink';
+const LOGIN_URL = '/login?next=/tg';
 
 type Screen = 'cabinet' | 'signals' | 'rule' | 'asset' | 'sets' | 'quiet';
 type Group = 'fiz' | 'yur' | 'all';
@@ -109,7 +122,7 @@ function Seg<T extends string | number>({ value, options, onChange }: { value: T
 }
 
 export default function TgSignalsApp() {
-  const tg = useTelegram();
+  const { tg, ready } = useTelegram();
   const { user, loading, isAuthenticated, logout } = useAuth();
   const [stack, setStack] = useState<Screen[]>(['cabinet']);
   const screen = stack[stack.length - 1];
@@ -196,27 +209,52 @@ export default function TgSignalsApp() {
     return () => { dead = true; document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow); };
   }, [isAuthenticated]);
 
+  // Привязка чата. В Telegram — сразу по данным мини-приложения (без кода и «Запустить»);
+  // в браузере — прежней ссылкой с одноразовым кодом.
+  const linkHere = useCallback(async (): Promise<boolean> => {
+    if (!tg?.initData) return false;
+    const r = await apiFetch('/api/alerts/telegram/link-webapp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ init_data: tg.initData }) });
+    if (!r.ok) return false;
+    setLink(await r.json());
+    return true;
+  }, [tg]);
   const connect = async () => {
     try {
+      localStorage.removeItem(NO_AUTOLINK);
+      if (tg?.initData) {
+        if (await linkHere()) say('Telegram подключён'); else say('Не получилось. Откройте кабинет из бота заново');
+        return;
+      }
       const r = await apiFetch('/api/alerts/telegram/link', { method: 'POST' });
       if (!r.ok) throw new Error(String(r.status));
       const { deep_link } = await r.json();
-      // Бот получит одноразовый код и ответит «Аккаунт подключён»; мини-приложение при этом закроется
-      if (tg?.openTelegramLink) tg.openTelegramLink(deep_link); else window.open(deep_link, '_blank', 'noopener');
+      window.open(deep_link, '_blank', 'noopener');
     } catch { say('Не получилось. Попробуйте ещё раз'); }
   };
+  // Вошёл в Telegram, а чат ещё не привязан — привязываем сами, один раз за открытие
+  const needLink = !!tg?.initData && isAuthenticated && link !== null && !link.linked;
+  useEffect(() => {
+    if (!needLink || localStorage.getItem(NO_AUTOLINK)) return;
+    let dead = false;
+    (async () => { try { if (await linkHere() && !dead) say('Telegram подключён'); } catch { /* останется кнопка «Подключить» */ } })();
+    return () => { dead = true; };
+  }, [needLink, linkHere, say]);
+  // Не вошёл и открыто в Telegram — сразу обычная страница входа сайта, без промежуточного экрана
+  const toLogin = ready && !!tg && !loading && !isAuthenticated;
+  useEffect(() => { if (toLogin) window.location.replace(LOGIN_URL); }, [toLogin]);
+
   const confirmThen = (question: string, run: () => void) => {
     if (tg?.showConfirm) tg.showConfirm(question, (ok) => { if (ok) run(); });
     else if (window.confirm(question)) run();
   };
   const disconnect = () => confirmThen('Отвязать Telegram? Сигналы перестанут приходить в этот чат.', async () => {
     const r = await apiFetch('/api/alerts/telegram', { method: 'DELETE' });
-    if (r.ok) { setLink({ linked: false, username: null }); say('Telegram отвязан'); } else say('Не получилось. Попробуйте ещё раз');
+    if (r.ok) { localStorage.setItem(NO_AUTOLINK, '1'); setLink({ linked: false, username: null }); say('Telegram отвязан'); } else say('Не получилось. Попробуйте ещё раз');
   });
   const signOut = () => confirmThen('Выйти из аккаунта?', () => { void logout(); setStack(['cabinet']); });
 
   let body: ReactNode = null;
-  if (loading) {
+  if (loading || !ready || toLogin) {
     body = null;
   } else if (!isAuthenticated || !user) {
     body = (
@@ -224,7 +262,7 @@ export default function TgSignalsApp() {
         <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M7 7h6.5v2.6H9.6v3.9H7zM25 7h-6.5v2.6h3.9v3.9H25zM7 25h6.5v-2.6H9.6v-3.9H7zM25 25h-6.5v-2.6h3.9v-3.9H25z" fill="#fff" /></svg>
         <h1>Кабинет Фрейма</h1>
         <p>Войдите в аккаунт, чтобы подключить уведомления в этот чат и управлять подпиской.</p>
-        <button type="button" className="tgs-pr" onClick={() => window.location.assign('/login?next=/tg')}>Войти</button>
+        <button type="button" className="tgs-pr" onClick={() => window.location.assign(LOGIN_URL)}>Войти</button>
         <button type="button" className="tgs-alt" onClick={() => window.location.assign('/login?mode=register&next=/tg')}>Зарегистрироваться</button>
         <button type="button" className="tgs-tl" onClick={() => open(`${SITE}/profile`)}>Я уже вошёл в браузере</button>
         <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Вход — как на сайте: почта, Яндекс или ВКонтакте.</div>
@@ -252,8 +290,9 @@ export default function TgSignalsApp() {
         <div className="tgs-sec">
           {link?.linked
             ? <div className="tgs-row"><span className="tgs-g"><span>Telegram подключён</span><span className="tgs-s">{link.username ? `@${link.username}` : 'сигналы приходят в этот чат'}</span></span><Check /></div>
-            : <button type="button" className="tgs-row tgs-accent" onClick={connect}><span className="tgs-g"><span>Подключить Telegram</span><span className="tgs-s">Бот попросит нажать «Запустить» — и готово</span></span><Chevron /></button>}
-          <button type="button" className="tgs-row" onClick={() => go('signals')}><span className="tgs-g"><span>Настройка сигналов</span><span className="tgs-s">Демо: пока не сохраняется</span></span><Chevron /></button>
+            : <button type="button" className="tgs-row tgs-accent" onClick={connect}><span className="tgs-g"><span>Подключить Telegram</span><span className="tgs-s">{tg ? 'Сигналы будут приходить в этот чат' : 'Откроется бот — нажмите «Запустить»'}</span></span><Chevron /></button>}
+          {/* Настройка сигналов пока демо — показываем только админам, клиентам кабинет без ненастоящего */}
+          {user.role === 'admin' && <button type="button" className="tgs-row" onClick={() => go('signals')}><span className="tgs-g"><span>Настройка сигналов</span><span className="tgs-s">Демо: пока не сохраняется</span></span><Chevron /></button>}
         </div>
         <div className="tgs-gap" />
         <div className="tgs-sec">
