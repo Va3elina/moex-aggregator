@@ -1,0 +1,17 @@
+[Unit]
+Description=Frame pay-bot @FrameDataPayBot (host-side long-poll, docs/tg-pay-bot.md)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/frame
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/frame/signals/.venv/bin/python -m signals.pay_bot
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/frame/logs/pay_bot.log
+StandardError=append:/opt/frame/logs/pay_bot.log
+
+[Install]
+WantedBy=multi-user.target

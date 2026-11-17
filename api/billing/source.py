@@ -9,7 +9,8 @@
 """
 import re
 
-SOURCES = {"paywall", "delay_banner", "header", "landing", "profile", "pricing"}
+# tg_bot — кнопка «Выбрать тариф» в боте оплаты; кампания (/start <param>) в source_feature.
+SOURCES = {"paywall", "delay_banner", "header", "landing", "profile", "pricing", "tg_bot"}
 
 # Название функции из окна замка — русский текст, но в базу пускаем только
 # короткую строку без управляющих символов: значение приходит от клиента.
