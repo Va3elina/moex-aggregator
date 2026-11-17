@@ -157,8 +157,10 @@ _MINCIFRY_HOSTS = ("t-capital-funds.ru",)
 # Атон при каждой смене сертификата снова не присылает промежуточный (10.2026 — GlobalSign RSA OV
 # 2018, 16.11.2026 — GlobalSign GCC R46 DV 2025), и сканер падал до ручной правки. Теперь при
 # «unable to get local issuer» берём адрес промежуточного из самого сертификата сайта (поле AIA,
-# так делают браузеры) и качаем его — только у удостоверяющих центров из списка. Доверие не
-# расширяется: PARTIAL_CHAIN выключен, промежуточный принимается, только если подписан корнем certifi.
+# так делают браузеры) и качаем его — только у удостоверяющих центров из списка. AIA отдаётся по
+# http, поэтому скачанное не доверенное: в хранилище попадает, только если это НЕ самоподписанный
+# сертификат УЦ (CA:TRUE), подписанный корнем certifi (_trusted_intermediate). Иначе подмена в сети
+# протащила бы свой корень. Нет библиотеки cryptography — не подкачиваем вовсе (падаем, как раньше).
 _AIA_HOSTS = ("globalsign.com", "digicert.com", "sectigo.com", "usertrust.com", "lencr.org", "entrust.net")
 _AIA_LOADED: set[str] = set()
 
@@ -203,6 +205,57 @@ def _opener(host: str = ""):
     return _SSL["mincifry" if ru else "common"]
 
 
+def _aia_host_ok(url: str) -> bool:
+    u = urllib.parse.urlsplit(url)
+    ca = (u.hostname or "").lower()
+    return u.scheme in ("http", "https") and any(ca == d or ca.endswith("." + d) for d in _AIA_HOSTS)
+
+
+class _AiaRedirect(urllib.request.HTTPRedirectHandler):
+    """Редирект при скачивании AIA — только на тот же круг УЦ (иначе это путь к внутренним адресам)."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _aia_host_ok(newurl):
+            raise RuntimeError(f"AIA: редирект не на УЦ, не идём: {newurl[:120]}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _trusted_intermediate(der: bytes) -> bool:
+    """Скачанный сертификат — промежуточный УЦ, выданный корнем из certifi."""
+    try:
+        import certifi
+        from cryptography import x509
+    except ImportError:
+        return False
+    try:
+        cert = x509.load_der_x509_certificate(der)
+    except ValueError:
+        return False
+    if cert.issuer == cert.subject:
+        return False
+    try:
+        if not cert.extensions.get_extension_for_class(x509.BasicConstraints).value.ca:
+            return False
+    except x509.ExtensionNotFound:
+        return False
+    import warnings
+    with open(certifi.where(), "rb") as f:
+        bundle = f.read()
+    # Корни по одному: в certifi есть корень с отрицательным серийным номером, который будущая
+    # cryptography не прочтёт, — он не должен ронять проверку остальных.
+    for block in bundle.split(b"-----END CERTIFICATE-----")[:-1]:
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                root = x509.load_pem_x509_certificate(block + b"-----END CERTIFICATE-----\n")
+            if root.subject != cert.issuer:
+                continue
+            cert.verify_directly_issued_by(root)
+            return True
+        except Exception:  # noqa: BLE001 — нечитаемый корень или подпись не сошлась, пробуем следующий
+            continue
+    return False
+
+
 def _load_missing_intermediate(host: str) -> bool:
     """Сайт не прислал промежуточный сертификат → скачать его по AIA из сертификата сайта.
     True — добавили новый, запрос стоит повторить."""
@@ -214,14 +267,14 @@ def _load_missing_intermediate(host: str) -> bool:
         f.flush()
         issuers = ssl._ssl._test_decode_cert(f.name).get("caIssuers") or ()
     added = False
+    opener = urllib.request.build_opener(_AiaRedirect())
     for url in issuers:
-        u = urllib.parse.urlsplit(url)
-        ca = (u.hostname or "").lower()
-        if url in _AIA_LOADED or u.scheme not in ("http", "https") \
-                or not any(ca == d or ca.endswith("." + d) for d in _AIA_HOSTS):
+        if url in _AIA_LOADED or not _aia_host_ok(url):
             continue
-        with urllib.request.urlopen(url, timeout=30) as r:
+        with opener.open(url, timeout=30) as r:
             der = r.read(65536)
+        if not _trusted_intermediate(der):
+            continue
         for ctx in _CTX.values():
             ctx.load_verify_locations(cadata=der)
         _AIA_LOADED.add(url)
