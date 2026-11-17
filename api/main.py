@@ -46,6 +46,7 @@ from api.routers import events  # ← SSE real-time events
 from api.routers import analytics  # ← Custom analytics: POST /event + GET /stats
 from api.routers import extension  # ← /api/extension/* (токены для расширения терминала)
 from api.routers import alerts  # ← /api/alerts/* (Telegram alert-bot: привязка + алерты)
+from api.routers import tg_pay  # ← /api/tg-pay/* (бот оплаты: привязка чата после входа)
 from api.routers import anomalies  # ← /api/anomalies/* (лента всплывающих аномалий: тосты+колокол)
 from api.routers import agent_trace  # ← /api/admin/agent-trace/* (след агента для дашборда)
 from api.routers import dashboard  # ← /api/admin/dashboard/* (карта проекта, снимок в Redis)
@@ -553,6 +554,7 @@ app.include_router(analytics.router)  # ← Analytics: /api/analytics/*
 app.include_router(analytics.ingest_router)  # ← Приём событий: /api/usage/log
 app.include_router(extension.router)  # ← /api/extension/* (ext-токены: генерация/обмен)
 app.include_router(alerts.router)  # ← /api/alerts/* (Telegram alert-bot: привязка Telegram)
+app.include_router(tg_pay.router)  # ← /api/tg-pay/claim (бот оплаты @FrameDataPayBot)
 app.include_router(anomalies.router)  # ← /api/anomalies/* (лента всплывающих аномалий)
 app.include_router(agent_trace.router)  # ← /api/admin/agent-trace/* (след агента для дашборда)
 app.include_router(dashboard.router)  # ← /api/admin/dashboard/* (карта проекта, снимок в Redis)

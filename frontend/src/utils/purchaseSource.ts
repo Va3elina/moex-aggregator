@@ -19,9 +19,10 @@ export type PurchaseSource =
   | 'delay_banner'  // плашка «Данные с задержкой»
   | 'header'        // кнопка Plus в шапке
   | 'landing'       // главная страница
-  | 'profile';      // профиль: «Сменить тариф» и блок тарифа
+  | 'profile'       // профиль: «Сменить тариф» и блок тарифа
+  | 'tg_bot';       // бот оплаты @FrameDataPayBot, feature = кампания из /start
 
-const SOURCES: readonly PurchaseSource[] = ['paywall', 'delay_banner', 'header', 'landing', 'profile'];
+const SOURCES: readonly PurchaseSource[] = ['paywall', 'delay_banner', 'header', 'landing', 'profile', 'tg_bot'];
 const KEY = 'frame_purchase_src';
 const TTL_MS = 24 * 3600 * 1000;
 

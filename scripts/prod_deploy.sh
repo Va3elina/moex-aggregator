@@ -138,6 +138,14 @@ if echo "$changed" | grep -qE '^signals/alert_bot\.py$'; then
   systemctl restart frame-alert-bot
 fi
 
+# pay-bot (@FrameDataPayBot, docs/tg-pay-bot.md) — host-side systemd. Юнит
+# ставится вручную один раз (signals/frame-pay-bot.service); пока не стоит —
+# пропускаем молча, чтобы деплой не падал.
+if echo "$changed" | grep -qE '^signals/pay_bot\.py$' && systemctl cat frame-pay-bot >/dev/null 2>&1; then
+  echo "=== pay_bot changed -> systemctl restart ==="
+  systemctl restart frame-pay-bot
+fi
+
 # content-review-bot — тоже host-side systemd long-poll (не докер, не крон).
 # Найдено 2026-07-16: без этого правила код бота молча оставался устаревшим
 # после деплоя сколь угодно долго (реальный инцидент — бот не работал НИ РАЗУ

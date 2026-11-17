@@ -27,6 +27,7 @@ import { useAnalytics } from '../contexts/AnalyticsContext';
 import { apiFetch } from '../services/api';
 import { trackEvent } from '../hooks/useYandexMetrica';
 import { capturePurchaseSource, purchaseSourcePayload } from '../utils/purchaseSource';
+import { captureTgPayToken, claimTgPayToken } from '../utils/tgPayClaim';
 import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../config/features';
 import TierPlanCard, { TIER_META } from '../components/pricing/TierPlanCard';
 import {
@@ -238,15 +239,24 @@ export default function PricingPage() {
   // убираем из адреса, чтобы ссылкой из адресной строки метку не разносили.
   // Клик по призыву пишем здесь, а не в самом призыве: плашка уводит полной
   // перезагрузкой, и событие из неё терялось бы вместе с очередью трекера.
+  // tgc — claim-токен бота оплаты (utils/tgPayClaim.ts), убираем из адреса вместе с меткой.
   useEffect(() => {
-    if (!capturePurchaseSource(searchParams)) return;
-    track('upsell_click', { src: searchParams.get('src'), feature: searchParams.get('feature') });
+    const hadTg = captureTgPayToken(searchParams);
+    const hadSrc = capturePurchaseSource(searchParams);
+    if (hadSrc) track('upsell_click', { src: searchParams.get('src'), feature: searchParams.get('feature') });
+    if (!hadSrc && !hadTg) return;
     const cleaned = new URLSearchParams(searchParams);
     cleaned.delete('src');
     cleaned.delete('feature');
+    cleaned.delete('tgc');
     setSearchParams(cleaned, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Пришёл из бота оплаты и уже вошёл (или только что вошёл) — привязываем чат.
+  useEffect(() => {
+    if (isAuthenticated) void claimTgPayToken();
+  }, [isAuthenticated]);
 
   // === Намерение из ?plan= / ?trial= ===
   // Человек уже нажал «Оформить» — до регистрации или до подтверждения почты.
