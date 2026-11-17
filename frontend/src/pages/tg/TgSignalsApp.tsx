@@ -67,6 +67,9 @@ const LOGIN_URL = '/login?next=/tg';
 const WAIT_KEY = 'tg_login_wait';
 const WAIT_TTL_MS = 10 * 60 * 1000;
 type Wait = { secret: string; code: string; at: number };
+/** Один опрос за раз на всё окно: сервер отдаёт сессию ровно один раз, и второй одновременный опрос
+ *  получил бы «попытка сгорела» поверх успешного первого. */
+let pollBusy = false;
 function readWait(): Wait | null {
   try {
     const w = JSON.parse(localStorage.getItem(WAIT_KEY) ?? 'null') as Wait | null;
@@ -289,19 +292,32 @@ export default function TgSignalsApp() {
     if (!waitSecret) return;
     let dead = false;
     const ask = async () => {
+      if (pollBusy) return;
+      pollBusy = true;
       try {
         const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: waitSecret, init_data: tg?.initData ?? '' }) });
         const j = r.ok ? await r.json() : null;
-        if (dead || !j) return;
-        if (j.status === 'approved') { localStorage.removeItem(WAIT_KEY); setWait(null); await login({ access_token: j.access_token, refresh_token: j.refresh_token }); }
-        else if (j.status === 'expired') {
+        if (!j) return;
+        if (j.status === 'approved') {
+          // Сессию сервер выдаёт ОДИН раз, поэтому ответ нельзя выбрасывать, даже если этот эффект уже
+          // пересоздан (так терялся вход: окно возвращалось из фона, эффект перезапускался, а пришедший
+          // ответ отбрасывался как устаревший — 17.11, поймано отладкой на телефоне). Токены сразу в хранилище.
+          localStorage.setItem('access_token', j.access_token);
+          localStorage.setItem('refresh_token', j.refresh_token);
+          localStorage.removeItem(WAIT_KEY);
+          setWait(null);
+          await login({ access_token: j.access_token, refresh_token: j.refresh_token });
+          return;
+        }
+        if (dead) return;
+        if (j.status === 'expired') {
           setWait(null);
           // Сессию мог только что забрать соседний экземпляр окна — тогда вход уже лежит в хранилище
           if (localStorage.getItem('access_token') || localStorage.getItem('refresh_token')) { await refreshUser(); return; }
           localStorage.removeItem(WAIT_KEY);
           say('Время вышло. Нажмите «Войти» ещё раз');
         }
-      } catch { /* сеть: спросим на следующем круге */ }
+      } catch { /* сеть: спросим на следующем круге */ } finally { pollBusy = false; }
     };
     (async () => { await ask(); })();          // окно открыли заново — спрашиваем сразу, не ждём круга
     const id = window.setInterval(ask, 3000);
