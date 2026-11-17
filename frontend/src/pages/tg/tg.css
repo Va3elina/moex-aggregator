@@ -87,3 +87,12 @@ button.tgs-row:active, a.tgs-row:active { background: color-mix(in srgb, var(--t
 .tgs-welcome svg { align-self: center; }
 .tgs-welcome h1 { margin: 12px 0 0; font-size: 24px; line-height: 30px; font-weight: 700; }
 .tgs-welcome p { margin: 0 0 12px; font-size: 15px; line-height: 21px; color: var(--hint); }
+.tgs-spin { align-self: center; width: 28px; height: 28px; margin: 4px 0 12px; border: 3px solid color-mix(in srgb, var(--hint) 35%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: tgs-spin 0.9s linear infinite; }
+@keyframes tgs-spin { to { transform: rotate(360deg); } }
+.tgs-btn-link { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+.tgs-pr:disabled { opacity: 0.6; }
+.tgs-welcome b { color: var(--text); font-weight: 600; }
+.tgs-pin { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 0 0 8px; padding: 12px; border-radius: 12px; background: var(--sec); }
+.tgs-pin span { font-size: 13px; line-height: 17px; color: var(--hint); }
+.tgs-pin b { font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: 0.2em; color: var(--text); font-variant-numeric: tabular-nums; }
+.tgs-pin input { width: 100%; padding: 4px 0; border: 0; background: none; color: var(--text); font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: 0.3em; text-align: center; font-variant-numeric: tabular-nums; outline: none; }

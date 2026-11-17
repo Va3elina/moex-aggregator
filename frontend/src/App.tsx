@@ -77,6 +77,7 @@ const SandboxPage = lazy(() => import('./pages/sandbox/SandboxPage'));
 const BacktestPage = lazy(() => import('./pages/backtest/BacktestPage'));
 // Мини-приложение Telegram «FRAME · Сигналы» — открывается из бота @framesignalbot. Без Layout, вне навигации.
 const TgSignalsApp = lazy(() => import('./pages/tg/TgSignalsApp'));
+const TgApprovePage = lazy(() => import('./pages/tg/TgApprovePage'));
 
 // Тяжёлые/редкие desktop-страницы — code-split через lazy(), чтобы не тянуть их
 // в монолитный главный чанк (был 1.11MB). Гость на лендинге больше не качает код
@@ -170,7 +171,7 @@ function ScrollToTop() {
  */
 function ConditionalCookieBanner() {
   const loc = useLocation();
-  if (loc.pathname.startsWith('/signal-export') || loc.pathname.startsWith('/embed') || loc.pathname === '/tg') return null;
+  if (loc.pathname.startsWith('/signal-export') || loc.pathname.startsWith('/embed') || loc.pathname === '/tg' || loc.pathname === '/tg/approve') return null;
   return <CookieConsentBanner />;
 }
 
@@ -234,6 +235,8 @@ export default function App() {
 
           {/* Мини-приложение Telegram: настройка сигналов из бота. Пока только интерфейс на демо-данных. */}
           <Route path="/tg" element={<Suspense fallback={null}><TgSignalsApp /></Suspense>} />
+          {/* Подтверждение входа в кабинет бота — открывается в обычном браузере из окна Telegram */}
+          <Route path="/tg/approve" element={<Suspense fallback={null}><TgApprovePage /></Suspense>} />
 
           {/* Стенд: бэктест-терминал. НЕ в навигации; /admin/backtest. Без Layout (полноэкранный). */}
           <Route path="/admin/backtest" element={<Suspense fallback={null}><BacktestPage /></Suspense>} />

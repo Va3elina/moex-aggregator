@@ -61,6 +61,8 @@ function useTelegram(): { tg: TgWebApp | null; ready: boolean } {
 /** Человек сам отвязал Telegram в этом окне — не привязываем обратно при следующем открытии. */
 const NO_AUTOLINK = 'tg_no_autolink';
 const LOGIN_URL = '/login?next=/tg';
+/** Секрет попытки входа через браузер: переживает переоткрытие окна, пока код жив (10 минут). */
+const WAIT_KEY = 'tg_login_wait';
 
 type Screen = 'cabinet' | 'signals' | 'rule' | 'asset' | 'sets' | 'quiet';
 type Group = 'fiz' | 'yur' | 'all';
@@ -123,7 +125,7 @@ function Seg<T extends string | number>({ value, options, onChange }: { value: T
 
 export default function TgSignalsApp() {
   const { tg, ready } = useTelegram();
-  const { user, loading, isAuthenticated, logout } = useAuth();
+  const { user, loading, isAuthenticated, login, logout } = useAuth();
   const [stack, setStack] = useState<Screen[]>(['cabinet']);
   const screen = stack[stack.length - 1];
   const [enabled, setEnabled] = useState(true);
@@ -239,9 +241,57 @@ export default function TgSignalsApp() {
     (async () => { try { if (await linkHere() && !dead) say('Telegram подключён'); } catch { /* останется кнопка «Подключить» */ } })();
     return () => { dead = true; };
   }, [needLink, linkHere, say]);
-  // Не вошёл и открыто в Telegram — сразу обычная страница входа сайта, без промежуточного экрана
-  const toLogin = ready && !!tg && !loading && !isAuthenticated;
-  useEffect(() => { if (toLogin) window.location.replace(LOGIN_URL); }, [toLogin]);
+  // Вход через обычный браузер: в окне Telegram нет сохранённых паролей и входа в Яндекс/VK, а там есть.
+  // Берём одноразовый код, открываем с ним сайт в браузере и ждём, пока человек подтвердит (browser_login.py).
+  const [wait, setWait] = useState<{ secret: string; code: string } | null>(() => {
+    try { return JSON.parse(sessionStorage.getItem(WAIT_KEY) ?? 'null'); } catch { return null; }
+  });
+  // Подтвердили на сайте — сайт показал человеку код из 4 цифр, его вводят здесь: без него сессию не отдадут
+  const [needPin, setNeedPin] = useState(false);
+  const [pin, setPin] = useState('');
+  const stopWait = () => { sessionStorage.removeItem(WAIT_KEY); setWait(null); setNeedPin(false); setPin(''); };
+  const openApprove = useCallback((code: string) => open(`${SITE}/tg/approve?c=${code}`), [open]);
+  const browserLogin = async () => {
+    try {
+      const r = await apiFetch('/api/tg-login/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ init_data: tg?.initData ?? '' }) });
+      if (r.status === 429) { say('Слишком много попыток. Подождите 10 минут'); return; }
+      if (!r.ok) throw new Error(String(r.status));
+      const { code, secret } = await r.json();
+      sessionStorage.setItem(WAIT_KEY, JSON.stringify({ secret, code }));
+      setWait({ secret, code });
+      openApprove(code);
+    } catch { say('Не получилось. Попробуйте ещё раз или введите логин здесь'); }
+  };
+  const waitSecret = !isAuthenticated && !needPin ? wait?.secret : undefined;
+  useEffect(() => {
+    if (!waitSecret) return;
+    let dead = false;
+    const ask = async () => {
+      try {
+        const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: waitSecret, init_data: tg?.initData ?? '' }) });
+        const j = r.ok ? await r.json() : null;
+        if (dead || !j) return;
+        if (j.status === 'need_pin') setNeedPin(true);
+        else if (j.status === 'expired') { sessionStorage.removeItem(WAIT_KEY); setWait(null); say('Время вышло. Нажмите «Войти через браузер» ещё раз'); }
+      } catch { /* сеть: спросим на следующем круге */ }
+    };
+    (async () => { await ask(); })();          // окно открыли заново — спрашиваем сразу, не ждём круга
+    const id = window.setInterval(ask, 3000);
+    const onShow = () => { if (document.visibilityState === 'visible') void ask(); };   // вернулся из браузера — тоже сразу
+    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('focus', onShow);
+    return () => { dead = true; window.clearInterval(id); document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow); };
+  }, [waitSecret, tg, say]);
+  const sendPin = async () => {
+    if (!wait || pin.length !== 4) return;
+    try {
+      const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: wait.secret, init_data: tg?.initData ?? '', pin }) });
+      const j = r.ok ? await r.json() : null;
+      if (j?.status === 'approved') { stopWait(); await login({ access_token: j.access_token, refresh_token: j.refresh_token }); }
+      else if (j?.status === 'wrong_pin') { setPin(''); say('Код не подошёл. Проверьте цифры на сайте'); }
+      else { stopWait(); say('Попытка сгорела. Нажмите «Войти через браузер» ещё раз'); }
+    } catch { say('Не получилось. Попробуйте ещё раз'); }
+  };
 
   const confirmThen = (question: string, run: () => void) => {
     if (tg?.showConfirm) tg.showConfirm(question, (ok) => { if (ok) run(); });
@@ -254,18 +304,39 @@ export default function TgSignalsApp() {
   const signOut = () => confirmThen('Выйти из аккаунта?', () => { void logout(); setStack(['cabinet']); });
 
   let body: ReactNode = null;
-  if (loading || !ready || toLogin) {
+  if (loading || !ready) {
     body = null;
   } else if (!isAuthenticated || !user) {
-    body = (
+    const mark = <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M7 7h6.5v2.6H9.6v3.9H7zM25 7h-6.5v2.6h3.9v3.9H25zM7 25h6.5v-2.6H9.6v-3.9H7zM25 25h-6.5v-2.6h3.9v-3.9H25z" fill="#fff" /></svg>;
+    body = wait && needPin ? (
       <div className="tgs-welcome">
-        <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M7 7h6.5v2.6H9.6v3.9H7zM25 7h-6.5v2.6h3.9v3.9H25zM7 25h6.5v-2.6H9.6v-3.9H7zM25 25h-6.5v-2.6h3.9v-3.9H25z" fill="#fff" /></svg>
+        {mark}
+        <h1>Введите код с сайта</h1>
+        <p>Четыре цифры, которые сайт показал после «Подтвердить».</p>
+        <label className="tgs-pin"><span>Код</span><input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={4} autoFocus value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></label>
+        <button type="button" className="tgs-pr" disabled={pin.length !== 4} onClick={sendPin}>Войти</button>
+        <button type="button" className="tgs-tl" onClick={stopWait}>Отмена</button>
+      </div>
+    ) : wait ? (
+      <div className="tgs-welcome">
+        {mark}
+        <h1>Подтвердите вход в браузере</h1>
+        <p>Там откроется сайт Фрейма: нажмите «Подтвердить», запомните код из четырёх цифр и вернитесь сюда.</p>
+        <div className="tgs-spin" role="status" aria-label="Ждём подтверждения" />
+        <button type="button" className="tgs-alt" onClick={() => openApprove(wait.code)}>Открыть браузер ещё раз</button>
+        <button type="button" className="tgs-tl" onClick={stopWait}>Отмена</button>
+      </div>
+    ) : (
+      <div className="tgs-welcome">
+        {mark}
         <h1>Кабинет Фрейма</h1>
-        <p>Войдите в аккаунт, чтобы подключить уведомления в этот чат и управлять подпиской.</p>
-        <button type="button" className="tgs-pr" onClick={() => window.location.assign(LOGIN_URL)}>Войти</button>
-        <button type="button" className="tgs-alt" onClick={() => window.location.assign('/login?mode=register&next=/tg')}>Зарегистрироваться</button>
-        <button type="button" className="tgs-tl" onClick={() => open(`${SITE}/profile`)}>Я уже вошёл в браузере</button>
-        <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Вход — как на сайте: почта, Яндекс или ВКонтакте.</div>
+        <p>Войдите в аккаунт — и сигналы будут приходить в этот чат.</p>
+        {tg
+          ? <button type="button" className="tgs-pr" onClick={browserLogin}>Войти через браузер</button>
+          : <button type="button" className="tgs-pr" onClick={() => window.location.assign(LOGIN_URL)}>Войти</button>}
+        {tg && <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Быстрее всего: в браузере уже есть ваши пароли и вход в Яндекс.</div>}
+        {tg && <button type="button" className="tgs-alt" onClick={() => window.location.assign(LOGIN_URL)}>Ввести логин здесь</button>}
+        <button type="button" className="tgs-tl" onClick={() => window.location.assign('/login?mode=register&next=/tg')}>Зарегистрироваться</button>
       </div>
     );
   } else if (screen === 'cabinet') {
