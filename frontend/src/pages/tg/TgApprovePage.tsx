@@ -17,7 +17,7 @@ export default function TgApprovePage() {
   const { user, loading, isAuthenticated } = useAuth();
   const [stage, setStage] = useState<Stage>('check');
   const [who, setWho] = useState<{ username: string | null; name: string | null } | null>(null);
-  const [pin, setPin] = useState('');
+  const [returnUrl, setReturnUrl] = useState('');
   const [busy, setBusy] = useState(false);
 
   // Не вошёл — на обычную страницу входа сайта, после входа вернёмся сюда же
@@ -45,8 +45,11 @@ export default function TgApprovePage() {
     try {
       const r = await apiFetch('/api/tg-login/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
       const j = r.ok ? await r.json() : null;
-      setPin(j?.pin ?? '');      // код видит только подтвердивший; его вводят в окне бота
-      setStage(j?.pin ? 'done' : 'stale');
+      // Ссылка возврата несёт одноразовый билет — её получает только подтвердивший. Бот примет билет
+      // лишь из того Telegram, что начал вход (browser_login.py). Сразу пробуем открыть Telegram.
+      setReturnUrl(j?.return_url ?? '');
+      setStage(j?.return_url ? 'done' : 'stale');
+      if (j?.return_url) window.location.href = j.return_url;
     } catch { setStage('stale'); } finally { setBusy(false); }
   };
 
@@ -71,10 +74,10 @@ export default function TgApprovePage() {
           {stage === 'done' && (
             <div className="tgs-welcome">
               {mark}
-              <h1>Введите код в окне бота</h1>
-              <p>Вернитесь в Telegram и введите эти четыре цифры. Никому их не сообщайте.</p>
-              <div className="tgs-pin"><span>Код</span><b>{pin}</b></div>
-              <a className="tgs-pr tgs-btn-link" href={`https://t.me/${BOT}`}>Вернуться в Telegram</a>
+              <h1>Остался один шаг</h1>
+              <p>Вернитесь в Telegram и нажмите «Запустить» в чате с ботом — кабинет откроется со входом.</p>
+              <a className="tgs-pr tgs-btn-link" href={returnUrl}>Вернуться в Telegram</a>
+              <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Кнопка работает один раз и только в вашем Telegram. Не пересылайте эту ссылку.</div>
             </div>
           )}
           {stage === 'stale' && (

@@ -90,6 +90,21 @@ def telegram_status(user: User = Depends(get_current_user)):
     )
 
 
+def link_chat(db: Session, user: User, chat_id: int, username: str | None) -> bool:
+    """Записать чат бота к пользователю и закоммитить. True — этот чат уже был привязан к нему.
+    Один Telegram-чат = один аккаунт (как link_account в signals/alert_bot.py)."""
+    was_linked = user.telegram_chat_id == chat_id
+    db.query(User).filter(User.telegram_chat_id == chat_id, User.id != user.id).update(
+        {User.telegram_chat_id: None, User.telegram_username: None, User.telegram_linked_at: None})
+    user.telegram_chat_id = chat_id
+    user.telegram_username = (username or None)
+    if not was_linked:
+        user.telegram_linked_at = datetime.now(timezone.utc)
+    db.query(TelegramLinkToken).filter(TelegramLinkToken.user_id == user.id).delete()
+    db.commit()
+    return was_linked
+
+
 class WebAppLink(BaseModel):
     init_data: str = Field(min_length=1, max_length=4096)
 
@@ -113,16 +128,7 @@ def link_from_webapp(
     if tg_user is None:
         raise HTTPException(status_code=400, detail="Откройте кабинет из бота заново")
     chat_id = tg_user["id"]            # личный чат с ботом == id пользователя Telegram
-    was_linked = user.telegram_chat_id == chat_id
-    # один Telegram-чат = один аккаунт (как link_account в signals/alert_bot.py)
-    db.query(User).filter(User.telegram_chat_id == chat_id, User.id != user.id).update(
-        {User.telegram_chat_id: None, User.telegram_username: None, User.telegram_linked_at: None})
-    user.telegram_chat_id = chat_id
-    user.telegram_username = (tg_user.get("username") or None)
-    if not was_linked:
-        user.telegram_linked_at = datetime.now(timezone.utc)
-    db.query(TelegramLinkToken).filter(TelegramLinkToken.user_id == user.id).delete()
-    db.commit()
+    was_linked = link_chat(db, user, chat_id, tg_user.get("username"))
     if not was_linked:
         background.add_task(tg_webapp.send_linked_message, chat_id)
     return TelegramStatus(linked=True, username=user.telegram_username)
