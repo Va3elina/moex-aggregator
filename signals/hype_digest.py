@@ -43,12 +43,20 @@ _PROMOTED = text("""
 
 _MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _MD_MARK = re.compile(r"\*\*|__|~~|`")
+_HASHTAG = re.compile(r"#\w+")
+_LETTER = re.compile(r"[^\W\d_]")
+
+
+def _has_words(line: str) -> bool:
+    """Есть ли в строке буквы вне хэштегов. Строка «❗️🌎#мир #прогноз #макро» или «#HUYA = +3%» это рубрика, не новость."""
+    return len(_LETTER.findall(_HASHTAG.sub("", line))) >= 3
 
 
 def title_of(msg_text: str) -> str:
-    """Первая содержательная строка без markdown Telethon: посты часто начинаются со строки эмодзи-тегов."""
+    """Первая содержательная строка без markdown Telethon: посты markettwits начинаются со строки эмодзи-тегов."""
     clean = _MD_MARK.sub("", _MD_LINK.sub(r"\1", msg_text or ""))
-    line = next((s.strip() for s in clean.split("\n") if len(s.strip()) >= 15), clean.strip())
+    lines = [s.strip() for s in clean.split("\n") if _has_words(s)]
+    line = next((s for s in lines if len(s) >= 15), lines[0] if lines else clean.strip())
     return line[:TITLE_LEN].rstrip() + ("…" if len(line) > TITLE_LEN else "")
 
 

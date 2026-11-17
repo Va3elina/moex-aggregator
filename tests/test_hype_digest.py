@@ -29,6 +29,13 @@ def test_title_strips_markdown_and_tag_line():
     assert hd.title_of(msg) == "ЦБ сохранил ставку на уровне 16%"
 
 
+def test_title_skips_long_tag_line():
+    # 17.11.2026: строка тегов длиннее 15 символов выходила заголовком вместо новости
+    msg = "❗️🌎#мир #прогноз #макро #theeconomist\nВышла ежегодная обложка **The Economist** с прогнозом"
+    assert hd.title_of(msg) == "Вышла ежегодная обложка The Economist с прогнозом"
+    assert hd.title_of("💥🇨🇳#HUYA = +3%\n\nакции HUYA выросли") == "акции HUYA выросли"
+
+
 def test_message_escapes_and_warns_without_live_forwards():
     rows = [_row("markettwits", 7, 30, "Компания <X> & партнёры объявили дивиденды")]
     body = hd.build_message(hd.rank(rows), 1, live=False, now=NOW)
