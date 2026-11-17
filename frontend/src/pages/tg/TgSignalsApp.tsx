@@ -61,8 +61,20 @@ function useTelegram(): { tg: TgWebApp | null; ready: boolean } {
 /** Человек сам отвязал Telegram в этом окне — не привязываем обратно при следующем открытии. */
 const NO_AUTOLINK = 'tg_no_autolink';
 const LOGIN_URL = '/login?next=/tg';
-/** Секрет попытки входа через браузер: переживает переоткрытие окна, пока код жив (10 минут). */
+/** Попытка входа через браузер. Лежит в localStorage, а не в sessionStorage: после возврата из браузера
+ *  Telegram нередко открывает ДРУГОЕ окно кабинета, и оно должно знать о попытке (Вадим 17.11: «вернулся —
+ *  а там снова „Войти"»). localStorage у окон кабинета общий. Живёт столько же, сколько код на сервере. */
 const WAIT_KEY = 'tg_login_wait';
+const WAIT_TTL_MS = 10 * 60 * 1000;
+type Wait = { secret: string; code: string; at: number };
+function readWait(): Wait | null {
+  try {
+    const w = JSON.parse(localStorage.getItem(WAIT_KEY) ?? 'null') as Wait | null;
+    if (w && Date.now() - w.at < WAIT_TTL_MS) return w;
+    localStorage.removeItem(WAIT_KEY);
+  } catch { /* хранилище недоступно */ }
+  return null;
+}
 
 type Screen = 'cabinet' | 'signals' | 'rule' | 'asset' | 'sets' | 'quiet';
 type Group = 'fiz' | 'yur' | 'all';
@@ -125,7 +137,7 @@ function Seg<T extends string | number>({ value, options, onChange }: { value: T
 
 export default function TgSignalsApp() {
   const { tg, ready } = useTelegram();
-  const { user, loading, isAuthenticated, login, logout } = useAuth();
+  const { user, loading, isAuthenticated, login, logout, refreshUser } = useAuth();
   const [stack, setStack] = useState<Screen[]>(['cabinet']);
   const screen = stack[stack.length - 1];
   const [enabled, setEnabled] = useState(true);
@@ -243,10 +255,8 @@ export default function TgSignalsApp() {
   }, [needLink, linkHere, say]);
   // Вход через обычный браузер: в окне Telegram нет сохранённых паролей и входа в Яндекс/VK, а там есть.
   // Берём одноразовый код, открываем с ним сайт в браузере и ждём, пока человек подтвердит (browser_login.py).
-  const [wait, setWait] = useState<{ secret: string; code: string } | null>(() => {
-    try { return JSON.parse(sessionStorage.getItem(WAIT_KEY) ?? 'null'); } catch { return null; }
-  });
-  const stopWait = () => { sessionStorage.removeItem(WAIT_KEY); setWait(null); };
+  const [wait, setWait] = useState<Wait | null>(readWait);
+  const stopWait = () => { localStorage.removeItem(WAIT_KEY); setWait(null); };
   const openApprove = useCallback((code: string) => open(`${SITE}/tg/approve?c=${code}`), [open]);
   const browserLogin = async () => {
     try {
@@ -254,11 +264,26 @@ export default function TgSignalsApp() {
       if (r.status === 429) { say('Слишком много попыток. Подождите 10 минут'); return; }
       if (!r.ok) throw new Error(String(r.status));
       const { code, secret } = await r.json();
-      sessionStorage.setItem(WAIT_KEY, JSON.stringify({ secret, code }));
-      setWait({ secret, code });
+      const w = { secret, code, at: Date.now() };
+      localStorage.setItem(WAIT_KEY, JSON.stringify(w));
+      setWait(w);
       openApprove(code);
     } catch { say('Не получилось. Попробуйте ещё раз'); }
   };
+  // Окон кабинета бывает несколько. Это могло не начинать вход — тогда при показе подхватываем попытку,
+  // начатую в соседнем окне, или уже готовый вход (сосед получил сессию раньше нас).
+  useEffect(() => {
+    if (isAuthenticated) return;
+    const sync = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (localStorage.getItem('access_token') || localStorage.getItem('refresh_token')) { void refreshUser(); return; }
+      setWait(readWait());
+    };
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('focus', sync);
+    window.addEventListener('storage', sync);
+    return () => { document.removeEventListener('visibilitychange', sync); window.removeEventListener('focus', sync); window.removeEventListener('storage', sync); };
+  }, [isAuthenticated, refreshUser]);
   const waitSecret = !isAuthenticated ? wait?.secret : undefined;
   useEffect(() => {
     if (!waitSecret) return;
@@ -268,8 +293,14 @@ export default function TgSignalsApp() {
         const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: waitSecret, init_data: tg?.initData ?? '' }) });
         const j = r.ok ? await r.json() : null;
         if (dead || !j) return;
-        if (j.status === 'approved') { sessionStorage.removeItem(WAIT_KEY); setWait(null); await login({ access_token: j.access_token, refresh_token: j.refresh_token }); }
-        else if (j.status === 'expired') { sessionStorage.removeItem(WAIT_KEY); setWait(null); say('Время вышло. Нажмите «Войти» ещё раз'); }
+        if (j.status === 'approved') { localStorage.removeItem(WAIT_KEY); setWait(null); await login({ access_token: j.access_token, refresh_token: j.refresh_token }); }
+        else if (j.status === 'expired') {
+          setWait(null);
+          // Сессию мог только что забрать соседний экземпляр окна — тогда вход уже лежит в хранилище
+          if (localStorage.getItem('access_token') || localStorage.getItem('refresh_token')) { await refreshUser(); return; }
+          localStorage.removeItem(WAIT_KEY);
+          say('Время вышло. Нажмите «Войти» ещё раз');
+        }
       } catch { /* сеть: спросим на следующем круге */ }
     };
     (async () => { await ask(); })();          // окно открыли заново — спрашиваем сразу, не ждём круга
@@ -278,7 +309,7 @@ export default function TgSignalsApp() {
     document.addEventListener('visibilitychange', onShow);
     window.addEventListener('focus', onShow);
     return () => { dead = true; window.clearInterval(id); document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow); };
-  }, [waitSecret, tg, login, say]);
+  }, [waitSecret, tg, login, refreshUser, say]);
   const confirmThen = (question: string, run: () => void) => {
     if (tg?.showConfirm) tg.showConfirm(question, (ok) => { if (ok) run(); });
     else if (window.confirm(question)) run();
