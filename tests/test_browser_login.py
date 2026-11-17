@@ -1,4 +1,5 @@
-"""Вход в кабинет бота через браузер: одноразовый код. Сессию получает только окно с секретом и только раз."""
+"""Вход в кабинет бота через браузер: сессию получает только окно того Telegram, что начал попытку,
+и только после билета, который видел подтвердивший на сайте. Ничего вводить не нужно."""
 import sys
 from pathlib import Path
 
@@ -10,8 +11,10 @@ class FakeRedis:
     def __init__(self):
         self.d = {}
 
-    def set(self, k, v, ex=None, xx=False, keepttl=False):
+    def set(self, k, v, ex=None, xx=False, keepttl=False, nx=False):
         if xx and k not in self.d:
+            return None
+        if nx and k in self.d:
             return None
         self.d[k] = v
         return True
@@ -39,47 +42,55 @@ WHO = {"username": "vadim", "name": "Вадим"}
 def test_full_path_gives_session_once():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
-    assert "pin" not in s                                      # окно кода не знает
     assert bl.take(r, s["secret"], 42) == ("pending", None)
-    assert bl.info(r, s["code"]) == {"who": WHO}               # и страница до подтверждения — тоже
-    pin = bl.approve(r, s["code"], 7)
-    assert pin and len(pin) == 4 and pin.isdigit()
-    assert bl.take(r, s["secret"], 42) == ("need_pin", None)
-    assert bl.take(r, s["secret"], 42, pin) == ("approved", 7)
-    assert bl.take(r, s["secret"], 42, pin) == ("expired", None)   # второй раз сессию не отдаём
+    assert bl.info(r, s["code"]) == {"who": WHO}
+    ticket = bl.approve(r, s["code"], 7)
+    assert ticket and len(bl.TICKET_PREFIX + ticket) <= 64          # влезает в параметр /start
+    assert bl.take(r, s["secret"], 42) == ("need_confirm", None)   # одного «Подтвердить» мало
+    assert bl.confirm(r, ticket, 42) == 7
+    assert bl.take(r, s["secret"], 42) == ("approved", 7)
+    assert bl.take(r, s["secret"], 42) == ("expired", None)        # второй раз сессию не отдаём
 
 
-def test_wrong_pin_burns_attempt_after_three_tries():
+def test_phished_victim_cannot_hand_session_to_attacker():
+    """Злоумышленник (tg 666) начал вход и прислал ссылку; жертва подтвердила и вернулась в СВОЙ Telegram."""
+    r = FakeRedis()
+    s = bl.start(r, 666, {"username": "attacker", "name": None})
+    ticket = bl.approve(r, s["code"], 7)                            # жертва нажала «Подтвердить»
+    assert bl.confirm(r, ticket, 42) is None                        # билет пришёл боту от жертвы, не от 666
+    assert bl.take(r, s["secret"], 666) == ("need_confirm", None)   # окно злоумышленника сессию не получило
+    assert bl.confirm(r, ticket, 666) is None                       # и сам билет уже сгорел
+
+
+def test_ticket_is_one_time_and_unknown_rejected():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
-    pin = bl.approve(r, s["code"], 7)
-    bad = "0000" if pin != "0000" else "1111"
-    assert bl.take(r, s["secret"], 42, bad) == ("wrong_pin", None)
-    assert bl.take(r, s["secret"], 42, bad) == ("wrong_pin", None)
-    assert bl.take(r, s["secret"], 42, bad) == ("expired", None)
-    assert bl.take(r, s["secret"], 42, pin) == ("expired", None)   # верный код уже не поможет
+    ticket = bl.approve(r, s["code"], 7)
+    assert bl.confirm(r, ticket, 42) == 7
+    assert bl.confirm(r, ticket, 42) is None
+    assert bl.confirm(r, "нет-такого-билета", 42) is None
 
 
 def test_other_telegram_account_cannot_take_session():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
-    pin = bl.approve(r, s["code"], 7)
-    assert bl.take(r, s["secret"], 99, pin) == ("expired", None)   # секрет и код утекли — чужому окну не помогут
-    assert bl.take(r, s["secret"], 42, pin) == ("approved", 7)
+    bl.confirm(r, bl.approve(r, s["code"], 7), 42)
+    assert bl.take(r, s["secret"], 99) == ("expired", None)        # секрет утёк — чужому окну не поможет
+    assert bl.take(r, s["secret"], 42) == ("approved", 7)
 
 
 def test_public_code_cannot_take_session():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
-    pin = bl.approve(r, s["code"], 7)
-    assert bl.take(r, s["code"], 42, pin) == ("expired", None)     # код из адреса страницы — не секрет окна
+    bl.confirm(r, bl.approve(r, s["code"], 7), 42)
+    assert bl.take(r, s["code"], 42) == ("expired", None)          # код из адреса страницы — не секрет окна
 
 
 def test_code_approved_only_once_and_unknown_rejected():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
     assert bl.approve(r, s["code"], 7)
-    assert bl.approve(r, s["code"], 8) is None                # чужой не перехватит уже подтверждённый
+    assert bl.approve(r, s["code"], 8) is None                     # чужой не перехватит уже подтверждённый
     assert bl.info(r, s["code"]) is None
     assert bl.approve(r, "нет-такого-кода", 7) is None
     assert bl.take(r, "x" * 43, 42) == ("expired", None)
@@ -89,32 +100,57 @@ def test_start_is_rate_limited_per_telegram_account():
     r = FakeRedis()
     assert all(bl.start(r, 42, WHO) for _ in range(bl.MAX_STARTS))
     assert bl.start(r, 42, WHO) is None
-    assert bl.start(r, 43, WHO) is not None                   # другой аккаунт не страдает
+    assert bl.start(r, 43, WHO) is not None                        # другой аккаунт не страдает
 
 
-def test_secret_not_stored_in_clear():
+def test_secrets_not_stored_in_clear_and_burned_attempt_not_revived():
     r = FakeRedis()
     s = bl.start(r, 42, WHO)
-    assert all(s["secret"] not in str(k) and s["secret"] not in str(v) for k, v in r.d.items())
-
-
-def test_parallel_wrong_pins_cannot_exceed_limit():
-    """Пачка одновременных неверных кодов: счётчик отдельным ключом, состояние не перезаписывается."""
-    r = FakeRedis()
-    s = bl.start(r, 42, WHO)
-    pin = bl.approve(r, s["code"], 7)
-    wrong = [f"{i:04d}" for i in range(20) if f"{i:04d}" != pin]
-    results = [bl.take(r, s["secret"], 42, w)[0] for w in wrong]
-    assert results.count("wrong_pin") == bl.MAX_PIN_TRIES - 1
-    assert set(results[bl.MAX_PIN_TRIES - 1:]) == {"expired"}
-    assert bl.take(r, s["secret"], 42, pin) == ("expired", None)
-
-
-def test_burned_attempt_is_not_revived_by_late_write():
-    r = FakeRedis()
-    s = bl.start(r, 42, WHO)
-    assert bl.take(r, s["secret"], 99) == ("expired", None)        # чужое окно ничего не меняет
+    ticket = bl.approve(r, s["code"], 7)
+    assert all(x not in str(k) and x not in str(v) for k, v in r.d.items() for x in (s["secret"], ticket))
     key = next(k for k in r.d if k.startswith("tglogin:s:"))
     del r.d[key]                                                   # попытка сгорела
-    assert bl.approve(r, s["code"], 7) is None                     # и запоздалое подтверждение её не вернёт
+    assert bl.confirm(r, ticket, 42) is None                       # запоздалый билет её не вернёт
     assert key not in r.d
+
+
+def test_racing_approvals_give_ticket_only_to_first():
+    """Начавший попытку жмёт «Подтвердить» одновременно с жертвой: оба успели прочитать «не подтверждено»."""
+    r = FakeRedis()
+    s = bl.start(r, 666, {"username": "attacker", "name": None})
+    real_load = bl._load
+    stale = real_load(r, s["code"])                    # снимок до чьего-либо подтверждения
+    victim_ticket = bl.approve(r, s["code"], 7)        # жертва подтвердила первой
+    bl._load = lambda rr, code: stale                  # злоумышленник работает со старым снимком
+    try:
+        attacker_ticket = bl.approve(r, s["code"], 13)
+    finally:
+        bl._load = real_load
+    assert victim_ticket and attacker_ticket is None   # второй билет не выдан
+    assert bl.take(r, s["secret"], 666) == ("need_confirm", None)
+
+
+def test_ticket_is_bound_to_the_approver():
+    """Даже если в попытке окажется чужой user_id, билет, выданный другому человеку, не подойдёт."""
+    import json
+    r = FakeRedis()
+    s = bl.start(r, 42, WHO)
+    ticket = bl.approve(r, s["code"], 7)
+    key = next(k for k in r.d if k.startswith("tglogin:s:"))
+    state = json.loads(r.d[key]); state["user_id"] = 99; r.d[key] = json.dumps(state)
+    assert bl.confirm(r, ticket, 42) is None
+
+
+def test_bot_signature_matches_server():
+    """Бот (signals/alert_bot.py) и сервер подписывают «билет:чат» одинаково."""
+    import hashlib
+    import hmac
+    import inspect
+    import os
+    os.environ.setdefault("DB_URL", "postgresql+pg8000://x:y@127.0.0.1:1/x")
+    from api.routers import tg_login
+    want = hmac.new(b"1:TOKEN", b"abc:42", hashlib.sha256).hexdigest()
+    assert tg_login.confirm_sig("1:TOKEN", "abc", 42) == want
+    bot_src = (Path(__file__).resolve().parents[1] / "signals" / "alert_bot.py").read_text(encoding="utf-8")
+    assert 'f"{ticket}:{chat_id}".encode(), hashlib.sha256' in bot_src
+    assert "compare_digest" in inspect.getsource(tg_login.confirm)

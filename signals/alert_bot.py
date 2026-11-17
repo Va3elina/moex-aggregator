@@ -18,6 +18,8 @@ import os
 import time
 from datetime import datetime, timezone
 
+import hashlib
+import hmac
 import requests
 from dotenv import load_dotenv
 
@@ -224,6 +226,25 @@ def link_account(token: str, chat_id: int, username) -> bool:
 
 # ── DB helpers (host-side, через text() как остальной файл) ─────────────────
 _CABINET_KB = [[{"text": "Войти в кабинет", "web_app": {"url": WEBAPP_URL}}]]
+_OPEN_KB = [[{"text": "Открыть кабинет", "web_app": {"url": WEBAPP_URL}}]]
+LOGIN_PREFIX = "in_"           # /start in_<билет> — возврат из браузера после входа (api/services/browser_login.py)
+
+
+def _finish_browser_login(chat_id: int, ticket: str, username) -> None:
+    """Человек подтвердил вход на сайте и вернулся кнопкой «Вернуться в Telegram». Передаём билет серверу:
+    он проверит, что билет выдан именно этому Telegram-аккаунту, пустит окно в кабинет и привяжет чат."""
+    ok = False
+    try:
+        sig = hmac.new(BOT_TOKEN.encode(), f"{ticket}:{chat_id}".encode(), hashlib.sha256).hexdigest()
+        r = requests.post(f"{SITE}/api/tg-login/confirm", timeout=15,
+                          json={"ticket": ticket, "chat_id": chat_id, "username": username, "sig": sig})
+        ok = r.ok and bool(r.json().get("ok"))
+    except (requests.RequestException, ValueError) as e:
+        print(f"[alert_bot] login confirm error: {_redact(e)}")
+    if ok:
+        send_kb(chat_id, "✅ <b>Вы вошли в кабинет Фрейма</b>\nСигналы будут приходить в этот чат.", _OPEN_KB)
+    else:
+        send_kb(chat_id, "Ссылка входа устарела. Откройте кабинет и нажмите «Войти» ещё раз.", _OPEN_KB)
 
 
 def _ensure_tables() -> None:
@@ -813,7 +834,9 @@ def process_update(update: dict) -> None:
 
     if cmd == "/start":
         arg = parts[1].strip() if len(parts) == 2 else ""
-        if arg:
+        if arg.startswith(LOGIN_PREFIX):
+            _finish_browser_login(chat_id, arg[len(LOGIN_PREFIX):], username)
+        elif arg:
             ok = link_account(arg, chat_id, username)
             if ok:
                 # send_persistent ставит постоянный нижний бар (кнопки навсегда).
