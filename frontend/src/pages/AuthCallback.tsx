@@ -34,65 +34,23 @@ export default function AuthCallback() {
         if (path.includes('google')) provider = 'google';
         else if (path.includes('vk')) provider = 'vk';
         else if (path.includes('yandex')) provider = 'yandex';
-        else if (path.includes('telegram')) provider = 'telegram';
 
-        const names: Record<string, string> = { google: 'Google', vk: 'VK', yandex: t('Яндекс'), telegram: 'Telegram' };
+        // Вход через Telegram выключен (406-ФЗ: российский сайт не авторизует
+        // через иностранные сервисы). Старые закладки на /auth/callback/telegram
+        // получают понятный текст. Аккаунты таких людей в БД сохранены — по
+        // обращению в поддержку переносим их на VK/Яндекс/почту.
+        if (path.includes('telegram')) {
+            setStatus('error');
+            setErrorMsg(t('Вход через Telegram отключён. Напишите в поддержку, и мы перенесём ваш аккаунт на другой способ входа.'));
+            return;
+        }
+
+        const names: Record<string, string> = { google: 'Google', vk: 'VK', yandex: t('Яндекс') };
         setProviderName(names[provider] || provider);
 
         if (!provider) {
             setStatus('error');
             setErrorMsg(t('Неизвестный провайдер'));
-            return;
-        }
-
-        // Telegram: данные приходят в hash (#tgAuthResult=base64) или query params
-        if (provider === 'telegram') {
-            let tgData: Record<string, string> = {};
-
-            // Вариант 1: hash fragment (#tgAuthResult=base64json)
-            const hash = window.location.hash;
-            if (hash.includes('tgAuthResult=')) {
-                try {
-                    const b64 = hash.split('tgAuthResult=')[1];
-                    const json = atob(b64);
-                    tgData = JSON.parse(json);
-                } catch {
-                    // fallback to query params
-                }
-            }
-
-            // Вариант 2: query params (?id=...&hash=...&auth_date=...)
-            if (!tgData.id) {
-                for (const [key, value] of searchParams.entries()) {
-                    tgData[key] = value;
-                }
-            }
-
-            if (!tgData.id || !tgData.hash) {
-                setStatus('error');
-                setErrorMsg(t('Не удалось получить данные от Telegram. Убедитесь, что вы вошли в Telegram и разрешили доступ.'));
-                return;
-            }
-
-            fetch('/api/auth/oauth/telegram', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(tgData),
-            })
-                .then(async (resp) => {
-                    const data = await resp.json();
-                    if (!resp.ok) throw new Error(data.error?.message || data.detail || t('Ошибка авторизации'));
-                    await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
-                    setStatus('success');
-                    // Telegram всегда без email → synthetic → ведём подтвердить почту
-                    const tgSynthetic = (data.user?.email || '').endsWith('@oauth.local');
-                    const tgNext = popPostLoginNext();
-                    setTimeout(() => navigate(tgSynthetic ? '/add-email' : (tgNext || '/')), 1000);
-                })
-                .catch((err) => {
-                    setStatus('error');
-                    setErrorMsg(err.message || t('Ошибка авторизации через Telegram'));
-                });
             return;
         }
 

@@ -28,12 +28,6 @@ const YandexIcon = () => (
     </svg>
 );
 
-const TelegramIcon = () => (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="#26A5E4" aria-label="Telegram">
-        <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
-    </svg>
-);
-
 interface OAuthProvider {
     id: string;
     name: string;
@@ -199,14 +193,6 @@ export default function LoginPage() {
     const handleOAuth = async (providerId: string) => {
         // next переживёт round-trip провайдера через localStorage → AuthCallback.
         setPostLoginNext(urlNext);
-        if (providerId === 'telegram') {
-            // Прямой редирект на Telegram OAuth (без popup-виджета)
-            const botId = '8604817597';
-            const origin = encodeURIComponent(window.location.origin);
-            const returnTo = encodeURIComponent(window.location.origin + '/auth/callback/telegram');
-            window.location.href = `https://oauth.telegram.org/auth?bot_id=${botId}&origin=${origin}&embed=0&request_access=write&return_to=${returnTo}`;
-            return;
-        }
 
         // VK, Yandex — стандартный redirect
         try {
@@ -244,13 +230,11 @@ export default function LoginPage() {
     const providerIcons: Record<string, React.ReactNode> = {
         vk: <VKIcon />,
         yandex: <YandexIcon />,
-        telegram: <TelegramIcon />,
     };
 
     const providerColors: Record<string, string> = {
         vk: 'hover:border-[#0077FF]/50 hover:bg-[#0077FF]/10',
         yandex: 'hover:border-[#FC3F1D]/50 hover:bg-[#FC3F1D]/10',
-        telegram: 'hover:border-[#26A5E4]/50 hover:bg-[#26A5E4]/10',
     };
 
     const handleClose = () => {
@@ -303,13 +287,9 @@ export default function LoginPage() {
                     </p>
                 </div>
 
-                {/* OAuth buttons.
-                    Telegram скрыт в режиме регистрации: новых юзеров через Telegram
-                    больше не заводим (бэкенд отвечает 403 на новый oauth_id). В режиме
-                    входа кнопка остаётся — уже привязанные Telegram-аккаунты логинятся. */}
+                {/* OAuth buttons. Telegram убран целиком (406-ФЗ), см. api/routers/oauth.py. */}
                 <div className="space-y-2.5 mb-5">
                     {providers
-                        .filter(p => !(p.id === 'telegram' && mode === 'register'))
                         .map(p => (
                         <button
                             key={p.id}

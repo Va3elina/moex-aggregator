@@ -5,7 +5,9 @@ OAuth аутентификация через внешние провайдер�
 ПРОВАЙДЕРЫ:
   - Google   — OAuth 2.0 (Authorization Code Flow)
   - VK       — VK ID OAuth 2.0
-  - Telegram — Login Widget (hash-based verification)
+  Telegram убран 2026-11-17: 406-ФЗ запрещает авторизацию через иностранные
+  сервисы. Аккаунты с oauth_provider='telegram' в БД сохранены, по обращению
+  в поддержку переносим их на VK/Яндекс/почту.
 
 FLOW:
   1. Frontend редиректит пользователя на провайдера
@@ -20,13 +22,10 @@ FLOW:
     GOOGLE_CLIENT_SECRET=...
     VK_CLIENT_ID=...
     VK_CLIENT_SECRET=...
-    TELEGRAM_BOT_TOKEN=...
 """
 
 import os
 import hashlib
-import hmac
-import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -58,8 +57,6 @@ VK_CLIENT_ID = os.getenv("VK_CLIENT_ID", "")
 VK_CLIENT_SECRET = os.getenv("VK_CLIENT_SECRET", "")
 VK_REDIRECT_URI = os.getenv("VK_REDIRECT_URI", "")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-
 YANDEX_CLIENT_ID = os.getenv("YANDEX_CLIENT_ID", "")
 YANDEX_CLIENT_SECRET = os.getenv("YANDEX_CLIENT_SECRET", "")
 YANDEX_REDIRECT_URI = os.getenv("YANDEX_REDIRECT_URI", "")
@@ -75,17 +72,6 @@ class OAuthCodeRequest(BaseModel):
     device_id: Optional[str] = None  # VK ID requires device_id
     code_verifier: Optional[str] = None  # VK ID PKCE
     state: Optional[str] = None  # CSRF-токен (Yandex): фронт возвращает то, что выдал /url
-
-
-class TelegramAuthRequest(BaseModel):
-    """Данные от Telegram Login Widget."""
-    id: int
-    first_name: str
-    last_name: Optional[str] = None
-    username: Optional[str] = None
-    photo_url: Optional[str] = None
-    auth_date: int
-    hash: str
 
 
 class OAuthURLResponse(BaseModel):
@@ -510,77 +496,6 @@ async def yandex_oauth_callback(
         raise HTTPException(500, "Ошибка авторизации через Яндекс")
 
 
-@router.post("/telegram")
-async def telegram_oauth_callback(
-    data: TelegramAuthRequest,
-    db: Session = Depends(get_db),
-):
-    """
-    Верификация данных от Telegram Login Widget.
-
-    Telegram не использует OAuth. Вместо этого:
-    1. Виджет на фронте собирает данные пользователя
-    2. Подписывает их HMAC-SHA256 с хэшем bot token
-    3. Мы проверяем подпись
-    """
-    _check_configured("Telegram", TELEGRAM_BOT_TOKEN)
-
-    try:
-        # 1. Проверяем auth_date (не старше 1 дня)
-        if time.time() - data.auth_date > 86400:
-            raise HTTPException(400, "Данные авторизации устарели")
-
-        # 2. Проверяем подпись
-        secret_key = hashlib.sha256(TELEGRAM_BOT_TOKEN.encode()).digest()
-
-        check_data = {
-            "id": data.id,
-            "first_name": data.first_name,
-        }
-        if data.last_name:
-            check_data["last_name"] = data.last_name
-        if data.username:
-            check_data["username"] = data.username
-        if data.photo_url:
-            check_data["photo_url"] = data.photo_url
-        check_data["auth_date"] = data.auth_date
-
-        data_check_string = "\n".join(
-            f"{k}={v}" for k, v in sorted(check_data.items())
-        )
-
-        expected_hash = hmac.new(
-            secret_key,
-            data_check_string.encode(),
-            hashlib.sha256,
-        ).hexdigest()
-
-        # compare_digest — constant-time сравнение HMAC (без утечки через тайминг).
-        if not hmac.compare_digest(expected_hash, data.hash):
-            log.warning(f"Telegram auth: invalid hash for user {data.id}")
-            raise HTTPException(400, "Невалидная подпись Telegram")
-
-        # 3. Создаём/находим пользователя
-        tg_display = f"@{data.username}" if data.username else data.first_name
-        user, is_new = _find_or_create_oauth_user(
-            db=db,
-            provider="telegram",
-            oauth_id=str(data.id),
-            email=None,  # Telegram не даёт email
-            avatar_url=data.photo_url,
-            display_name=tg_display,
-            allow_registration=False,  # новую регистрацию через Telegram отключили — только вход уже привязанным
-        )
-
-        return _make_token_response(user, is_new, db)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"Telegram OAuth error: {e}", exc_info=True)
-        raise HTTPException(500, "Ошибка авторизации через Telegram")
-
-
 # ============================================================================
 # ИНФОРМАЦИЯ О ПРОВАЙДЕРАХ
 # ============================================================================
@@ -604,12 +519,6 @@ async def get_oauth_providers():
                 "name": "ВКонтакте",
                 "icon": "vk",
                 "configured": bool(VK_CLIENT_ID and VK_CLIENT_SECRET),
-            },
-            {
-                "id": "telegram",
-                "name": "Telegram",
-                "icon": "telegram",
-                "configured": bool(TELEGRAM_BOT_TOKEN),
             },
         ]
     }
