@@ -25,8 +25,11 @@ export default function TgApprovePage() {
     if (!loading && !isAuthenticated) navigate(`/login?next=${encodeURIComponent(`/tg/approve?c=${code}`)}`, { replace: true });
   }, [loading, isAuthenticated, code, navigate]);
 
+  // Спрашиваем сервер один раз, пока не решили, что показывать: после «Подтвердить» код уже использован,
+  // и повторный запрос (вкладку вернули из фона) затирал экран «Остался один шаг» на «Ссылка устарела».
+  const checking = stage === 'check';
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !checking) return;
     let dead = false;
     (async () => {
       try {
@@ -38,7 +41,7 @@ export default function TgApprovePage() {
       } catch { if (!dead) setStage('stale'); }
     })();
     return () => { dead = true; };
-  }, [isAuthenticated, code]);
+  }, [isAuthenticated, checking, code]);
 
   const approve = async () => {
     setBusy(true);
