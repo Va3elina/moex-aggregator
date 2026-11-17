@@ -306,12 +306,10 @@ export default function TgSignalsApp() {
     ) : (
       <div className="tgs-welcome">
         {mark}
-        <h1>Кабинет Фрейма</h1>
+        {/* Только логотип, строка и одна кнопка (Вадим 17.11: заголовок и подсказки лишние). В Telegram вход
+            идёт через обычный браузер — там сохранённые пароли; регистрация — на той же странице сайта. */}
         <p>Войдите в аккаунт — и сигналы будут приходить в этот чат.</p>
-        {/* Одна кнопка (Вадим 17.11: лишние вводят в ступор). В Telegram вход идёт через обычный браузер —
-            там сохранённые пароли и вход в Яндекс/VK; регистрация — на той же странице сайта. */}
         <button type="button" className="tgs-pr" onClick={tg ? browserLogin : () => window.location.assign(LOGIN_URL)}>Войти</button>
-        <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>{tg ? 'Откроется браузер. Нет аккаунта — там же можно зарегистрироваться.' : 'Нет аккаунта — на странице входа можно зарегистрироваться.'}</div>
       </div>
     );
   } else if (screen === 'cabinet') {
@@ -325,13 +323,22 @@ export default function TgSignalsApp() {
           <div className="tgs-name">{name}</div>
           <div className="tgs-s" style={{ fontSize: 15, lineHeight: '20px' }}>{user.requires_email_setup ? 'почта не указана' : user.email}</div>
         </div>
-        <div className="tgs-sec">
-          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/pricing`)}>
-            <span className="tgs-g"><span>Тариф {tier}</span><span className="tgs-s">{until ? `${plan?.is_trial ? 'пробный период до' : plan?.cancelled_at ? 'действует до' : 'продлится'} ${until}` : 'Подписки нет'}</span></span>
-            <span className="tgs-v tgs-accent">{until ? 'Изменить' : 'Выбрать'}</span><Chevron />
-          </button>
-        </div>
-        <div className="tgs-f">Оплата открывается на сайте.</div>
+        {/* Админу тариф выбирать незачем: доступ даёт роль, а не подписка */}
+        {user.role === 'admin' ? (
+          <div className="tgs-sec">
+            <div className="tgs-row"><span className="tgs-g"><span>Доступ администратора</span><span className="tgs-s">Все разделы открыты</span></span></div>
+          </div>
+        ) : (
+          <>
+          <div className="tgs-sec">
+            <button type="button" className="tgs-row" onClick={() => open(`${SITE}/pricing`)}>
+              <span className="tgs-g"><span>Тариф {tier}</span><span className="tgs-s">{until ? `${plan?.is_trial ? 'пробный период до' : plan?.cancelled_at ? 'действует до' : 'продлится'} ${until}` : 'Подписки нет'}</span></span>
+              <span className="tgs-v tgs-accent">{until ? 'Изменить' : 'Выбрать'}</span><Chevron />
+            </button>
+          </div>
+          <div className="tgs-f">Оплата открывается на сайте.</div>
+          </>
+        )}
         <div className="tgs-h">Уведомления</div>
         <div className="tgs-sec">
           {link?.linked

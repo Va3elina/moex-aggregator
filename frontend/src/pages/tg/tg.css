@@ -86,7 +86,7 @@ button.tgs-row:active, a.tgs-row:active { background: color-mix(in srgb, var(--t
 .tgs-welcome { display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 48px 8px 0; text-align: center; }
 .tgs-welcome svg { align-self: center; }
 .tgs-welcome h1 { margin: 12px 0 0; font-size: 24px; line-height: 30px; font-weight: 700; }
-.tgs-welcome p { margin: 0 0 12px; font-size: 15px; line-height: 21px; color: var(--hint); }
+.tgs-welcome p { margin: 12px 0; font-size: 17px; line-height: 23px; color: var(--hint); }
 .tgs-spin { align-self: center; width: 28px; height: 28px; margin: 4px 0 12px; border: 3px solid color-mix(in srgb, var(--hint) 35%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: tgs-spin 0.9s linear infinite; }
 @keyframes tgs-spin { to { transform: rotate(360deg); } }
 .tgs-btn-link { display: flex; align-items: center; justify-content: center; text-decoration: none; }
