@@ -27,7 +27,7 @@ _CODE = r"^[A-Za-z0-9_-]+$"
 
 
 class StartRequest(BaseModel):
-    init_data: str | None = Field(default=None, max_length=4096)
+    init_data: str = Field(min_length=1, max_length=4096)
 
 
 class CodeRequest(BaseModel):
@@ -36,6 +36,16 @@ class CodeRequest(BaseModel):
 
 class PollRequest(BaseModel):
     secret: str = Field(min_length=32, max_length=128, pattern=_CODE)
+    init_data: str = Field(min_length=1, max_length=4096)
+
+
+def _tg_user(init_data: str) -> dict:
+    """Пользователь Telegram из подписанных данных окна бота. Этот вход работает только из него."""
+    token = tg_webapp.bot_token()
+    tg_user = tg_webapp.parse_init_data(init_data, token) if token else None
+    if tg_user is None:
+        raise HTTPException(status_code=400, detail="Откройте кабинет из бота заново")
+    return tg_user
 
 
 def _redis():
@@ -50,15 +60,20 @@ def _redis():
 
 @router.post("/start")
 def start(data: StartRequest):
-    """Имя из Telegram (если подпись верна) покажем на странице подтверждения: человек видит,
-    В ЧЬЁМ Telegram откроется его кабинет — защита от чужой ссылки. Для входа оно не используется."""
-    who = None
-    token = tg_webapp.bot_token()
-    tg_user = tg_webapp.parse_init_data(data.init_data or "", token) if token else None
-    if tg_user:
-        name = " ".join(x for x in (tg_user.get("first_name"), tg_user.get("last_name")) if x)
-        who = (f"@{tg_user['username']}" if tg_user.get("username") else name)[:80] or None
-    return browser_login.start(_redis(), who)
+    """Попытку начинает только окно бота (подпись initData). Запоминаем, чей это Telegram: страница
+    подтверждения покажет его человеку, а сессию потом получит только он. Входом это не служит —
+    сессию даёт сайт, когда вошедший человек нажмёт «Подтвердить»."""
+    tg_user = _tg_user(data.init_data)
+    # Ник — как есть (в Telegram он уникален). Имя — свободный текст: убираем «@», чтобы оно не
+    # выдавало себя за ник; страница показывает их по-разному.
+    who = {
+        "username": (tg_user.get("username") or None),
+        "name": " ".join(x for x in (tg_user.get("first_name"), tg_user.get("last_name")) if x).replace("@", "").strip()[:60] or None,
+    }
+    got = browser_login.start(_redis(), tg_user["id"], who)
+    if got is None:
+        raise HTTPException(status_code=429, detail="Слишком много попыток. Подождите 10 минут")
+    return got
 
 
 @router.get("/info")
@@ -81,7 +96,7 @@ def approve(data: CodeRequest, user: User = Depends(get_current_user)):
 
 @router.post("/poll")
 def poll(data: PollRequest, request: Request, db: Session = Depends(get_db)):
-    state, user_id = browser_login.take(_redis(), data.secret)
+    state, user_id = browser_login.take(_redis(), data.secret, _tg_user(data.init_data)["id"])
     if state != "approved":
         return {"status": state}
     user = db.query(User).filter(User.id == user_id).first()

@@ -16,7 +16,8 @@ export default function TgApprovePage() {
   const navigate = useNavigate();
   const { user, loading, isAuthenticated } = useAuth();
   const [stage, setStage] = useState<Stage>('check');
-  const [who, setWho] = useState<string | null>(null);
+  const [who, setWho] = useState<{ username: string | null; name: string | null } | null>(null);
+  const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
 
   // Не вошёл — на обычную страницу входа сайта, после входа вернёмся сюда же
@@ -33,6 +34,7 @@ export default function TgApprovePage() {
         const j = r.ok ? await r.json() : null;
         if (dead) return;
         setWho(j?.who ?? null);
+        setPin(j?.pin ?? '');
         setStage(j ? 'ask' : 'stale');
       } catch { if (!dead) setStage('stale'); }
     })();
@@ -61,10 +63,11 @@ export default function TgApprovePage() {
             <div className="tgs-welcome">
               {mark}
               <h1>Войти в кабинет в Telegram?</h1>
-              <p>Аккаунт <b>{user.requires_email_setup ? (user.display_name || 'Фрейм') : user.email}</b>{who ? <> откроется в Telegram у <b>{who}</b>.</> : <> откроется в окне бота Фрейма в Telegram.</>}</p>
+              <p>Аккаунт <b>{user.requires_email_setup ? (user.display_name || 'Фрейм') : user.email}</b>{who?.username ? <> откроется в Telegram у <b>@{who.username}</b>.</> : who?.name ? <> откроется в Telegram у пользователя «{who.name}» (ник не задан).</> : <> откроется в окне бота Фрейма в Telegram.</>}</p>
+              <div className="tgs-pin"><span>Тот же код должен быть в окне бота</span><b>{pin}</b></div>
               <button type="button" className="tgs-pr" disabled={busy} onClick={approve}>Подтвердить</button>
               <button type="button" className="tgs-alt" onClick={() => navigate('/', { replace: true })}>Отмена</button>
-              <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Подтверждайте, только если вы сами только что нажали «Войти через браузер» в боте.</div>
+              <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Подтверждайте, только если вы сами только что нажали «Войти через браузер» в боте и код совпадает. Если ссылку прислал кто-то другой — нажмите «Отмена».</div>
             </div>
           )}
           {stage === 'done' && (

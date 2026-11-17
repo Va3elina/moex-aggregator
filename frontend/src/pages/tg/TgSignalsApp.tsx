@@ -243,18 +243,19 @@ export default function TgSignalsApp() {
   }, [needLink, linkHere, say]);
   // Вход через обычный браузер: в окне Telegram нет сохранённых паролей и входа в Яндекс/VK, а там есть.
   // Берём одноразовый код, открываем с ним сайт в браузере и ждём, пока человек подтвердит (browser_login.py).
-  const [wait, setWait] = useState<{ secret: string; code: string } | null>(() => {
+  const [wait, setWait] = useState<{ secret: string; code: string; pin: string } | null>(() => {
     try { return JSON.parse(sessionStorage.getItem(WAIT_KEY) ?? 'null'); } catch { return null; }
   });
   const stopWait = useCallback(() => { sessionStorage.removeItem(WAIT_KEY); setWait(null); }, []);
   const openApprove = useCallback((code: string) => open(`${SITE}/tg/approve?c=${code}`), [open]);
   const browserLogin = async () => {
     try {
-      const r = await apiFetch('/api/tg-login/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ init_data: tg?.initData || null }) });
+      const r = await apiFetch('/api/tg-login/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ init_data: tg?.initData ?? '' }) });
+      if (r.status === 429) { say('Слишком много попыток. Подождите 10 минут'); return; }
       if (!r.ok) throw new Error(String(r.status));
-      const { code, secret } = await r.json();
-      sessionStorage.setItem(WAIT_KEY, JSON.stringify({ secret, code }));
-      setWait({ secret, code });
+      const { code, secret, pin } = await r.json();
+      sessionStorage.setItem(WAIT_KEY, JSON.stringify({ secret, code, pin }));
+      setWait({ secret, code, pin });
       openApprove(code);
     } catch { say('Не получилось. Попробуйте ещё раз или введите логин здесь'); }
   };
@@ -264,7 +265,7 @@ export default function TgSignalsApp() {
     let dead = false;
     const ask = async () => {
       try {
-        const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: waitSecret }) });
+        const r = await apiFetch('/api/tg-login/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: waitSecret, init_data: tg?.initData ?? '' }) });
         const j = r.ok ? await r.json() : null;
         if (dead || !j) return;
         if (j.status === 'approved') { stopWait(); await login({ access_token: j.access_token, refresh_token: j.refresh_token }); }
@@ -276,7 +277,7 @@ export default function TgSignalsApp() {
     document.addEventListener('visibilitychange', onShow);
     window.addEventListener('focus', onShow);
     return () => { dead = true; window.clearInterval(id); document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow); };
-  }, [waitSecret, login, stopWait, say]);
+  }, [waitSecret, tg, login, stopWait, say]);
 
   const confirmThen = (question: string, run: () => void) => {
     if (tg?.showConfirm) tg.showConfirm(question, (ok) => { if (ok) run(); });
@@ -298,6 +299,7 @@ export default function TgSignalsApp() {
         {mark}
         <h1>Подтвердите вход в браузере</h1>
         <p>Там откроется сайт Фрейма: нажмите «Подтвердить» и вернитесь сюда. Кабинет откроется сам.</p>
+        <div className="tgs-pin"><span>Код для сверки</span><b>{wait.pin}</b></div>
         <div className="tgs-spin" role="status" aria-label="Ждём подтверждения" />
         <button type="button" className="tgs-alt" onClick={() => openApprove(wait.code)}>Открыть браузер ещё раз</button>
         <button type="button" className="tgs-tl" onClick={stopWait}>Отмена</button>
