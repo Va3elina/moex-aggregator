@@ -32,7 +32,7 @@ if "@db:" in _db:  # host-side: docker-hostname → localhost
 
 from sqlalchemy import text  # noqa: E402
 from api.database import SessionLocal  # noqa: E402  (импорт ПОСЛЕ DB_URL override)
-from api.services.tg_webapp import send_sticker  # noqa: E402  фирменные стикеры Фрейма
+from api.services.tg_webapp import DONE_TEXT, FRAME_LOGO  # noqa: E402  фирменные эмодзи Фрейма
 
 BOT_TOKEN = os.environ["ALERT_BOT_TOKEN"]
 # TELEGRAM_API_ROOT — релей (Cloudflare Worker) для обхода РКН без зависимости от IPv6
@@ -244,8 +244,7 @@ def _finish_browser_login(chat_id: int, ticket: str, username) -> None:
     if ok:
         # Без кнопки «Открыть кабинет»: окно, из которого человек входил, ещё открыто и само получит вход;
         # кнопка здесь открывала ВТОРОЕ окно кабинета (Вадим 17.11).
-        send(chat_id, "✅ Готово. Сигналы будут приходить сюда.")
-        send_sticker(chat_id, "done")
+        send(chat_id, DONE_TEXT)
     else:
         send_kb(chat_id, "Ссылка устарела. Попробуйте ещё раз.", _CABINET_KB)
 
@@ -268,6 +267,7 @@ def _ensure_tables() -> None:
 def _start_unlinked(chat_id: int) -> None:
     """«Запустить» без привязки: одно сообщение, одна кнопка — вход в кабинет."""
     send_kb(chat_id,
+            f"{FRAME_LOGO}\n"
             "Сигналы Фрейма по рынку МосБиржи.\n"
             "Войдите, чтобы получать их здесь.",
             _CABINET_KB)
@@ -842,8 +842,7 @@ def process_update(update: dict) -> None:
             ok = link_account(arg, chat_id, username)
             if ok:
                 # send_persistent ставит постоянный нижний бар (кнопки навсегда).
-                send_persistent(chat_id, "✅ Готово. Сигналы будут приходить сюда.")
-                send_sticker(chat_id, "done")
+                send_persistent(chat_id, DONE_TEXT)
             else:
                 send_kb(chat_id, "Ссылка устарела. Попробуйте ещё раз.", _CABINET_KB)
         else:

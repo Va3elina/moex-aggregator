@@ -58,32 +58,19 @@ def send_linked_message(chat_id: int) -> None:
     try:
         # Без кнопки: привязка идёт из открытого окна кабинета, кнопка открыла бы второе
         requests.post(f"{root}/bot{token}/sendMessage", timeout=10, json={
-            "chat_id": chat_id, "text": "✅ Готово. Сигналы будут приходить сюда.",
+            "chat_id": chat_id, "text": DONE_TEXT, "parse_mode": "HTML",
         })
-        send_sticker(chat_id, "done")
     except requests.RequestException as e:
         print(f"[tg_webapp] не отправил подтверждение привязки: {str(e).replace(token, '<REDACTED>')}")
 
 
-# ── Фирменные стикеры Фрейма (пак принадлежит этому боту, research/bot_stickers/make_stickers.py) ──
-STICKER_SET = "frame_by_framesignalbot"
-STICKERS = {"done": "✅", "hello": "👋", "signal": "🔔", "record": "🔥"}   # имя → эмодзи стикера в паке
-_sticker_ids: dict[str, str] = {}
+# ── Фирменные эмодзи Фрейма в тексте (пак t.me/addemoji/Frametool; стикеры Вадиму не понравились — 17.11) ──
+# Бот вставляет свои эмодзи из любого пака (проверено 17.11). Без поддержки покажется запасной обычный эмодзи.
+def _e(emoji_id: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 
-def send_sticker(chat_id: int, name: str) -> None:
-    """Стикер из фирменного пака. Нет пака или сеть подвела — молча пропускаем: стикер не обязателен."""
-    token = bot_token()
-    if not token or name not in STICKERS:
-        return
-    root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/")
-    try:
-        if not _sticker_ids:
-            r = requests.get(f"{root}/bot{token}/getStickerSet", params={"name": STICKER_SET}, timeout=10).json()
-            for st in (r.get("result") or {}).get("stickers", []):
-                _sticker_ids.setdefault(st.get("emoji", ""), st["file_id"])
-        file_id = _sticker_ids.get(STICKERS[name])
-        if file_id:
-            requests.post(f"{root}/bot{token}/sendSticker", timeout=10, json={"chat_id": chat_id, "sticker": file_id})
-    except (requests.RequestException, ValueError, KeyError) as e:
-        print(f"[tg_webapp] стикер не отправлен: {str(e).replace(token, '<REDACTED>')}")
+FRAME_MARK = _e("5454077045321538338", "◽️")                    # рамка-логотип Фрейма
+FRAME_LOGO = (_e("5456376948768936418", "◽️") + _e("5456183761139961304", "F")
+              + _e("5454037394183462308", "E"))                   # логотип FRAME из трёх плиток
+DONE_TEXT = f"{FRAME_MARK} Готово. Сигналы будут приходить сюда."
