@@ -68,7 +68,7 @@ export default function TgApprovePage() {
             <div className="tgs-welcome">
               {mark}
               <h1>Войти в Telegram?</h1>
-              <p>Аккаунт <b>{user.requires_email_setup ? (user.display_name || 'Фрейм') : user.email}</b>{who?.username ? <> откроется у <b>@{who.username}</b>.</> : who?.name ? <> откроется у пользователя «{who.name}» (ник не задан).</> : <> откроется в окне бота Фрейма в Telegram.</>}</p>
+              <p>Аккаунт <b>{user.requires_email_setup ? (user.display_name || 'FRAME') : user.email}</b>{who?.username ? <> откроется у <b>@{who.username}</b>.</> : who?.name ? <> откроется у пользователя «{who.name}» (ник не задан).</> : <> откроется в окне бота FRAME в Telegram.</>}</p>
               <button type="button" className="tgs-pr" disabled={busy} onClick={approve}>Подтвердить</button>
               <button type="button" className="tgs-alt" onClick={() => navigate('/', { replace: true })}>Отмена</button>
               <div className="tgs-f" style={{ textAlign: 'center', padding: 0 }}>Подтверждайте, только если вы сами только что нажали «Войти» в боте. Ссылку прислал кто-то другой — нажмите «Отмена».</div>

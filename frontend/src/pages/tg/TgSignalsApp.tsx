@@ -413,7 +413,7 @@ export default function TgSignalsApp() {
         <div className="tgs-sec">
           <div className="tgs-row"><span className="tgs-g"><span>{enabled ? 'Сигналы включены' : 'Сигналы на паузе'}</span><span className="tgs-s">{enabled ? 'Выключите — всё встанет на паузу' : 'Ничего не приходит, настройки сохранены'}</span></span>{sw(enabled, 'Сигналы включены', setEnabled)}</div>
         </div>
-        <div className="tgs-h">Подборки Фрейма</div>
+        <div className="tgs-h">Подборки FRAME</div>
         <div className="tgs-sec">
           <div className="tgs-row"><span className="tgs-g">Рекорды позиций</span>{sw(sets.records, 'Рекорды позиций', (v) => setSets({ ...sets, records: v }))}</div>
           <div className="tgs-row"><span className="tgs-g">Резкие сдвиги</span>{sw(sets.moves, 'Резкие сдвиги', (v) => setSets({ ...sets, moves: v }))}</div>

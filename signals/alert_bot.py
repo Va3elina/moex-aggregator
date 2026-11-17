@@ -268,7 +268,7 @@ def _start_unlinked(chat_id: int) -> None:
     """«Запустить» без привязки: одно сообщение, одна кнопка — вход в кабинет."""
     send_kb(chat_id,
             f"{FRAME_LOGO}\n"
-            "Сигналы Фрейма по рынку МосБиржи.\n"
+            "Сигналы FRAME по рынку МосБиржи.\n"
             "Войдите, чтобы получать их здесь.",
             _CABINET_KB)
     db = SessionLocal()
@@ -499,7 +499,7 @@ def _view_menu():
     kb = [
         [{"text": "📋 Мои алерты", "callback_data": "la"}],
         [{"text": "❓ Помощь", "callback_data": "help"}],
-        [{"text": "🌐 Открыть Фрейм", "url": SITE}],
+        [{"text": "🌐 Открыть FRAME", "url": SITE}],
     ]
     return txt, kb
 
@@ -530,7 +530,7 @@ def _view_list_root(db, user_id: int):
             "Создайте первый на сайте: Личный кабинет → Алерты."
         )
         kb = [
-            [{"text": "🌐 Открыть Фрейм", "url": SITE}],
+            [{"text": "🌐 Открыть FRAME", "url": SITE}],
             [{"text": "← Меню", "callback_data": "m"}],
         ]
         return txt, kb
@@ -704,7 +704,7 @@ def process_callback(cb: dict) -> None:
             edit_kb(chat_id, message_id,
                     "Аккаунт не привязан. Откройте сайт → Личный кабинет → "
                     "«Подключить Telegram».",
-                    [[{"text": "🌐 Открыть Фрейм", "url": SITE}]])
+                    [[{"text": "🌐 Открыть FRAME", "url": SITE}]])
             answer_cb(cb_id)
             return
 
@@ -797,7 +797,7 @@ def _handle_alerts(chat_id) -> None:
             send_kb(chat_id,
                     "Аккаунт не привязан. Откройте сайт → Личный кабинет → "
                     "«Подключить Telegram».",
-                    [[{"text": "🌐 Открыть Фрейм", "url": SITE}]])
+                    [[{"text": "🌐 Открыть FRAME", "url": SITE}]])
         else:
             txt_list, kb = _view_list_root(db, user_id)
             send_kb(chat_id, txt_list, kb)
