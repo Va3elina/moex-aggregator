@@ -128,22 +128,12 @@ def send_kb(chat_id, text_msg: str, inline_keyboard: list) -> None:
         print(f"[alert_bot] send_kb error: {_redact(e)}")
 
 
-# ── Постоянная reply-клавиатура (нижний бар, висит ВСЕГДА — без повторного /start) ──
-# Кнопки шлют свой ТЕКСТ обычным сообщением → ловим в process_update по тексту.
-# URL-кнопок reply-клавиатура НЕ поддерживает (только inline) → сайт остаётся
-# ссылкой в тексте. is_persistent=True держит бар постоянно даже когда поле ввода
-# в фокусе; resize_keyboard подгоняет высоту. Подписи — как в inline-меню (единообразно).
-_REPLY_KB = {
-    "keyboard": [[{"text": "📋 Мои алерты"}, {"text": "❓ Помощь"}]],
-    "resize_keyboard": True,
-    "is_persistent": True,
-}
 
 
 def send_persistent(chat_id, text_msg: str) -> None:
-    """sendMessage + постоянная нижняя клавиатура (устанавливает/обновляет бар).
-    Бар сохраняется для всех последующих сообщений (вкл. сигналы с inline-кнопками,
-    они на него не влияют) — пока не заменить другой reply-клавиатурой."""
+    """sendMessage, который СНИМАЕТ нижнюю клавиатуру «Мои алерты / Помощь» (Вадим 17.11: убрать).
+    Клавиатура у старых пользователей висит, пока бот не пришлёт remove_keyboard, — поэтому все
+    приветствия идут через эту функцию. Имя прежнее, чтобы не трогать вызовы."""
     try:
         requests.post(
             f"{API_BASE}/sendMessage",
@@ -152,7 +142,7 @@ def send_persistent(chat_id, text_msg: str) -> None:
                 "text": text_msg,
                 "parse_mode": "HTML",
                 "disable_web_page_preview": True,
-                "reply_markup": _REPLY_KB,
+                "reply_markup": {"remove_keyboard": True},
             },
             timeout=15,
         )
@@ -508,10 +498,8 @@ def _welcome_text() -> str:
     """Текст приветствия для /start и /menu — шлётся с постоянной нижней
     клавиатурой (send_persistent). Сайт — ссылкой (URL-кнопку reply-бар не держит)."""
     return (
-        "👋 <b>Frame Signal</b>\n\n"
-        "Здесь приходят алерты по рынку MOEX и можно ими управлять.\n"
-        f"Новые создаются на сайте — <a href=\"{SITE}\">в Личном кабинете</a>.\n\n"
-        "Кнопки снизу всегда под рукой 👇"
+        f"{FRAME_LOGO}\n"
+        "Сигналы FRAME по рынку МосБиржи приходят сюда."
     )
 
 
