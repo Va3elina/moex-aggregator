@@ -45,3 +45,12 @@ def test_missing_hash_user_or_token_rejected():
     assert parse_init_data(make({"id": 42, "is_bot": True}), TOKEN, NOW) is None
     assert parse_init_data(make({"id": 42}), "", NOW) is None
     assert parse_init_data("", TOKEN, NOW) is None
+
+
+def test_brand_emoji_fallbacks_are_emoji():
+    """Telegram отклоняет сообщение, если запасной символ своего эмодзи — не эмодзи (было «F», «E»)."""
+    import re
+    from api.services import tg_webapp
+    for html in (tg_webapp.FRAME_MARK, tg_webapp.FRAME_LOGO):
+        for fallback in re.findall(r"<tg-emoji[^>]*>(.*?)</tg-emoji>", html):
+            assert not re.search(r"[A-Za-zА-Яа-я0-9]", fallback), fallback
