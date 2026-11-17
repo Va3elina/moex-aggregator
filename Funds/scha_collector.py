@@ -143,6 +143,7 @@ class Doc:
 # ── HTTP ──────────────────────────────────────────────────────────────────
 
 _SSL = None
+_CTX: dict = {}
 # am-aton.ru НЕ присылает промежуточный сертификат GlobalSign RSA OV SSL CA 2018 (openssl:
 # Verify return code 21). Браузер и curl на маке достраивают цепочку сами, Python и curl на
 # сервере — нет → CERTIFICATE_VERIFY_FAILED, что выглядит как «Атон банит сервер». Добавляем
@@ -153,6 +154,13 @@ _GS_INTERMEDIATE = ROOT / "certs" / "globalsign_rsa_ov_ssl_ca_2018.pem"
 # в certifi этого корня нет → CERTIFICATE_VERIFY_FAILED «self-signed certificate in chain».
 _MINCIFRY_ROOT = ROOT / "certs" / "russian_trusted_root_ca.pem"
 _MINCIFRY_HOSTS = ("t-capital-funds.ru",)
+# Атон при каждой смене сертификата снова не присылает промежуточный (10.2026 — GlobalSign RSA OV
+# 2018, 16.11.2026 — GlobalSign GCC R46 DV 2025), и сканер падал до ручной правки. Теперь при
+# «unable to get local issuer» берём адрес промежуточного из самого сертификата сайта (поле AIA,
+# так делают браузеры) и качаем его — только у удостоверяющих центров из списка. Доверие не
+# расширяется: PARTIAL_CHAIN выключен, промежуточный принимается, только если подписан корнем certifi.
+_AIA_HOSTS = ("globalsign.com", "digicert.com", "sectigo.com", "usertrust.com", "lencr.org", "entrust.net")
+_AIA_LOADED: set[str] = set()
 
 # Ходим ТОЛЬКО на сайты УК и только по https. Ссылки на файлы берутся со страниц УК — без этого
 # списка подменённая ссылка (http://127.0.0.1:…, внутренний хост) превратила бы сборщик на сервере
@@ -182,6 +190,10 @@ def _opener(host: str = ""):
         _SSL = {}
         for kind in ("common", "mincifry"):
             ctx = ssl.create_default_context(cafile=certifi.where())
+            # Python 3.13 включает частичную цепочку по умолчанию: промежуточный из хранилища стал бы
+            # самодостаточным якорем. Нам нужна полная цепочка до корня (см. _AIA_HOSTS).
+            ctx.verify_flags &= ~ssl.VERIFY_X509_PARTIAL_CHAIN
+            _CTX[kind] = ctx
             if _GS_INTERMEDIATE.is_file():
                 ctx.load_verify_locations(cafile=str(_GS_INTERMEDIATE))
             if kind == "mincifry" and _MINCIFRY_ROOT.is_file():
@@ -191,12 +203,45 @@ def _opener(host: str = ""):
     return _SSL["mincifry" if ru else "common"]
 
 
+def _load_missing_intermediate(host: str) -> bool:
+    """Сайт не прислал промежуточный сертификат → скачать его по AIA из сертификата сайта.
+    True — добавили новый, запрос стоит повторить."""
+    import ssl
+    import tempfile
+    pem = ssl.get_server_certificate((host, 443), timeout=30)
+    with tempfile.NamedTemporaryFile("w", suffix=".pem") as f:
+        f.write(pem)
+        f.flush()
+        issuers = ssl._ssl._test_decode_cert(f.name).get("caIssuers") or ()
+    added = False
+    for url in issuers:
+        u = urllib.parse.urlsplit(url)
+        ca = (u.hostname or "").lower()
+        if url in _AIA_LOADED or u.scheme not in ("http", "https") \
+                or not any(ca == d or ca.endswith("." + d) for d in _AIA_HOSTS):
+            continue
+        with urllib.request.urlopen(url, timeout=30) as r:
+            der = r.read(65536)
+        for ctx in _CTX.values():
+            ctx.load_verify_locations(cadata=der)
+        _AIA_LOADED.add(url)
+        added = True
+    return added
+
+
 def http_get(url: str, timeout: int = 60) -> tuple[bytes, dict]:
     # В путях Первой — сырая кириллица и пробелы: без quote будет 404.
     url = urllib.parse.quote(url, safe=":/?&=%#,-._~+")
     _check_url(url)
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ru-RU,ru;q=0.9"})
     host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    try:
+        with _opener(host).open(req, timeout=timeout) as r:
+            return r.read(), dict(r.headers)
+    except urllib.error.URLError as e:
+        # 20 = unable to get local issuer certificate: сайт не прислал промежуточный.
+        if getattr(e.reason, "verify_code", None) != 20 or not _load_missing_intermediate(host):
+            raise
     with _opener(host).open(req, timeout=timeout) as r:
         return r.read(), dict(r.headers)
 
