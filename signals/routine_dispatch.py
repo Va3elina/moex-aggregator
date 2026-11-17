@@ -94,12 +94,34 @@ def expire(conn) -> None:
         log(f"#{r.id} {r.routine}: без колбэка → {r.status}")
 
 
+_vpn_alive: bool | None = None   # проба раз за прогон диспетчера (cron раз в минуту = новый процесс)
+
+
+def _vpn_ok() -> bool:
+    """Жив ли путь через VPN: POST /fire БЕЗ токена через мост. 401 = Anthropic ответил, гео пройдено,
+    ничего не запущено. Без пробы фолбэк не срабатывал: при лежащем туннеле мост принимает соединение
+    и закрывает его — requests даёт ConnectionError('Connection aborted'), а не ProxyError, и по такой
+    ошибке повторять нельзя (запуск мог уйти). 16–17.11.2026 так упали 12 запусков STEP_A."""
+    global _vpn_alive
+    if _vpn_alive is None:
+        try:
+            r = requests.post("https://api.anthropic.com/v1/claude_code/routines/health/fire",
+                              headers=HEADERS, timeout=(5, 10),
+                              proxies={"http": PRIMARY_PROXY, "https": PRIMARY_PROXY})
+            _vpn_alive = r.status_code == 401
+        except requests.RequestException:
+            _vpn_alive = False
+        if not _vpn_alive:
+            log("VPN TH Wildau не отвечает — запуски через релей")
+    return _vpn_alive
+
+
 def _routes() -> list[tuple[str, str, str | None]]:
     """Пути до /fire по порядку. Основной — VPN TH Wildau (мост ROUTINE_PRIMARY_PROXY → прокси
-    университета → api.anthropic.com из Германии), запасной — релей Hetzner CLAUDE_ROUTINE_API_ROOT.
-    Без ROUTINE_PRIMARY_PROXY — только релей, как было."""
+    университета → api.anthropic.com из Германии), если проба _vpn_ok() прошла; запасной — релей
+    Hetzner CLAUDE_ROUTINE_API_ROOT. Без ROUTINE_PRIMARY_PROXY — только релей, как было."""
     routes = []
-    if PRIMARY_PROXY:
+    if PRIMARY_PROXY and _vpn_ok():
         routes.append(("VPN TH Wildau", "https://api.anthropic.com", PRIMARY_PROXY))
     routes.append(("релей", API_ROOT, None))
     return routes
