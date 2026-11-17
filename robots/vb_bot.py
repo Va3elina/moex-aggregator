@@ -4,7 +4,9 @@
 (S.account_margin, тот же код, что в Стенде); VB_GUARD=0.15 — защита «−15 % от пика → новые сделки ×1» (выкл.).
 Решений сам не принимает: каждые 5 минут пересчитывает стратегию тем же кодом, что прогон Стенда
 (backtest/screener_vb.py: данные из БД, сегодняшняя дневная свеча — та, что успела обновиться), и приводит счёт
-к модели: модель открыла сделку — входим рыночной заявкой, модель её закрыла — выходим. Счёт 10 млн, идея = 1 млн
+к модели: модель открыла сделку — входим рыночной заявкой, модель её закрыла — выходим. Всю историю модель
+считает первый раз за день и в последние 10 минут; между ними — только бумаги, чьи сделки может изменить
+сегодняшняя свеча, остальное из утреннего кэша (см. «кэш модели на день», сверка robots/vb_light_check.py). Счёт 10 млн, идея = 1 млн
 (тренд-сделки одного дня делят идею).
 
 Когда входим (МСК): шорт-скальп — по открытию дня T+1 (первый запуск после 07:00); лонг-скальп и тренд-ноги — по
@@ -138,13 +140,148 @@ def rates_from(inst):
     return {t: (i['dl'] if i.get('dl') else 1.0, i['ds'] if i['short'] and i.get('ds') else None) for t, i in inst.items()}
 
 
-def model(now, st, inst):
+# ── кэш модели на день ──
+# Полный прогон (все акции с 2011) — 9 с и ~325 МБ; раньше шёл каждые 5 минут и 17.11.2026 добил память прода.
+# Внутри дня меняется только сегодняшний бар, а сделки бумаги зависят только от её свечей: у бумаги без открытой
+# сделки, без входа/выхода сегодня и уже с сегодняшней свечой результат до последних 10 минут не меняется
+# (сигнальный день ≤ вчера, средние — по барам до него, подтверждение входа до закрытия бара всегда «да»).
+# Поэтому: полный прогон — первый за день и в последние 10 минут; между ними пересчитываются только «живые»
+# бумаги, сделки остальных берутся из утреннего кэша. Решения те же — сверка: robots/vb_light_check.py.
+def _code_sig():
+    import hashlib
+    h = hashlib.sha1()
+    for f in (ROOT / 'backtest' / 'screener_vb.py', pathlib.Path(__file__)):
+        h.update(f.read_bytes())
+    return f'{h.hexdigest()[:12]}|{LEVERAGE}|{GUARD}'
+
+
+def could_enter_today(x, divs, mk, today):
+    """Бумага ещё без сегодняшней свечи: может ли с её появлением родиться вход сегодня? Сигнальный день — её
+    последняя свеча (всё уже известно), от сегодняшнего бара до закрытия зависит только отмена по гэпу открытия.
+    Пробуем открытие = вчерашнему закрытию (гэпа нет — отмены нет): сигнала нет и так — не будет ни при каком."""
+    c = x.c[-1]
+    rows = [[d, o, h, l, cc, v] for d, o, h, l, cc, v in zip(x.d, x.o, x.h, x.l, x.c, x.v)] + [[today, c, c, c, c, x.v[-1]]]
+    probe = S.Ticker(x.secid, rows)
+    return any(s.entryDate == today for dir_ in ('long', 'short')
+               for s in S.scan_full(probe, divs.get(x.secid, []), dir_, mk, None, lambda d: d < today))
+
+
+def live_tickers(sigs, tk, st, today, divs, mk):
+    """Бумаги, чьи сделки могут измениться от сегодняшнего бара: открытые, со входом/выходом сегодня, сделки с даты
+    старта робота (их цены нужны счёту с маржой), бумаги без сегодняшней свечи, у которых с её появлением может
+    родиться вход сегодня, ноги робота, SBER (проверка свежести и календарь дней счёта)."""
+    live = {s.ticker for s in sigs
+            if s.res['reason'] in ('open', 'delisted') or s.entryDate >= min(today, st['start']) or s.res['exitDate'] >= today}
+    live |= {t for t, x in tk.items() if x.d[-1] < today and t not in live and could_enter_today(x, divs, mk, today)}
+    live |= {L['ticker'] for L in st.get('legs', {}).values()}
+    return sorted(live | {'SBER'})
+
+
+DIV_SQL = "SELECT secid, registry_close_date, value FROM dividends WHERE registry_close_date IS NOT NULL"
+
+
+def data_print(today, had=None):
+    """Отпечаток всего, от чего зависят замороженные сделки, кроме сегодняшних h/l/c/v: свечи последних 20 дней
+    (загрузчик каждые 5 минут перезаливает 14 дней — ISS правит вчерашний объём/цену), сегодняшнее открытие бумаг
+    из had (у кого свеча уже была при записи кэша; у остальных вход сегодня исключила could_enter_today, а открытие
+    может только отменить вход по гэпу), дивиденды, файлы сплитов/ставок/снятых бумаг. → (отпечаток, had)"""
+    import hashlib
+    w0 = (dt.date.fromisoformat(today) - dt.timedelta(days=20)).isoformat()
+    df = S._copy(f"""SELECT secid, begin_time::date AS d, open, high, low, close, volume FROM candles
+                     WHERE interval = 24 AND type = 'stock' AND begin_time >= '{w0}' ORDER BY secid, begin_time""")
+    df['d'] = df.d.astype(str).str[:10]
+    tod = df[df.d == today]
+    if had is None:
+        had = sorted(set(tod.secid))
+    h = hashlib.sha1()
+    h.update(df[df.d < today].to_csv(index=False).encode())
+    h.update(tod[tod.secid.isin(set(had))][['secid', 'open']].to_csv(index=False).encode())
+    h.update(S._copy(DIV_SQL).sort_values(['secid', 'registry_close_date', 'value']).to_csv(index=False).encode())
+    for p in (S.extra_path(), S.rusfar_path(), S.DATA / 'splits.csv.gz'):
+        h.update((f'{p.name}:{p.stat().st_mtime_ns}:{p.stat().st_size}' if p.exists() else p.name).encode())
+    return h.hexdigest(), had
+
+
+def account_days(tk, start, today):
+    """Прошлые дни счёта с маржой (как в S.account_margin) — у лёгкого прогона они должны совпасть с полным."""
+    return sorted({d for x in tk.values() for d in x.d if start <= d < today and not S.wk(d)})
+
+
+def _cache_path(today):
+    return STATE / f'model_{today}.pkl'
+
+
+def load_cache(today, st):
+    """Кэш дня, если он ещё верен; иначе None (→ полный прогон). Любая ошибка — тоже None: торговлю кэш не роняет."""
+    # pickle читает только файл, который сам робот пишет в свой каталог состояния (root, 755) — чужих данных тут нет;
+    # нужен ради точных numpy-чисел в Sig (JSON-копия могла бы разойтись с полным прогоном).
+    import pickle
+    try:
+        c = pickle.loads(_cache_path(today).read_bytes())
+        if c.get('code') != _code_sig() or c.get('start') != st['start']:
+            return None
+        if not {L['ticker'] for L in st.get('legs', {}).values()} <= set(c['live']):
+            return None
+        return c if data_print(today, c['had'])[0] == c['fp'] else None
+    except Exception as e:
+        if _cache_path(today).exists(): log(f'кэш модели не прочитан ({type(e).__name__}: {e}) — полный прогон')
+        return None
+
+
+def save_cache(today, st, sigs, tk, divs, mk, fp):
+    import pickle
+    try:
+        live = live_tickers(sigs, tk, st, today, divs, mk)
+        keep = set(live)
+        STATE.mkdir(parents=True, exist_ok=True)
+        tmp = STATE / 'model.pkl.tmp'
+        tmp.write_bytes(pickle.dumps({'code': _code_sig(), 'start': st['start'], 'live': live, 'fp': fp[0], 'had': fp[1],
+                                      'days': account_days(tk, st['start'], today),
+                                      'frozen': [s for s in sigs if s.ticker not in keep]}))
+        tmp.replace(_cache_path(today))
+        for f in STATE.glob('model_*.pkl'):
+            if f != _cache_path(today): f.unlink(missing_ok=True)
+    except Exception as e:
+        log(f'кэш модели не записан ({type(e).__name__}: {e}) — следующий запуск снова полный')
+
+
+def model(now, st, inst, cache='auto'):
+    """cache: 'auto' — как в бою; 'off' — всегда полный прогон (сверка). model.light — был ли лёгкий прогон."""
     today = now.date().isoformat()
     t_open, t_close = session(now)
     last10 = now.time() >= (dt.datetime.combine(now.date(), t_close) - dt.timedelta(minutes=10)).time()
     final = lambda d: d < today or (d == today and last10)
-    tk, mk, dv, vv = S.load_db()
-    sigs = S.run(tk, mk, dv, vv, final)
+    model.light = False
+    if cache == 'auto':
+        # Нерабочий день или данные встали: сегодняшней свечи SBER нет — полную модель не считаем (робот всё равно
+        # ничего не делает), иначе это 200 полных прогонов за день.
+        sb = S.load_db(secids=['SBER'])[0].get('SBER')
+        if not sb or sb.d[-1] != today:
+            return [], set(), False, last10
+    c = load_cache(today, st) if cache == 'auto' and not last10 else None
+    if c:
+        try:
+            tk, mk, dv, vv = S.load_db(secids=c['live'])
+            if account_days(tk, st['start'], today) != c['days']:
+                c = None
+        except Exception as e:
+            log(f'лёгкая загрузка не удалась ({type(e).__name__}: {e}) — полный прогон'); c = None
+    if c:
+        sigs = c['frozen'] + S.run(tk, mk, dv, vv, final)
+    else:
+        # Отпечаток — ДО загрузки: если данные поменяются между ними, отпечаток окажется старым и следующий запуск
+        # просто пересчитает всё; в обратном порядке кэш мог бы молча прожить день на старых данных.
+        fp = None
+        if cache == 'auto' and not last10:
+            try:
+                fp = data_print(today)
+            except Exception as e:
+                log(f'отпечаток данных не снят ({type(e).__name__}: {e}) — кэш не пишу')
+        tk, mk, dv, vv = S.load_db()
+        sigs = S.run(tk, mk, dv, vv, final)
+        if fp and 'SBER' in tk and tk['SBER'].d[-1] == today:
+            save_cache(today, st, sigs, tk, dv, mk, fp)
+    model.light = bool(c)
     sigs.sort(key=lambda s: (s.entryDate, s.ticker, s.exitMode))
     w = S.cluster_weights(sigs)
     fresh = tk['SBER'].d[-1] == today if 'SBER' in tk else False
