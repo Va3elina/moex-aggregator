@@ -27,6 +27,7 @@ from pathlib import Path
 import io
 import json
 import os
+import re
 import time
 import urllib.request
 
@@ -455,12 +456,21 @@ def rusfar_path():
     return f if f.exists() else DATA / 'rusfar.csv.gz'
 
 
-def load_db(until: str | None = None):
-    st = _copy("""SELECT secid, begin_time::date AS d, open, high, low, close, volume FROM candles
-                  WHERE interval = 24 AND type = 'stock' AND begin_time >= '2011-01-01' ORDER BY secid, begin_time""")
+def load_db(until: str | None = None, secids=None):
+    """secids — только эти бумаги (лёгкий прогон робота VB); None — все, как в Стенде."""
+    only = ''
+    if secids is not None:
+        secids = sorted(set(secids))
+        if not all(re.fullmatch(r'[A-Za-z0-9._-]{1,20}', s) for s in secids):
+            raise ValueError(f'странный тикер в {secids}')
+        only = "AND secid IN (" + ','.join(f"'{s}'" for s in secids) + ")" if secids else 'AND false'
+    st = _copy(f"""SELECT secid, begin_time::date AS d, open, high, low, close, volume FROM candles
+                  WHERE interval = 24 AND type = 'stock' AND begin_time >= '2011-01-01' {only} ORDER BY secid, begin_time""")
     frames = [st]
     if extra_path().exists():
         ex = pd.read_csv(extra_path())
+        if secids is not None:
+            ex = ex[ex.secid.isin(secids)]
         frames.append(ex[~ex.secid.isin(set(st.secid))][['secid', 'd', 'open', 'high', 'low', 'close', 'volume']])
     df = pd.concat(frames, ignore_index=True)
     df['d'] = df.d.astype(str).str[:10]
