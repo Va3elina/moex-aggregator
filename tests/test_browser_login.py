@@ -11,8 +11,10 @@ class FakeRedis:
     def __init__(self):
         self.d = {}
 
-    def set(self, k, v, ex=None, xx=False, keepttl=False):
+    def set(self, k, v, ex=None, xx=False, keepttl=False, nx=False):
         if xx and k not in self.d:
+            return None
+        if nx and k in self.d:
             return None
         self.d[k] = v
         return True
@@ -110,6 +112,33 @@ def test_secrets_not_stored_in_clear_and_burned_attempt_not_revived():
     del r.d[key]                                                   # попытка сгорела
     assert bl.confirm(r, ticket, 42) is None                       # запоздалый билет её не вернёт
     assert key not in r.d
+
+
+def test_racing_approvals_give_ticket_only_to_first():
+    """Начавший попытку жмёт «Подтвердить» одновременно с жертвой: оба успели прочитать «не подтверждено»."""
+    r = FakeRedis()
+    s = bl.start(r, 666, {"username": "attacker", "name": None})
+    real_load = bl._load
+    stale = real_load(r, s["code"])                    # снимок до чьего-либо подтверждения
+    victim_ticket = bl.approve(r, s["code"], 7)        # жертва подтвердила первой
+    bl._load = lambda rr, code: stale                  # злоумышленник работает со старым снимком
+    try:
+        attacker_ticket = bl.approve(r, s["code"], 13)
+    finally:
+        bl._load = real_load
+    assert victim_ticket and attacker_ticket is None   # второй билет не выдан
+    assert bl.take(r, s["secret"], 666) == ("need_confirm", None)
+
+
+def test_ticket_is_bound_to_the_approver():
+    """Даже если в попытке окажется чужой user_id, билет, выданный другому человеку, не подойдёт."""
+    import json
+    r = FakeRedis()
+    s = bl.start(r, 42, WHO)
+    ticket = bl.approve(r, s["code"], 7)
+    key = next(k for k in r.d if k.startswith("tglogin:s:"))
+    state = json.loads(r.d[key]); state["user_id"] = 99; r.d[key] = json.dumps(state)
+    assert bl.confirm(r, ticket, 42) is None
 
 
 def test_bot_signature_matches_server():

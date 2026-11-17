@@ -27,7 +27,8 @@ TICKET_PREFIX = "in_"  # параметр /start: in_<ticket>
 _R = "tglogin:r:"      # tg_id → счётчик попыток
 _S = "tglogin:s:"      # sha256(secret) → {"code", "user_id", "tg_id", "who", "ok"}
 _C = "tglogin:c:"      # code → sha256(secret)
-_K = "tglogin:k:"      # sha256(ticket) → sha256(secret)
+_K = "tglogin:k:"      # sha256(ticket) → {"key": sha256(secret), "user_id"}
+_A = "tglogin:a:"      # sha256(secret) → user_id подтвердившего: SET NX, побеждает первый
 
 
 def _h(value: str) -> str:
@@ -69,34 +70,44 @@ def info(r, code: str) -> dict | None:
 
 def approve(r, code: str, user_id: int) -> str | None:
     """Вошедший на сайте человек разрешает окну войти под собой. Возвращает одноразовый билет — его
-    получает ТОЛЬКО подтвердивший (в кнопке возврата в Telegram). None — код устарел или уже подтверждён."""
+    получает ТОЛЬКО подтвердивший (в кнопке возврата в Telegram). None — код устарел или уже подтверждён.
+
+    Подтверждение — атомарное (SET NX): если двое жмут «Подтвердить» одновременно, билет получает один.
+    Иначе начавший попытку мог бы подтвердить её сам одновременно с жертвой и получить билет к её входу."""
     got = _load(r, code)
     if not got or got[1]["user_id"] is not None:
         return None
     key, state = got
+    ttl = r.ttl(_S + key)
+    ttl = ttl if ttl and ttl > 0 else TTL_SEC
+    if not r.set(_A + key, str(user_id), nx=True, ex=ttl):
+        return None
     state["user_id"] = user_id
     _save(r, key, state)
     ticket = secrets.token_urlsafe(18)
-    ttl = r.ttl(_S + key)
-    r.set(_K + _h(ticket), key, ex=ttl if ttl and ttl > 0 else TTL_SEC)
+    r.set(_K + _h(ticket), json.dumps({"key": key, "user_id": user_id}), ex=ttl)
     return ticket
 
 
 def confirm(r, ticket: str, tg_id: int) -> int | None:
     """Бот получил билет по /start из чата tg_id. Билет одноразовый: сгорает при первом же предъявлении,
-    даже неудачном. Возвращает user_id, если билет пришёл из того же Telegram, что начал попытку."""
+    даже неудачном. Возвращает user_id, если билет пришёл из того же Telegram, что начал попытку, и выдан
+    именно тому, чьё подтверждение записано в попытке."""
     kkey = _K + _h(ticket)
-    key = r.get(kkey)
-    if not key or r.delete(kkey) != 1:
+    raw_ticket = r.get(kkey)
+    if not raw_ticket or r.delete(kkey) != 1:
         return None
-    raw = r.get(_S + key)
+    issued = json.loads(raw_ticket)
+    raw = r.get(_S + issued["key"])
     if not raw:
         return None
     state = json.loads(raw)
-    if state["user_id"] is None or state["tg_id"] != tg_id:
+    if state["tg_id"] != tg_id or state["user_id"] is None or state["user_id"] != issued["user_id"]:
+        return None
+    if r.get(_A + issued["key"]) != str(issued["user_id"]):
         return None
     state["ok"] = True
-    _save(r, key, state)
+    _save(r, issued["key"], state)
     return int(state["user_id"])
 
 
@@ -121,4 +132,5 @@ def take(r, secret: str, tg_id: int) -> tuple[str, int | None]:
     if r.delete(_S + hk) != 1:        # параллельный опрос уже забрал сессию
         return "expired", None
     r.delete(_C + state["code"])
+    r.delete(_A + hk)
     return "approved", int(state["user_id"])
