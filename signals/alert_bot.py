@@ -242,7 +242,9 @@ def _finish_browser_login(chat_id: int, ticket: str, username) -> None:
     except (requests.RequestException, ValueError) as e:
         print(f"[alert_bot] login confirm error: {_redact(e)}")
     if ok:
-        send_kb(chat_id, "✅ <b>Вы вошли в кабинет Фрейма</b>\nСигналы будут приходить в этот чат.", _OPEN_KB)
+        # Без кнопки «Открыть кабинет»: окно, из которого человек входил, ещё открыто и само получит вход;
+        # кнопка здесь открывала ВТОРОЕ окно кабинета (Вадим 17.11).
+        send(chat_id, "✅ <b>Вы вошли в кабинет Фрейма</b>\nВернитесь в окно кабинета — оно уже открыто. Сигналы будут приходить в этот чат.")
     else:
         send_kb(chat_id, "Ссылка входа устарела. Откройте кабинет и нажмите «Войти» ещё раз.", _OPEN_KB)
 
