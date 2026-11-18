@@ -43,3 +43,28 @@ def send(text: str, tag: str = "framesignal", bot: str = "signal", silent: bool 
             except requests.RequestException as e:
                 print(f"[{tag}] чат {chat}: {str(e).replace(tok, '<REDACTED>')}")
     return ok
+
+
+def send_photo(png: bytes, caption: str, tag: str = "framesignal", bot: str = "signal", silent: bool = False) -> bool:
+    """Картинка с HTML-подписью всем получателям (подпись Telegram — до 1024 знаков); True — дошло хотя бы до одного."""
+    toks = [t for t in (os.environ.get(k, "").strip() for k in BOTS[bot]) if t]
+    chats = [c.strip() for c in os.environ.get("ADMIN_CHAT_ID", "").split(",") if c.strip()]
+    if not toks or not chats:
+        print(f"[{tag}] нет токена бота {bot} или ADMIN_CHAT_ID — не отправлено")
+        return False
+    root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/")
+    ok = False
+    for chat in chats:
+        for tok in toks:
+            try:
+                r = requests.post(f"{root}/bot{tok}/sendPhoto", timeout=60,
+                                  data={"chat_id": chat, "caption": caption, "parse_mode": "HTML",
+                                        "disable_notification": silent},
+                                  files={"photo": ("signal.png", png, "image/png")})
+                if r.json().get("ok"):
+                    ok = True
+                    break
+                print(f"[{tag}] чат {chat}: фото не принято: {r.text[:200].replace(tok, '<REDACTED>')}")
+            except requests.RequestException as e:
+                print(f"[{tag}] чат {chat}: {str(e).replace(tok, '<REDACTED>')}")
+    return ok
