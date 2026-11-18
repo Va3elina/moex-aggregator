@@ -15,6 +15,10 @@ import os
 
 FIRE = '<tg-emoji emoji-id="5470008294498150786">🔥</tg-emoji>'
 PULSE = '<tg-emoji emoji-id="5472356988774034303">🟠</tg-emoji>'
+# значки кнопок под сигналом (Вадим 18.11): анимированные шестерёнка и линия графика из того же пака
+# (research/signal_emoji/make_buttons.py → pack.py add); у кнопки — icon_custom_emoji_id
+GEAR_ID = "5472322972633051055"
+CHART_ID = "5472159987214102346"
 
 WOW = "за всё время"
 STRONG = ("за 2 года", "за 3 года", "за 5 лет")

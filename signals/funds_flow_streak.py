@@ -36,6 +36,7 @@ from datetime import date  # noqa: E402
 
 from api.services import fund_flows as ff  # noqa: E402
 from signals import funds_card, signal_marks  # noqa: E402
+from signals.funds_flow_notify import bn  # noqa: E402
 from signals.framesignal import SITE, send, send_photo  # noqa: E402
 from signals.insights import fresh  # noqa: E402
 
@@ -108,7 +109,7 @@ def events(bars: list, tf: str) -> list:
         rec = (run == best[s] + 1 and best[s] > 0 and run >= MILESTONES[tf][0]
                and (day - first).days >= MIN_HISTORY_DAYS)
         if mile or rec:
-            out.append({"i": i, "day": day, "side": SIDE[s], "kind": "streak", "n": run, "record": rec,
+            out.append({"i": i, "day": day, "side": SIDE[s], "kind": "streak", "n": run, "record": rec, "prev_best": best[s],
                         "since": first.year})
     return out
 
@@ -143,15 +144,21 @@ def chart_url(x: dict) -> str:
 
 
 def message(x: dict) -> str:
+    """Макет 18.11: срез; что случилось; цифры — сумма за серию и прежняя самая долгая (у рекорда)."""
     head = f"{signal_marks.FIRE + ' ' if x.get('record') else ''}<b>{html.escape(x['name'])}</b>\n"
+    tf_word = {"1d": "за день", "1w": "за неделю", "1m": "за месяц"}[x["tf"]]
     if x["kind"] == "break":
         opp = "out" if x["side"] == "in" else "in"
-        body = f"{WORD[x['side']]} после {span_gen(x['n'], x['tf'])} {WORD_GEN[opp]}\n"
+        line = f"{WORD[x['side']]} после {span_gen(x['n'], x['tf'])} {WORD_GEN[opp]}"
+        nums = f"{bn(x['flow'])} {tf_word}" if x.get("flow") is not None else ""
     else:
-        body = f"{WORD[x['side']]} идёт {span(x['n'], x['tf'])} подряд\n"
+        line = f"{WORD[x['side']]} идёт {span(x['n'], x['tf'])} подряд"
         if x.get("record"):
-            body += f"Самая долгая серия {WORD_GEN[x['side']]} с {x['since']} года\n"
-    return head + body.rstrip("\n")
+            line += f" — самая долгая серия с {x['since']} года"
+        nums = f"{bn(x['run_sum'])} за серию" if x.get("run_sum") is not None else ""
+        if x.get("record") and x.get("prev_best"):
+            nums += f" · прежняя самая долгая — {span(x['prev_best'], x['tf'])}"
+    return head + html.escape(line) + (f"\n{html.escape(nums)}" if nums else "")
 
 
 def senior_only(new: list) -> list:

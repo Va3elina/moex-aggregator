@@ -139,12 +139,17 @@ def test_mark_three_tiers():
 
 
 def test_message_and_link():
-    x = {**fn.slices(CATS)[1], "tf": "1w", "side": "out", "window": "за 2 года", "day": date(2026, 10, 24)}
+    x = {**fn.slices(CATS)[1], "tf": "1w", "side": "out", "window": "за 2 года", "day": date(2026, 10, 24),
+         "flow": -5.33, "prev_day": "2024-08-30", "prev_flow": -6.1}
     msg = fn.message(x)
-    assert msg == fn.signal_marks.PULSE + " <b>Облигации · Длинные</b>\nОтток за неделю\nРекорд за 2 года"
+    assert msg == (fn.signal_marks.PULSE + " <b>Облигации · Длинные</b>\nОтток за неделю — рекорд за 2 года\n"
+                   "−5,3 млрд ₽ за неделю · сильнее было 30 авг 2024: −6,1 млрд ₽")
+    bars = [{"period_end": "2020-12-20", "flow": -4.3}, {"period_end": "2021-01-01", "flow": 1.0}, {"period_end": "2026-10-24", "flow": -5.33}]
+    m = fn.message({**x, "window": "за всё время", "_bars": bars})
+    assert "прежний рекорд −4,3 млрд ₽, 20 дек 2020" in m
     # ссылка — кнопкой «Открыть график» под сообщением (signals/framesignal._markup)
     assert "/funds-money?category=bonds&funds=1,2&tf=1w&period=3y" in fn.chart_url(x)
-    assert "млрд" not in msg and "₽" not in msg                # цифр потока в сообщении нет
+    # цифры потока в сообщении есть с 18.11 (макет уведомлений; прежнее правило 13.10 «цифры не нужны» снято)
 
 
 def test_cooldown_key_per_slice_side_horizon():

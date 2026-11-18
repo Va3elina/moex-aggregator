@@ -102,16 +102,22 @@ function queueSave(prefs: object, onError: (text: string) => void) {
   });
 }
 /** Виды сигналов бота — ключи как в signals/signal_prefs.TYPES; частота — по факту отправок. */
-const SIGNAL_TYPES: { key: string; title: string; window?: boolean; assets?: boolean }[] = [
-  { key: 'oi_record', title: 'Рекорды позиций физлиц', window: true, assets: true },
-  { key: 'funds_flow', title: 'Рекорды притоков и оттоков фондов', window: true },
-  { key: 'funds_streak', title: 'Серии притоков и оттоков' },
-  { key: 'season', title: 'Сезонность', assets: true },
-  { key: 'strength', title: 'Сила рынка' },
-  { key: 'buffett', title: 'Индикатор Баффетта' },
-  { key: 'fund_trades', title: 'Сделки фондов' },
-  { key: 'cbr_flows', title: 'Потоки капитала ЦБ' },
+/** Виды сигналов бота — ключи как в signals/signal_prefs.TYPES, сгруппированы по индикаторам в порядке шапки сайта
+ *  (Layout.tsx: Открытые позиции → Деньги в фондах → Сделки фондов → Сила рынка → Сезонность → Поток капитала →
+ *  Индикатор Баффетта). */
+const SIGNAL_GROUPS: { title: string; types: { key: string; title: string; window?: boolean; assets?: boolean }[] }[] = [
+  { title: 'Открытые позиции', types: [{ key: 'oi_record', title: 'Рекорды позиций физлиц', window: true, assets: true }] },
+  { title: 'Деньги в фондах', types: [
+    { key: 'funds_flow', title: 'Рекорды притоков и оттоков', window: true },
+    { key: 'funds_streak', title: 'Серии притоков и оттоков' },
+  ] },
+  { title: 'Сделки фондов', types: [{ key: 'fund_trades', title: 'Сделки фондов' }] },
+  { title: 'Сила рынка', types: [{ key: 'strength', title: 'Края и смена режима' }] },
+  { title: 'Сезонность', types: [{ key: 'season', title: 'Начало сезонного периода', assets: true }] },
+  { title: 'Поток капитала', types: [{ key: 'cbr_flows', title: 'Новый обзор ЦБ' }] },
+  { title: 'Индикатор Баффетта', types: [{ key: 'buffett', title: 'Минимумы и максимумы' }] },
 ];
+const SIGNAL_TYPES = SIGNAL_GROUPS.flatMap((g) => g.types);
 const MIN_WINDOWS: [MinWindow, string][] = [['3m', '3 мес'], ['6m', 'Полгода'], ['1y', 'Год'], ['all', 'Всё время']];
 const MARKETS = ['Акции', 'Валюта', 'Индексы', 'Сырьё'];
 /** Код для логотипа сайта (InstrumentIcon): у фьючерса — базовый тикер, у сезонности — тикер акции или индекса. */
@@ -487,15 +493,19 @@ export default function TgSignalsApp() {
         </div>
         {/* всё выключено — остальные настройки видны, но затемнены и не нажимаются (Вадим 18.11) */}
         <div className={prefs.on === false ? 'tgs-off' : undefined} aria-disabled={prefs.on === false}>
-        <div className="tgs-h">Что присылать</div>
-        <div className="tgs-sec">
-          {SIGNAL_TYPES.map((t) => (
-            <div key={t.key} className="tgs-row">
-              <button type="button" className="tgs-g tgs-btn" onClick={() => { setTypeKey(t.key); go('type'); }}>{t.title}</button>
-              {sw(typeOn(t.key), t.title, (on) => setType(t.key, { on }))}
+        {SIGNAL_GROUPS.map((g) => (
+          <div key={g.title}>
+            <div className="tgs-h">{g.title}</div>
+            <div className="tgs-sec">
+              {g.types.map((t) => (
+                <div key={t.key} className="tgs-row">
+                  <button type="button" className="tgs-g tgs-btn" onClick={() => { setTypeKey(t.key); go('type'); }}>{t.title}</button>
+                  {sw(typeOn(t.key), t.title, (on) => setType(t.key, { on }))}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
         <div className="tgs-gap" />
         <div className="tgs-sec">
           <button type="button" className="tgs-row" onClick={() => go('quiet')}><span className="tgs-g">Тихие часы</span><span className="tgs-v">{prefs.quiet?.on ? `${prefs.quiet.from}–${prefs.quiet.to}` : 'выкл'}</span><Chevron /></button>

@@ -45,15 +45,89 @@ def _markup(meta: dict | None, chart_url: str | None) -> str | None:
     if not meta and not chart_url:
         return None
     import json
-    from signals import signal_prefs
+    from signals import signal_marks, signal_prefs
     row = []
     if chart_url:
         # у сделок фондов и потоков ЦБ на сайте таблицы, а не график
         label = "Открыть на сайте" if (meta or {}).get("type") in ("fund_trades", "cbr_flows") else "Открыть график"
-        row.append({"text": label, "url": chart_url})
+        row.append({"text": label, "url": chart_url, "icon_custom_emoji_id": signal_marks.CHART_ID})
     if meta:
-        row.append({"text": "Настройки", "web_app": {"url": signal_prefs.settings_url(SITE, meta)}})
+        row.append({"text": "Настройки", "web_app": {"url": signal_prefs.settings_url(SITE, meta)},
+                    "icon_custom_emoji_id": signal_marks.GEAR_ID})
     return json.dumps({"inline_keyboard": [row]}, ensure_ascii=False)
+
+
+def rich_html(caption: str, photo: bool) -> str | None:
+    """Подпись сигнала → разметка rich message (Вадим 18.11: история — настоящим сворачиваемым блоком Telegram, а не
+    цитатой): картинка, текст абзацем, «История…» — <details> с таблицей. Блок истории в подписи — формат
+    signals/signal_history.block: <blockquote expandable><b>Заголовок</b>\nшапка · …\nстрока · …\nподпись</blockquote>.
+    Истории нет — None (обычное сообщение)."""
+    import re
+    m = re.search(r"\n?<blockquote expandable>(.*?)</blockquote>", caption, re.S)
+    if not m:
+        return None
+    main = caption[:m.start()].strip().replace("\n", "<br/>")
+    lines = m.group(1).split("\n")
+    title = re.sub(r"</?b>", "", lines[0])
+    head, rows, foot = None, [], []
+    for ln in lines[1:]:
+        cells = ln.split(" · ")
+        if len(cells) > 1 and head is None:
+            head = cells
+        elif len(cells) > 1:
+            rows.append(cells)
+        else:
+            foot.append(ln)
+    th = "".join(f"<th>{c}</th>" for c in head or [])
+    tr = "".join("<tr>" + "".join(f'<td align="{"left" if k == 0 else "right"}">{c}</td>' for k, c in enumerate(r)) + "</tr>"
+                 for r in rows)
+    table = f"<table striped compact><tr>{th}</tr>{tr}</table>" if rows else ""
+    footer = "".join(f"<footer>{f}</footer>" for f in foot)
+    img = '<img src="tg://photo?id=p0"/>' if photo else ""
+    return f"{img}<p>{main}</p><details><summary>{title}</summary>{table}{footer}</details>"
+
+
+def _no_icons(kb: str | None) -> str | None:
+    """Клавиатура без значков на кнопках: если Telegram не примет icon_custom_emoji_id, кнопки останутся."""
+    import json
+    if not kb:
+        return kb
+    k = json.loads(kb)
+    for row in k.get("inline_keyboard", []):
+        for b in row:
+            b.pop("icon_custom_emoji_id", None)
+    return json.dumps(k, ensure_ascii=False)
+
+
+def _send_rich(root: str, tok: str, chat: str, html_: str, png: bytes | None, kb: str | None, quiet: bool) -> bool:
+    """sendRichMessage (Bot API 10.1+); с кнопками, не принял — без них. False — пусть идёт обычный путь."""
+    import json
+    rich = {"html": html_}
+    files = None
+    if png:
+        rich["media"] = [{"id": "p0", "media": {"type": "photo", "media": "attach://p0"}}]
+        files = {"p0": ("signal.png", png, "image/png")}
+    data = {"chat_id": chat, "rich_message": json.dumps(rich, ensure_ascii=False), "disable_notification": quiet}
+    for variant in ((kb, _no_icons(kb), None) if kb else (None,)):
+        with_kb = variant is not None
+        if with_kb:
+            data["reply_markup"] = variant
+        else:
+            data.pop("reply_markup", None)
+        try:
+            r = requests.post(f"{root}/bot{tok}/sendRichMessage", timeout=(10, 40), data=data, files=files)
+            if r.json().get("ok"):
+                return True
+            print(f"[framesignal] чат {chat}: rich не принят{' (с кнопками)' if with_kb else ''}: "
+                  f"{r.text[:200].replace(tok, '<REDACTED>')}")
+        except requests.ReadTimeout:
+            # запрос ушёл, ответа нет — Telegram мог его принять: не повторяем, иначе у получателя 2–3 копии (ревью)
+            print(f"[framesignal] чат {chat}: rich — нет ответа, считаю отправленным")
+            return True
+        except requests.RequestException as e:          # не дошли до Telegram/релея — дальше обычный путь
+            print(f"[framesignal] чат {chat}: rich: {str(e).replace(tok, '<REDACTED>')}")
+            return False
+    return False
 
 
 def send(text: str, tag: str = "framesignal", bot: str = "signal", silent: bool = False,
@@ -69,15 +143,22 @@ def send(text: str, tag: str = "framesignal", bot: str = "signal", silent: bool 
         return True                       # все получатели этот сигнал отключили — это не сбой
     root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/")
     kb = _markup(meta, chart_url)
+    rich = rich_html(text, photo=False)
     ok = False
     for chat, quiet in targets:
         for tok in toks:
+            if rich and _send_rich(root, tok, chat, rich, None, kb, quiet):
+                ok = True
+                break
             try:
                 data = {"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True,
                         "disable_notification": quiet}
                 if kb:
                     data["reply_markup"] = kb
                 r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data=data)
+                if not r.json().get("ok") and kb:          # сначала без значков на кнопках
+                    data["reply_markup"] = _no_icons(kb)
+                    r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data=data)
                 if not r.json().get("ok") and kb:          # кнопки не приняты — сигнал важнее кнопок
                     print(f"[{tag}] чат {chat}: с кнопками не принято, шлю без них: {r.text[:200].replace(tok, '<REDACTED>')}")
                     data.pop("reply_markup")
@@ -103,15 +184,23 @@ def send_photo(png: bytes, caption: str, tag: str = "framesignal", bot: str = "s
         return True
     root = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org").rstrip("/")
     kb = _markup(meta, chart_url)
+    rich = rich_html(caption, photo=True)
     ok = False
     for chat, quiet in targets:
         for tok in toks:
+            if rich and _send_rich(root, tok, chat, rich, png, kb, quiet):
+                ok = True
+                break
             try:
                 data = {"chat_id": chat, "caption": caption, "parse_mode": "HTML", "disable_notification": quiet}
                 if kb:
                     data["reply_markup"] = kb
                 r = requests.post(f"{root}/bot{tok}/sendPhoto", timeout=60, data=data,
                                   files={"photo": ("signal.png", png, "image/png")})
+                if not r.json().get("ok") and kb:          # сначала без значков на кнопках
+                    data["reply_markup"] = _no_icons(kb)
+                    r = requests.post(f"{root}/bot{tok}/sendPhoto", timeout=60, data=data,
+                                      files={"photo": ("signal.png", png, "image/png")})
                 use_kb = bool(kb)
                 if not r.json().get("ok") and kb:
                     print(f"[{tag}] чат {chat}: фото с кнопками не принято, шлю без них: {r.text[:200].replace(tok, '<REDACTED>')}")
