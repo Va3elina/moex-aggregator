@@ -143,7 +143,8 @@ def signal_assets(user: User = Depends(get_current_user), db: Session = Depends(
         GROUP BY sectype ORDER BY min("group"), min(name)"""), {"g": list(SIGNAL_GROUPS)}).all()
     stocks = db.execute(text("""
         SELECT stock_ticker, max(display_name) FROM ticker_futures_map
-        WHERE display_name IS NOT NULL GROUP BY stock_ticker ORDER BY max(display_name)""")).all()
+        WHERE display_name IS NOT NULL AND stock_ticker <> ALL(:ix)
+        GROUP BY stock_ticker ORDER BY max(display_name)"""), {"ix": [c for c, _, _ in SEASON_INDEXES]}).all()
     return {
         "oi_record": [{"key": f"oi:{s}", "code": s, "name": n, "group": g} for s, n, g in fut],
         "season": [{"key": f"se:{c}", "code": c, "name": n, "group": g} for c, n, g in SEASON_INDEXES]

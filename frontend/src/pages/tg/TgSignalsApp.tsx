@@ -153,8 +153,9 @@ export default function TgSignalsApp() {
   const [typeKey, setTypeKey] = useState<string>('oi_record');
   const [query, setQuery] = useState('');
   const [assets, setAssets] = useState<Record<string, AssetItem[]>>({});
+  const [assetsError, setAssetsError] = useState(false);
   /** Скрытые активы вида: свои у каждого вида сигналов (фьючерс у позиций и акция у сезонности — разные вещи). */
-  const hiddenOf = (k: string) => prefs.types?.[k]?.hidden ?? [];
+  const hiddenOf = (k: string) => Array.from(new Set([...(prefs.types?.[k]?.hidden ?? []), ...(prefs.hidden ?? [])]));
   const setPrefs = (next: SignalPrefs) => {
     setPrefsState(next);
     queueSave(next, setToast);
@@ -163,9 +164,10 @@ export default function TgSignalsApp() {
   const setType = (k: string, patch: Partial<TypePrefs>) =>
     setPrefs({ ...prefs, types: { ...(prefs.types ?? {}), [k]: { ...(prefs.types?.[k] ?? {}), ...patch } } });
   const toggleHidden = (type: string, key: string, hide: boolean, name?: string | null) => {
+    // прежний общий список (prefs.hidden) переносим в вид: вернуть актив можно отсюда же
     const cur = hiddenOf(type);
     const next = hide ? Array.from(new Set([...cur, key])) : cur.filter((k) => k !== key);
-    setType(type, { hidden: next });
+    setPrefs({ ...prefs, hidden: [], types: { ...(prefs.types ?? {}), [type]: { ...(prefs.types?.[type] ?? {}), hidden: next } } });
     if (name) say(hide ? `${name}: не присылаем` : `${name}: присылаем`);
   };
 
@@ -232,16 +234,18 @@ export default function TgSignalsApp() {
 
   // Списки активов для скрытия — свои у вида (api/routers/user_settings.py signal_assets)
   useEffect(() => {
-    if (screen !== 'hidden' || Object.keys(assets).length) return;
+    if (screen !== 'hidden' || Object.keys(assets).length || assetsError) return;
     let dead = false;
     (async () => {
+      let ok = false;
       try {
         const r = await apiFetch('/api/settings/signals/assets');
-        if (r.ok && !dead) setAssets((await r.json()) as Record<string, AssetItem[]>);
-      } catch { /* сеть: список пустой */ }
+        if (r.ok && !dead) { setAssets((await r.json()) as Record<string, AssetItem[]>); ok = true; }
+      } catch { /* сеть — ниже */ }
+      if (!dead) setAssetsError(!ok);
     })();
     return () => { dead = true; };
-  }, [screen, assets]);
+  }, [screen, assets, assetsError]);
 
   // Кабинет: тариф и привязка Telegram — настоящие. Перечитываем при возврате в окно (после привязки в боте).
   useEffect(() => {
@@ -556,7 +560,11 @@ export default function TgSignalsApp() {
       <>
         <div className="tgs-gap" />
         <input className="tgs-search" type="search" placeholder="Поиск" value={query} onChange={(e) => setQuery(e.target.value)} />
-        {!list.length && <div className="tgs-f" style={{ paddingTop: 16 }}>Загружаем список…</div>}
+        {!list.length && !assetsError && <div className="tgs-f" style={{ paddingTop: 16 }}>Загружаем список…</div>}
+        {!list.length && assetsError && (
+          <div className="tgs-sec" style={{ marginTop: 12 }}><button type="button" className="tgs-row tgs-center tgs-accent" onClick={() => setAssetsError(false)}>Не загрузилось — попробовать ещё раз</button></div>
+        )}
+        {list.length > 0 && q && !shown.length && <div className="tgs-f" style={{ paddingTop: 16 }}>Ничего не найдено</div>}
         {groups.map((g) => (
           <div key={g}>
             <div className="tgs-h">{g}</div>
