@@ -30,6 +30,7 @@ from datetime import date, datetime, timedelta, timezone  # noqa: E402
 
 import pandas as pd  # noqa: E402
 
+from signals import signal_marks  # noqa: E402
 from signals.framesignal import SITE, send  # noqa: E402
 from signals.insights import fresh, season  # noqa: E402
 
@@ -77,10 +78,10 @@ def chart_url(p: dict) -> str:
 def message(p: dict, start: date, today: date) -> str:
     up = p["dir"] == "up"
     end = start + timedelta(days=p["days"])
-    head = "📅"                      # сезонность — календарь, сторона словами (Вадим 26.10)
+    head = signal_marks.logo("se:" + p["code"])   # логотип актива вместо 📅: только свои значки (Вадим 18.11)
     what = "Сезонность: время для покупки" if up else "Сезонность: период снижения"
     hits = f"{'Рост' if up else 'Падение'} в {p['hits']} из {p['years']} лет"
-    return (f"{head} <b>{html.escape(p['name'])}</b>\n{what}\n{span((end - today).days)}, до {end:%d.%m}\n{hits}\n"
+    return (f"{head}<b>{html.escape(p['name'])}</b>\n{what}\n{span((end - today).days)}, до {end:%d.%m}\n{hits}\n"
             f'<a href="{html.escape(chart_url(p))}">График →</a>')
 
 

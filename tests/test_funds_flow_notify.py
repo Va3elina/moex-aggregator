@@ -153,3 +153,13 @@ def test_cooldown_key_per_slice_side_horizon():
     assert not fn.due(x, prev, date(2026, 10, 24))
     assert fn.due({**x, "window": "за год"}, prev, date(2026, 10, 24))
     assert fn.due(x, prev, date(2026, 10, 20) + timedelta(days=fn.COOLDOWN_DAYS))
+
+
+def test_logo_emoji():
+    from signals import signal_marks as sm
+    sm.LOGOS["oi:TEST"] = "123"
+    try:
+        assert sm.logo("oi:TEST") == '<tg-emoji emoji-id="123">▫️</tg-emoji> '
+        assert sm.logo("oi:нет-такого") == ""                   # нет логотипа — без значка
+    finally:
+        del sm.LOGOS["oi:TEST"]

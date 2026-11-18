@@ -177,7 +177,8 @@ def mark(w: str) -> str:
 
 def message(x: dict, close_day=None) -> str:
     tail = f" · по закрытию {pd.Timestamp(close_day):%d.%m}" if close_day is not None else ""
-    return (f"{mark(x['window'])}<b>{html.escape(x['name'])}</b>\n{LEGS[x['leg']]}\nРекорд {x['window']}{tail}\n"
+    return (f"{mark(x['window'])}{signal_marks.logo('oi:' + x['sec'])}<b>{html.escape(x['name'])}</b>\n"
+            f"{LEGS[x['leg']]}\nРекорд {x['window']}{tail}\n"
             f'<a href="{html.escape(chart_url(x))}">График →</a>')
 
 
