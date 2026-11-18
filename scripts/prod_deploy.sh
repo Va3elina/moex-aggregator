@@ -133,6 +133,12 @@ if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|Crypto/|C
 fi
 
 # alert-bot — host-side systemd; рестарт только если менялся его код
+# Движок картинок сигналов (frontend/chart-render): тот же код графика, что у сайта, — пересобираем образ при любой
+# правке frontend/ и при первом деплое (образа ещё нет). Сборка короткая: зависимости в кэше слоёв.
+if echo "$changed" | grep -qE '^frontend/' || ! docker image inspect frame-chart-render >/dev/null 2>&1; then
+  echo "=== frontend changed -> rebuild chart-render image ==="
+  docker compose --profile tools build chart-render || echo "!! chart-render не собрался — сигналы уйдут без картинок"
+fi
 if echo "$changed" | grep -qE '^signals/alert_bot\.py$'; then
   echo "=== alert_bot changed -> systemctl restart ==="
   systemctl restart frame-alert-bot

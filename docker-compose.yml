@@ -503,6 +503,15 @@ services:
   # ═══════════════════════════════════════════════════════════════
   # Nginx (reverse proxy + SSL)
   # ═══════════════════════════════════════════════════════════════
+  # Картинки сигналов @framesignalbot: график сайта без браузера (frontend/chart-render). Не служба — образ, который
+  # бот на хосте запускает разово на картинку (signals/record_card.py). Собирается деплоем при правках frontend/.
+  chart-render:
+    build:
+      context: .
+      dockerfile: frontend/chart-render/Dockerfile
+    image: frame-chart-render
+    profiles: ["tools"]
+
   nginx:
     image: nginx:alpine
     restart: always

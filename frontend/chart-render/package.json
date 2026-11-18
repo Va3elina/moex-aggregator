@@ -1,0 +1,11 @@
+{
+  "name": "frame-chart-render",
+  "private": true,
+  "type": "module",
+  "description": "Картинки сигналов @framesignalbot: график сайта без браузера (jsdom + resvg)",
+  "dependencies": {
+    "@napi-rs/canvas": "0.1.65",
+    "@resvg/resvg-js": "2.6.2",
+    "jsdom": "26.1.0"
+  }
+}

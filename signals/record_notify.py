@@ -39,7 +39,8 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from api.database import SessionLocal  # noqa: E402
-from signals.framesignal import SITE, send  # noqa: E402
+from signals.framesignal import SITE, send, send_photo  # noqa: E402
+from signals import record_card  # noqa: E402
 from signals import signal_marks  # noqa: E402
 from signals.insights import data, fresh  # noqa: E402
 from signals.insights import detect as det  # noqa: E402
@@ -129,7 +130,7 @@ def records_close() -> tuple[pd.Timestamp, list]:
                 continue
             w = window(ser.values[:-1].astype(float), ser.index[:-1], float(ser.values[-1]), until)
             if w:
-                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w})
+                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w, "value": float(ser.values[-1])})
     return until, out
 
 
@@ -157,7 +158,7 @@ def records_live() -> tuple[pd.Timestamp | None, list]:
                 continue
             w = window(ser.values.astype(float), ser.index, float(v), day)
             if w:
-                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w})
+                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w, "value": float(v)})
     return day, out
 
 
@@ -235,7 +236,10 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
         if dry_run:
             print(msg + "\n")
             continue
-        if send(msg, NAME, silent=signal_marks.silent(x["window"])):   # рядовые — без звука (Вадим 18.11)
+        # картинка — график сайта с разметкой сигнала (signals/record_card.py); не вышла — текст как раньше
+        png = record_card.picture(x, x["value"], day)
+        quiet = signal_marks.silent(x["window"])               # рядовые — без звука (Вадим 18.11)
+        if (send_photo(png, msg, NAME, silent=quiet) if png else send(msg, NAME, silent=quiet)):
             summary["sent"] += 1
             sent[_key(x)] = {"day": str(pd.Timestamp(day).date()), "rank": RANK[x["window"]]}
         else:
