@@ -166,7 +166,7 @@ def season(p: dict, start: dt.date) -> dict | None:
                      "details": ["Годовая"] + ([rng] if rng else [])},
             "signal": {"headline": f"{word} в {p['hits']} из {p['years']} лет",
                        "colorVar": "--accent" if p["dir"] == "up" else "--funds-flow-negative",
-                       "from": a, "to": b}}
+                       "from": a, "to": b, "dir": p["dir"]}}
 
 
 def picture(kind: str, *args) -> bytes | None:
