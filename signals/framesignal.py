@@ -78,9 +78,17 @@ def rich_html(caption: str, photo: bool) -> str | None:
             rows.append(cells)
         else:
             foot.append(ln)
+    from signals import signal_marks
+
+    def cell(c: str) -> str:                         # рост/падение — значком: цвета текста в Telegram нет
+        if c.endswith("%") and c[:1] == "+":
+            return f"{signal_marks.UP} {c}"
+        if c.endswith("%") and c[:1] == "−":
+            return f"{signal_marks.DOWN} {c}"
+        return c
     th = "".join(f"<th>{c}</th>" for c in head or [])
-    tr = "".join("<tr>" + "".join(f'<td align="{"left" if k == 0 else "right"}">{c}</td>' for k, c in enumerate(r)) + "</tr>"
-                 for r in rows)
+    tr = "".join("<tr>" + "".join(f'<td align="{"left" if k == 0 else "right"}">{cell(c) if k else c}</td>'
+                                  for k, c in enumerate(r)) + "</tr>" for r in rows)
     table = f"<table striped compact><tr>{th}</tr>{tr}</table>" if rows else ""
     footer = "".join(f"<footer>{f}</footer>" for f in foot)
     img = '<img src="tg://photo?id=p0"/>' if photo else ""

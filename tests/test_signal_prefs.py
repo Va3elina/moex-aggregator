@@ -67,6 +67,8 @@ def test_rich_history_details_table():
     assert h.startswith('<img src="tg://photo?id=p0"/><p><b>RL</b><br/>Лонг<br/>602 чел.</p>')
     assert "<details><summary>История · 2 похожих случая</summary><table" in h and h.endswith("</details>")
     assert "<th>через 2 нед</th>" in h and "<footer>В обычный день" in h
+    from signals import signal_marks
+    assert f"{signal_marks.UP} +1,0%" in h and f"{signal_marks.DOWN} −6,9%" in h
     assert fs.rich_html("<b>x</b>\nбез истории", photo=True) is None
 
 
