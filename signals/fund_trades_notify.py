@@ -171,7 +171,7 @@ def run_once(dry_run: bool = False, today: dt.date | None = None) -> dict:
     summary = {"funds": 0, "months": 0, "sent": 0, "failed": 0}
     if not st:                                          # первый прогон: всё уже залитое — молча
         st = {"last_job": max([j["id"] for j in jobs], default=0),
-              "done": {c: v["month"] for c, v in comp.items() if v["complete"]}}
+              "done": {c: v["complete_month"] for c, v in comp.items() if v.get("complete_month")}}
         if not dry_run:
             _save_state(st)
         summary["seeded"] = True
@@ -200,12 +200,13 @@ def run_once(dry_run: bool = False, today: dt.date | None = None) -> dict:
         st["last_job"] = j["id"]
         time.sleep(1.1)
     for cat, v in comp.items():
-        if cat not in CAT or not v["complete"] or st.get("done", {}).get(cat, "") >= v["month"]:
+        full = v.get("complete_month")
+        if cat not in CAT or not full or st.get("done", {}).get(cat, "") >= full:
             continue
         summary["months"] += 1
-        if send_month(cat, v["month"], dry_run):
+        if send_month(cat, full, dry_run):
             summary["sent"] += 0 if dry_run else 1
-            st.setdefault("done", {})[cat] = v["month"]
+            st.setdefault("done", {})[cat] = full
         else:
             summary["failed"] += 1
             ok = False
