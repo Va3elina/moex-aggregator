@@ -54,3 +54,29 @@ def test_card_period_and_peaks():
     e = [x for x in _events(vals) if x["kind"] == "edge"][-1]
     assert sn.card(rows, e)["meta"]["details"][1] == "1 год"
     assert "Прошлый раз" in sn.message(rows, e)
+
+
+def test_partial_failure_no_duplicate(monkeypatch, tmp_path):
+    # день с двумя событиями (край и смена режима): второе не дошло — повтор шлёт только его
+    monkeypatch.setattr(sn, "STATE_FILE", str(tmp_path / "st.json"))
+    monkeypatch.setattr(sn, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(sn.time, "sleep", lambda s: None)
+    monkeypatch.setattr(sn, "picture", lambda rows, e: None)
+    vals = [70] * 40 + [10]                                        # с 70 сразу в 10: край low + режим down
+    rows = _rows(vals)
+    monkeypatch.setattr(sn, "load", lambda: rows)
+    today = dt.date.fromisoformat(rows[-1][0]) + dt.timedelta(days=1)
+    monkeypatch.setattr(sn, "load", lambda: rows[:-1])
+    sn.run_once(today=today)                                       # первый прогон — молча, до предпоследнего дня
+    monkeypatch.setattr(sn, "load", lambda: rows)
+    sent = []
+    monkeypatch.setattr(sn, "send", lambda msg, tag, **kw: (sent.append(msg), "половины" not in msg)[1])
+    sn.run_once(today=today)
+    assert len(sent) == 2
+    sent.clear()
+    monkeypatch.setattr(sn, "send", lambda msg, tag, **kw: (sent.append(msg), True)[1])
+    sn.run_once(today=today)
+    assert len(sent) == 1 and "половины" in sent[0]
+    sent.clear()
+    sn.run_once(today=today)
+    assert sent == []

@@ -1,8 +1,8 @@
 """Настройки сигналов @framesignalbot (Вадим 18.11.2026): что присылать, кого не присылать, тихие часы.
 
-Где живут: мини-приложение /tg → экран «Сигналы» пишет их в localStorage под ключом PREFS_KEY, а штатная синхронизация
-настроек сайта (services/settingsSync.ts: всё под «frame:» уезжает на сервер) кладёт их в user_settings.data. Бот читает
-их по получателю: users.telegram_chat_id = чат → user_settings.data[PREFS_KEY] (строка JSON). Нет настроек — шлём всё.
+Где живут: мини-приложение /tg → экран «Сигналы» сохраняет их ручкой PUT /api/settings/signals в user_settings.data
+под серверным ключом PREFS_KEY (синхронизация сайта такие ключи не видит и не затирает). Бот читает по получателю:
+users.telegram_chat_id = чат → user_settings.data[PREFS_KEY] (строка JSON). Нет настроек — шлём всё.
 
 Формат (всё необязательное, по умолчанию «включено»):
     {"on": true,
@@ -20,7 +20,7 @@ import json
 import os
 import urllib.parse
 
-PREFS_KEY = "frame:signals:prefs"
+PREFS_KEY = "srv:signals:prefs"          # api/routers/user_settings.py SIGNALS_KEY
 # виды сигналов — те же ключи у мини-приложения (frontend/src/pages/tg/TgSignalsApp.tsx, SIGNAL_TYPES)
 TYPES = ("oi_record", "funds_flow", "funds_streak", "season", "strength", "buffett", "fund_trades", "cbr_flows")
 # порог окна рекорда: «рекорд не короче» → ранг окна (как signals.record_notify.WINDOWS)
@@ -71,7 +71,16 @@ def _quiet(q: dict | None, now: dt.datetime) -> bool:
     return (f <= cur or cur < t) if f > t else (f <= cur < t)
 
 
-def decide(p: dict | None, meta: dict | None, now: dt.datetime | None = None) -> str | None:
+def decide(p, meta: dict | None, now: dt.datetime | None = None) -> str | None:
+    """Обёртка: битые настройки (не тот тип где-то внутри) не должны ронять отправку — тогда шлём как есть."""
+    try:
+        return _decide(p if isinstance(p, dict) else None, meta, now)
+    except Exception as e:  # noqa: BLE001
+        print(f"[signal_prefs] настройки не разобраны: {type(e).__name__}: {e}")
+        return "sound"
+
+
+def _decide(p: dict | None, meta: dict | None, now: dt.datetime | None = None) -> str | None:
     """Что делать с сигналом для получателя: None — не слать, "silent" — без звука, "sound" — как есть.
     meta: {"type": вид, "asset": "oi:SR" | "se:SBER" | None, "window": «за год» | None, "market": «Акции» | None,
            "mode": "positions" | "participants" | None}."""

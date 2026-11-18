@@ -195,8 +195,10 @@ def _load_state() -> dict:
 
 def _save_state(st: dict) -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
-    with open(STATE_FILE, "w", encoding="utf-8") as fh:
+    tmp = STATE_FILE + ".tmp"                   # атомарно: оборванная запись не оставит битый JSON
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(st, fh, ensure_ascii=False)
+    os.replace(tmp, STATE_FILE)
 
 
 def send_month(db, day: str, dry_run: bool) -> bool:

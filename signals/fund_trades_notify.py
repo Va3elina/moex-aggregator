@@ -39,7 +39,8 @@ GEN = ["января", "февраля", "марта", "апреля", "мая",
 CAT = {"stocks": ("акций", "Фонды акций"), "bonds": ("облигаций", "Фонды облигаций")}
 # кнопки и настройки получателя (signals/signal_prefs): «фонд отчитался» — без звука
 FUND_KW = {"silent": True, "meta": {"type": "fund_trades"}, "chart_url": "https://framedata.ru/fund-trades"}
-FRESH_MONTHS = 2                    # «фонд отчитался» — только за свежие месяцы (перечитки истории не шлём)
+FRESH_MONTHS = 2
+JOB_WINDOW_DAYS = 14                # справки, залитые за столько дней, сверяются со списком показанных                    # «фонд отчитался» — только за свежие месяцы (перечитки истории не шлём)
 
 
 def dump(*args: str):
@@ -165,56 +166,74 @@ def send_month(cat: str, ym: str, dry_run: bool) -> bool:
 
 
 def run_once(dry_run: bool = False, today: dt.date | None = None) -> dict:
+    """Состояние сохраняется после каждой удачной отправки: сбой одного фонда не повторяет уже ушедшие сообщения
+    (ревью 18.11). Показанные справки — множество id за окно JOB_WINDOW_DAYS (не курсор: заливка идёт не по порядку)."""
     today = today or dt.date.today()
     st = _load_state()
     comp = dump("complete")
-    jobs = dump("imported", str(st.get("last_job", 0)))
+    jobs = dump("imported", str(JOB_WINDOW_DAYS))
     summary = {"funds": 0, "months": 0, "sent": 0, "failed": 0}
     if not st:                                          # первый прогон: всё уже залитое — молча
-        st = {"last_job": max([j["id"] for j in jobs], default=0),
+        st = {"seen": [j["id"] for j in jobs],
               "done": {c: v["complete_month"] for c, v in comp.items() if v.get("complete_month")}}
         if not dry_run:
             _save_state(st)
         summary["seeded"] = True
         return summary
-    ok = True
+    if "seen" not in st:                                # прежний формат: курсор last_job
+        st["seen"] = [j["id"] for j in jobs if j["id"] <= st.get("last_job", 0)]
+    seen = set(st["seen"])
+    save = (lambda: None) if dry_run else (lambda: _save_state(
+        {**st, "seen": sorted(i for i in seen if i in {j["id"] for j in jobs})}))
     for j in jobs:
+        if j["id"] in seen:
+            continue
         if not fresh(j["period"], today) or j["category"] not in CAT:
-            st["last_job"] = j["id"]
+            seen.add(j["id"])
             continue
         summary["funds"] += 1
-        f = dump("fund", j["ticker"], j["period"])
-        f.setdefault("uk_id", j.get("uk_id"))
-        msg = fund_message(f, j["period"])
-        png = render(fund_card(f, j["period"])) if (f["buy"] or f["sell"]) else None
+        try:
+            f = dump("fund", j["ticker"], j["period"])
+            f.setdefault("uk_id", j.get("uk_id"))
+            msg = fund_message(f, j["period"])
+            png = render(fund_card(f, j["period"])) if (f["buy"] or f["sell"]) else None
+        except Exception as e:  # noqa: BLE001 — фонд не собрался (нет в справочнике сайта и т. п.): не держим остальных
+            print(f"[{NAME}] {j['ticker']} {j['period']}: {type(e).__name__}: {e}")
+            summary["failed"] += 1
+            seen.add(j["id"])                           # не пытаемся каждые полчаса — ошибка в логе
+            save()
+            continue
         if dry_run:
             print(msg)
             from signals.funds_card import dry
             dry(png, f"{NAME}_fund_{j['ticker']}")
             print()
-        elif (send_photo(png, msg, NAME, **FUND_KW) if png else send(msg, NAME, **FUND_KW)):
+        elif send_photo(png, msg, NAME, **FUND_KW) if png else send(msg, NAME, **FUND_KW):
             summary["sent"] += 1
         else:
             summary["failed"] += 1
-            ok = False
-            break
-        st["last_job"] = j["id"]
+            continue                                    # не дошло — повторим следующим прогоном
+        seen.add(j["id"])
+        save()
         time.sleep(1.1)
     for cat, v in comp.items():
         full = v.get("complete_month")
         if cat not in CAT or not full or st.get("done", {}).get(cat, "") >= full:
             continue
         summary["months"] += 1
-        if send_month(cat, full, dry_run):
+        try:
+            okm = send_month(cat, full, dry_run)
+        except Exception as e:  # noqa: BLE001
+            print(f"[{NAME}] итог {cat} {full}: {type(e).__name__}: {e}")
+            okm = False
+        if okm:
             summary["sent"] += 0 if dry_run else 1
             st.setdefault("done", {})[cat] = full
+            save()
         else:
             summary["failed"] += 1
-            ok = False
-    if not dry_run and ok:
-        _save_state(st)
+    save()
     return summary
-
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

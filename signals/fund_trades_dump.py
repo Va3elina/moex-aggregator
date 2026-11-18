@@ -9,7 +9,7 @@
                          раздела с полным срезом прошлого месяца есть полный срез этого — как data_release_scan)
   month CAT YYYY-MM    — сделки раздела за месяц: топ-5 покупок и продаж (млн ₽), число фондов, топ-10 портфеля
   fund TICKER YYYY-MM  — сделки фонда за месяц: топ-3 покупок и продаж
-  imported SINCE_ID    — справки, залитые агентом после SINCE_ID (для сообщений «фонд отчитался»)
+  imported DAYS        — справки, залитые агентом за последние DAYS дней (для сообщений «фонд отчитался»)
 """
 import calendar
 import json
@@ -125,12 +125,14 @@ def fund(db, ticker: str, ym: str) -> dict:
             "buy": pick(buy), "sell": pick(sell)}
 
 
-def imported(db, since: int) -> list:
+def imported(db, days: int) -> list:
+    """Справки, залитые агентом за последние days дней. По времени заливки, а не по номеру: агент отвечает не по
+    порядку (19.10: #938 залита раньше #937) — курсор по id терял бы фонды (ревью 18.11)."""
     rows = db.execute(text("""
         SELECT j.id, j.ticker, j.period, f.name, f.uk_id, f.category
         FROM scha_jobs j JOIN funds f ON f.ticker = j.ticker
-        WHERE j.status = 'imported' AND j.id > :s ORDER BY j.id
-    """), {"s": since}).all()
+        WHERE j.status = 'imported' AND j.updated_at > now() - make_interval(days => :d) ORDER BY j.updated_at, j.id
+    """), {"d": days}).all()
     return [{"id": r[0], "ticker": r[1], "period": r[2], "name": r[3], "uk_id": r[4], "category": r[5]} for r in rows]
 
 

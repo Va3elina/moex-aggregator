@@ -7,7 +7,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiFetch } from '../../services/api';
-import { usePersistedState } from '../../hooks/usePersistedState';
 import './tg.css';
 
 interface TgButton { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void }
@@ -85,11 +84,12 @@ function readWait(): Wait | null {
 type Screen = 'cabinet' | 'signals' | 'type' | 'hidden' | 'quiet';
 type MinWindow = '3m' | '6m' | '1y' | 'all';
 interface TypePrefs { on?: boolean; min?: MinWindow; markets?: string[]; modes?: string[] }
-interface SignalPrefs { on?: boolean; types?: Record<string, TypePrefs>; hidden?: string[]; quiet?: { on: boolean; from: string; to: string } }
+interface SignalPrefs { on?: boolean; types?: Record<string, TypePrefs>; hidden?: string[]; names?: Record<string, string>; quiet?: { on: boolean; from: string; to: string } }
 interface AssetItem { key: string; code: string; name: string; kind: string }
 
-/** Ключ настроек — тот же читает бот (signals/signal_prefs.py, PREFS_KEY). */
-const PREFS_KEY = 'frame:signals:prefs';
+/** Настройки сигналов — своя серверная ручка (api/routers/user_settings.py → ключ srv:signals:prefs, его читает бот
+ *  signals/signal_prefs.py). Не localStorage + общая синхронизация: та затирала бы их со старых вкладок сайта. */
+const PREFS_API = '/api/settings/signals';
 /** Виды сигналов бота — ключи как в signals/signal_prefs.TYPES; частота — по факту отправок. */
 const SIGNAL_TYPES: { key: string; title: string; hint: string; window?: boolean; windowNote?: string; assets?: boolean }[] = [
   { key: 'oi_record', title: 'Рекорды позиций физлиц', hint: 'около 3 в торговый день', window: true, assets: true,
@@ -134,22 +134,30 @@ export default function TgSignalsApp() {
   });
   const [stack, setStack] = useState<Screen[]>(() => (ctx.open ? ['cabinet', 'signals'] : ['cabinet']));
   const screen = stack[stack.length - 1];
-  // Настройки сигналов: лежат под frame:* — штатная синхронизация сайта (services/settingsSync) уносит их на сервер,
-  // бот читает их по привязанному чату (signals/signal_prefs.py). Нет ключа — приходит всё.
-  const [prefs, setPrefs] = usePersistedState<SignalPrefs>(PREFS_KEY, {});
+  // Настройки сигналов: с сервера (PREFS_API), каждое изменение сохраняется сразу. Пустые — приходит всё.
+  const [prefs, setPrefsState] = useState<SignalPrefs>({});
+  const [prefsReady, setPrefsReady] = useState(false);
   const [typeKey, setTypeKey] = useState<string>('oi_record');
   const [query, setQuery] = useState('');
   const [assets, setAssets] = useState<AssetItem[]>([]);
-  const [hiddenNames, setHiddenNames] = usePersistedState<Record<string, string>>('frame:signals:hidden-names', {});
   const hidden = prefs.hidden ?? [];
+  const hiddenNames = prefs.names ?? {};
+  const setPrefs = (next: SignalPrefs) => {
+    setPrefsState(next);
+    void (async () => {
+      try {
+        const r = await apiFetch(PREFS_API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prefs: next }) });
+        if (!r.ok) setToast('Не сохранилось — попробуйте ещё раз');
+      } catch { setToast('Нет связи — настройка не сохранилась'); }
+    })();
+  };
   const typeOn = (k: string) => prefs.types?.[k]?.on !== false;
   const setType = (k: string, patch: Partial<TypePrefs>) =>
     setPrefs({ ...prefs, types: { ...(prefs.types ?? {}), [k]: { ...(prefs.types?.[k] ?? {}), ...patch } } });
   /** Скрыть / вернуть актив; имя запоминаем рядом, чтобы список «Скрыты» был понятен и без поиска. */
   const toggleHidden = (key: string, hide: boolean, name?: string | null) => {
     const next = hide ? Array.from(new Set([...hidden, key])) : hidden.filter((k) => k !== key);
-    setPrefs({ ...prefs, hidden: next });
-    if (hide && name) setHiddenNames({ ...hiddenNames, [key]: name });
+    setPrefs({ ...prefs, hidden: next, names: hide && name ? { ...hiddenNames, [key]: name } : hiddenNames });
     say(hide ? `${name ?? 'Актив'}: больше не присылаем` : `${name ?? 'Актив'}: снова присылаем`);
   };
   const typeSub = (k: string) => {
@@ -197,6 +205,19 @@ export default function TgSignalsApp() {
   const sw = (on: boolean, label: string, set: (v: boolean) => void) => (
     <button type="button" className={`tgs-sw${on ? ' on' : ''}`} aria-pressed={on} aria-label={label} onClick={() => { tap(); set(!on); }} />
   );
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let dead = false;
+    (async () => {
+      try {
+        const r = await apiFetch(PREFS_API);
+        if (r.ok && !dead) setPrefsState(((await r.json()) as { prefs: SignalPrefs }).prefs ?? {});
+      } catch { /* сеть: показываем «всё включено», сохранение повторит запрос */ }
+      if (!dead) setPrefsReady(true);
+    })();
+    return () => { dead = true; };
+  }, [isAuthenticated]);
 
   // Список для поиска «Компании и активы»: фьючерсы (рекорды позиций, ключ oi:<базовый тикер>) и акции/индексы
   // (сезонность, ключ se:<тикер>) — тот же справочник инструментов, что у сайта.
@@ -439,6 +460,8 @@ export default function TgSignalsApp() {
         </div>
       </>
     );
+  } else if ((screen === 'signals' || screen === 'type' || screen === 'hidden' || screen === 'quiet') && !prefsReady) {
+    body = <div className="tgs-f" style={{ paddingTop: 24 }}>Загружаем настройки…</div>;
   } else if (screen === 'signals') {
     const fromName = ctx.name || ctx.asset;
     const hiddenNow = !!ctx.asset && hidden.includes(ctx.asset);
@@ -548,7 +571,7 @@ export default function TgSignalsApp() {
             <div key={k} className="tgs-row"><span className="tgs-g"><span>{nameOf(k)}</span><span className="tgs-s">ни по одному сигналу</span></span><button type="button" className="tgs-lk" onClick={() => toggleHidden(k, false, nameOf(k))}>Вернуть</button></div>
           ))}
         </div>
-        <div className="tgs-f">Скрытая компания не приходит ни в каком виде сигналов: ни рекордом позиции, ни сезонностью.</div>
+        <div className="tgs-f">Фьючерс и акция компании — разные строки: фьючерс — рекорды позиций, акция — сезонность. Индексы и валюты сезонности скрываются кнопкой «Настройки» под их сигналом.</div>
       </>
     );
   } else if (screen === 'quiet') {

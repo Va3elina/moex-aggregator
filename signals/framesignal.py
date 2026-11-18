@@ -48,7 +48,9 @@ def _markup(meta: dict | None, chart_url: str | None) -> str | None:
     from signals import signal_prefs
     row = []
     if chart_url:
-        row.append({"text": "Открыть график", "url": chart_url})
+        # у сделок фондов и потоков ЦБ на сайте таблицы, а не график
+        label = "Открыть на сайте" if (meta or {}).get("type") in ("fund_trades", "cbr_flows") else "Открыть график"
+        row.append({"text": label, "url": chart_url})
     if meta:
         row.append({"text": "Настройки", "web_app": {"url": signal_prefs.settings_url(SITE, meta)}})
     return json.dumps({"inline_keyboard": [row]}, ensure_ascii=False)
@@ -76,6 +78,10 @@ def send(text: str, tag: str = "framesignal", bot: str = "signal", silent: bool 
                 if kb:
                     data["reply_markup"] = kb
                 r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data=data)
+                if not r.json().get("ok") and kb:          # кнопки не приняты — сигнал важнее кнопок
+                    print(f"[{tag}] чат {chat}: с кнопками не принято, шлю без них: {r.text[:200].replace(tok, '<REDACTED>')}")
+                    data.pop("reply_markup")
+                    r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data=data)
                 if r.json().get("ok"):
                     ok = True
                     break
@@ -106,10 +112,20 @@ def send_photo(png: bytes, caption: str, tag: str = "framesignal", bot: str = "s
                     data["reply_markup"] = kb
                 r = requests.post(f"{root}/bot{tok}/sendPhoto", timeout=60, data=data,
                                   files={"photo": ("signal.png", png, "image/png")})
+                if not r.json().get("ok") and kb:
+                    print(f"[{tag}] чат {chat}: фото с кнопками не принято, шлю без них: {r.text[:200].replace(tok, '<REDACTED>')}")
+                    data.pop("reply_markup")
+                    r = requests.post(f"{root}/bot{tok}/sendPhoto", timeout=60, data=data,
+                                      files={"photo": ("signal.png", png, "image/png")})
+                if not r.json().get("ok"):                # картинку не взяли — сигнал уходит текстом, как раньше
+                    print(f"[{tag}] чат {chat}: фото не принято, шлю текстом: {r.text[:200].replace(tok, '<REDACTED>')}")
+                    r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data={
+                        "chat_id": chat, "text": caption, "parse_mode": "HTML", "disable_web_page_preview": True,
+                        "disable_notification": quiet, **({"reply_markup": kb} if kb else {})})
                 if r.json().get("ok"):
                     ok = True
                     break
-                print(f"[{tag}] чат {chat}: фото не принято: {r.text[:200].replace(tok, '<REDACTED>')}")
+                print(f"[{tag}] чат {chat}: не принято: {r.text[:200].replace(tok, '<REDACTED>')}")
             except requests.RequestException as e:
                 print(f"[{tag}] чат {chat}: {str(e).replace(tok, '<REDACTED>')}")
     return ok
@@ -144,12 +160,18 @@ def send_slides(images: list, caption: str, tag: str = "framesignal", bot: str =
                 if kb:
                     data["reply_markup"] = kb
                 r = requests.post(f"{root}/bot{tok}/sendRichMessage", timeout=180, files=files, data=data)
+                if not r.json().get("ok") and kb:
+                    print(f"[{tag}] чат {chat}: карусель с кнопками не принята, шлю без них: {r.text[:200].replace(tok, '<REDACTED>')}")
+                    data.pop("reply_markup")
+                    r = requests.post(f"{root}/bot{tok}/sendRichMessage", timeout=180, files=files, data=data)
                 if r.json().get("ok"):
                     ok = True
                     break
                 print(f"[{tag}] чат {chat}: карусель не принята: {r.text[:200].replace(tok, '<REDACTED>')}")
+                # альбом кнопок не несёт — ссылку на сайт кладём в подпись
+                cap = caption + (f'\n\n<a href="{chart_url}">Открыть на сайте →</a>' if chart_url else "")
                 media = [{"type": "photo", "media": f"attach://p{i}",
-                          **({"caption": caption, "parse_mode": "HTML"} if i == 0 else {})} for i in range(len(images))]
+                          **({"caption": cap, "parse_mode": "HTML"} if i == 0 else {})} for i in range(len(images))]
                 r = requests.post(f"{root}/bot{tok}/sendMediaGroup", timeout=180, files=files,
                                   data={"chat_id": chat, "media": json.dumps(media, ensure_ascii=False),
                                         "disable_notification": quiet})
