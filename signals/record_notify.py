@@ -197,11 +197,11 @@ def numbers(x: dict, ser: pd.Series | None) -> str:
     return out
 
 
-def history(x: dict, ser: pd.Series | None, px: list) -> str:
-    """Прошлые такие же рекорды (окно не короче нынешнего) и цена базового актива через день и через 2 недели —
-    как «Главное» сайта (OI_HORIZONS); внизу — то же «в обычный день»."""
-    if ser is None or len(ser) < MIN_HISTORY + 10 or not px:
-        return ""
+def cases(x: dict, ser: pd.Series | None) -> list:
+    """Прошлые такие же рекорды (окно не короче нынешнего) — первые дни эпизодов, по возрастанию. Одни и те же случаи
+    и в таблице истории, и кружками на графике (Вадим 18.11: «в истории 3, а на графике 2»)."""
+    if ser is None or len(ser) < MIN_HISTORY + 10:
+        return []
     vals, dates = ser.values.astype(float), ser.index
     cur = RANK[x["window"]]
     hits = []
@@ -214,14 +214,19 @@ def history(x: dict, ser: pd.Series | None, px: list) -> str:
             w = window(vals[:i], dates[:i], float(vals[i]), dates[i])
             if w and RANK[w] <= cur:
                 hits.append(i)
-    eps = sh.episodes(hits, len(vals), 20)
-    rows = [(dates[i].date(), [sh.price_after(px, dates[i].date() + timedelta(days=1), n) for n in (1, 14)]) for i in eps]
-    up = sh.base_up(px, dates[0].date(), 14)
-    return sh.block(sh.cases_title(len(rows)), ["через день", "через 2 нед"], rows,
-                    f"В обычный день цена через 2 недели росла в {up}% случаев" if up is not None else None)
+    return [dates[i].date() for i in sh.episodes(hits, len(vals), 20)]
 
 
-def message(x: dict, close_day=None, ser: pd.Series | None = None, px: list | None = None) -> str:
+def history(x: dict, days: list, px: list) -> str:
+    """Таблица истории: случаи и цена базового актива через день и через 2 недели (как «Главное»: OI_HORIZONS)."""
+    if not days or not px:
+        return ""
+    rows = [(d, [sh.price_after(px, d + timedelta(days=1), n) for n in (1, 14)]) for d in days]
+    return sh.block(sh.cases_title(len(rows)), ["через день", "через 2 нед"], rows)
+
+
+def message(x: dict, close_day=None, ser: pd.Series | None = None, px: list | None = None,
+            days: list | None = None) -> str:
     """Макет 18.11: значок и логотип, название; что случилось; цифры; история похожих случаев (раскрывается)."""
     tail = f" · по закрытию {pd.Timestamp(close_day):%d.%m}" if close_day is not None else ""
     side = "Лонг" if x["leg"] in ("netl", "ntl") else "Шорт"
@@ -229,7 +234,7 @@ def message(x: dict, close_day=None, ser: pd.Series | None = None, px: list | No
     head = f"{mark(x['window'])}{signal_marks.logo('oi:' + x['sec'])}<b>{html.escape(x['name'])}</b>\n"
     body = f"{side} {who} — рекорд {x['window']}\n{numbers(x, ser)}{tail}"
     try:
-        hist = history(x, ser, px or [])
+        hist = history(x, cases(x, ser) if days is None else days, px or [])
     except Exception as e:  # noqa: BLE001 — без истории лучше, чем без сигнала
         print(f"[{NAME}] история {x['sec']}: {type(e).__name__}: {e}")
         hist = ""
@@ -300,12 +305,17 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
             print(f"[{NAME}] цена {x['sec']}: {type(e).__name__}: {e}")
             db.rollback()                                  # иначе сессия «aborted» и у следующих рекордов цен не будет
             px = []
-        msg = message(x, None if live else day, ser, px)
+        try:
+            days_ = cases(x, ser)
+        except Exception as e:  # noqa: BLE001
+            print(f"[{NAME}] случаи {x['sec']}: {type(e).__name__}: {e}")
+            days_ = []
+        msg = message(x, None if live else day, ser, px, days_)
         if dry_run:
             print(msg + "\n")
             continue
         # картинка — график сайта с разметкой сигнала (signals/record_card.py); не вышла — текст как раньше
-        png = record_card.picture(x, x["value"], day)
+        png = record_card.picture(x, x["value"], day, days_[-sh.MAX_ROWS:])   # на графике — те же случаи
         quiet = signal_marks.silent(x["window"])               # рядовые — без звука (Вадим 18.11)
         kw = {"silent": quiet, "meta": meta(x), "chart_url": chart_url(x)}
         if (send_photo(png, msg, NAME, **kw) if png else send(msg, NAME, **kw)):

@@ -270,9 +270,17 @@ const HALO = (w: number) => `stroke="${BG}" stroke-width="${w}" stroke-linejoin=
 const lastI = card.line.length - 1;
 const tgt = { x: xOf(lastI), y: yOf(card.line[lastI].value) };
 // пики не толпятся: не ближе 110 px к точке сигнала и друг к другу (главный — первый в списке)
-const peaks: { date: string; value: number; label: string }[] = [];
+const peaks: { date: string; value: number; label: string; noLabel?: boolean }[] = [];
 for (const pk of (sig.peaks ?? []) as { date: string; value: number; label: string }[]) {
   const x = xOf(idxOf(pk.date));
+  if (sig.cases) {
+    // кружки — случаи из таблицы истории: на графике все до одного (Вадим 18.11: «в истории 3, на графике 2»);
+    // тесно — без подписи «мес год», сам кружок остаётся
+    if (Math.abs(x - tgt.x) < 6) continue;                 // только если совпал с точкой сигнала
+    const crowded = peaks.some((q) => !q.noLabel && Math.abs(xOf(idxOf(q.date)) - x) < 110);
+    peaks.push({ ...pk, noLabel: crowded });
+    continue;
+  }
   // главный прежний рекорд (первый) остаётся всегда, кроме совсем вплотную к точке
   const near = peaks.length === 0 ? 40 : 110;
   if (Math.abs(x - tgt.x) < near || peaks.some((q) => Math.abs(xOf(idxOf(q.date)) - x) < 110)) continue;
@@ -295,6 +303,7 @@ peaks.forEach((pk, k) => {
   const ring = `<circle cx="${cx}" cy="${cy}" r="${R_PK}" fill="none" stroke="${COLOR}" stroke-width="3.5"/>`;
   over += halo(ring, 4) + ring;
   block(cx - R_PK - 4, cy - R_PK - 4, 2 * R_PK + 8, 2 * R_PK + 8);
+  if (pk.noLabel) return;
   const w = measure(pk.label, SZ_PK, 700) + 8;
   const lx = Math.min(Math.max(cx, padL + w / 2 + 2), plotR - w / 2 - 2);
   const ly = above ? cy - R_PK - 8 - H_PK : cy + R_PK + 8;

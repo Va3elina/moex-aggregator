@@ -154,9 +154,7 @@ def history(rows: list, i: int, side: str, w: str) -> str:
             db.close()
         out = [(rows[k][0], [sh.price_after(px, dt.date.fromisoformat(rows[k][0]) + dt.timedelta(days=1), n) for n in (63, 252)])
                for k in eps]
-        up = sh.base_up(px, dt.date(2005, 1, 1), 63)
-        return sh.block(sh.cases_title(len(out)), ["индекс через 3 мес", "через год"], out,
-                        f"В обычный день индекс через 3 месяца рос в {up}% случаев" if up is not None else None)
+        return sh.block(sh.cases_title(len(out)), ["индекс через 3 мес", "через год"], out)
     except Exception as e:  # noqa: BLE001
         print(f"[{NAME}] история: {type(e).__name__}: {e}")
         return ""
