@@ -102,3 +102,7 @@ button.tgs-row:active, a.tgs-row:active { background: color-mix(in srgb, var(--t
 .tgs-ic { flex: none; display: inline-flex; width: 30px; height: 30px; }
 .tgs-ctxsec { margin-top: 8px; }
 .tgs-off { opacity: .4; pointer-events: none; filter: grayscale(.6); transition: opacity .15s; }
+
+/* Кабинет (Вадим 18.11): плитки-значки разделов, как в настройках Telegram; разделитель — от текста, не от плитки */
+.tgs-tile { flex: none; width: 29px; height: 29px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+.tgs-row:has(.tgs-tile) + .tgs-row::before { left: 57px; }
