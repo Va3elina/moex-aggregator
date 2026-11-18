@@ -59,7 +59,7 @@ def test_message_texts():
     assert "Отток идёт 6 месяцев подряд" in fs.message(x)
     x = {**S, "tf": "1w", "kind": "streak", "side": "in", "n": 21, "record": True, "since": 2020}
     m = fs.message(x)
-    assert m.startswith("🔥 ") and "Приток идёт 21 неделю подряд" in m and "с 2020 года" in m
+    assert m.startswith(fs.signal_marks.FIRE + " ") and "Приток идёт 21 неделю подряд" in m and "с 2020 года" in m
     x = {**S, "tf": "1d", "kind": "break", "side": "in", "n": 21}
     assert "Приток после 21 рабочего дня оттока" in fs.message(x)
     x = {**S, "tf": "1d", "kind": "streak", "side": "out", "n": 22, "record": False}

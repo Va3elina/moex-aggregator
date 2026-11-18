@@ -35,9 +35,10 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from api.services import fund_flows as ff  # noqa: E402
+from signals import signal_marks  # noqa: E402
 from signals.framesignal import SITE, send  # noqa: E402
 from signals.insights import fresh  # noqa: E402
-from signals.record_notify import COOLDOWN_DAYS, RANK, WINDOWS, due, window  # noqa: E402
+from signals.record_notify import COOLDOWN_DAYS, RANK, due, window  # noqa: E402
 
 NAME = "funds_flow_notify"
 SENT_FILE = os.path.join(fresh.STATE_DIR, f"{NAME}.sent.json")
@@ -51,12 +52,8 @@ CHART_PERIOD = {"за всё время": "all", "за 5 лет": "all", "за 3
 
 
 def mark(w: str) -> str:
-    """Метка окна, как в record_notify (Вадим 26.10): 3 месяца — без эмодзи, дальше по красному кружку на каждое
-    следующее окно (полгода — один, 5 лет — пять), за всё время — огонёк."""
-    if w == "за всё время":
-        return "🔥 "
-    n = len(WINDOWS) - RANK[w]
-    return "🔴" * n + " " if n else ""
+    """Значок ступени, как в record_notify (signals/signal_marks, Вадим 18.11)."""
+    return signal_marks.mark(w)
 
 
 def slices(categories: dict) -> list:
@@ -210,7 +207,7 @@ def run_once(dry_run: bool = False) -> dict:
             print(msg + "\n")
             delivered.append(x)
             continue
-        if send(msg, NAME, bot="signal"):
+        if send(msg, NAME, bot="signal", silent=signal_marks.silent(x["window"])):
             summary["sent"] += 1
             delivered.append(x)
             for y in [x] + x.get("folded", []):

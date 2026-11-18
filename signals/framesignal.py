@@ -21,8 +21,8 @@ BOTS = {
 }
 
 
-def send(text: str, tag: str = "framesignal", bot: str = "signal") -> bool:
-    """HTML-сообщение всем получателям; True — дошло хотя бы до одного."""
+def send(text: str, tag: str = "framesignal", bot: str = "signal", silent: bool = False) -> bool:
+    """HTML-сообщение всем получателям; True — дошло хотя бы до одного. silent — без звука уведомления."""
     toks = [t for t in (os.environ.get(k, "").strip() for k in BOTS[bot]) if t]
     chats = [c.strip() for c in os.environ.get("ADMIN_CHAT_ID", "").split(",") if c.strip()]
     if not toks or not chats:
@@ -34,7 +34,8 @@ def send(text: str, tag: str = "framesignal", bot: str = "signal") -> bool:
         for tok in toks:
             try:
                 r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data={
-                    "chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True})
+                    "chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True,
+                    "disable_notification": silent})
                 if r.json().get("ok"):
                     ok = True
                     break
