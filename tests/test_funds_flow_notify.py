@@ -141,8 +141,9 @@ def test_mark_three_tiers():
 def test_message_and_link():
     x = {**fn.slices(CATS)[1], "tf": "1w", "side": "out", "window": "за 2 года", "day": date(2026, 10, 24)}
     msg = fn.message(x)
-    assert msg.startswith(fn.signal_marks.PULSE + " <b>Облигации · Длинные</b>\nОтток за неделю\nРекорд за 2 года\n")
-    assert "/funds-money?category=bonds&amp;funds=1,2&amp;tf=1w&amp;period=3y" in msg
+    assert msg == fn.signal_marks.PULSE + " <b>Облигации · Длинные</b>\nОтток за неделю\nРекорд за 2 года"
+    # ссылка — кнопкой «Открыть график» под сообщением (signals/framesignal._markup)
+    assert "/funds-money?category=bonds&funds=1,2&tf=1w&period=3y" in fn.chart_url(x)
     assert "млрд" not in msg and "₽" not in msg                # цифр потока в сообщении нет
 
 

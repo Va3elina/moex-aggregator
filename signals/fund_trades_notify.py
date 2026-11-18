@@ -37,6 +37,8 @@ NOM = ["январь", "февраль", "март", "апрель", "май", "
 PREP = ["январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"]
 GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
 CAT = {"stocks": ("акций", "Фонды акций"), "bonds": ("облигаций", "Фонды облигаций")}
+# кнопки и настройки получателя (signals/signal_prefs): «фонд отчитался» — без звука
+FUND_KW = {"silent": True, "meta": {"type": "fund_trades"}, "chart_url": "https://framedata.ru/fund-trades"}
 FRESH_MONTHS = 2                    # «фонд отчитался» — только за свежие месяцы (перечитки истории не шлём)
 
 
@@ -91,8 +93,7 @@ def month_caption(cat: str, ym: str, d: dict) -> str:
     m = int(ym[5:7]) - 1
     gen, _ = CAT[cat]
     return (f"<b>Сделки фондов · {NOM[m]} {ym[:4]}</b>\n"
-            f"Фонды {gen} отчитались за {NOM[m]}: сделки залиты по всем {d['funds']} фондам.\n\n"
-            f'<a href="{SITE}/fund-trades?tab=portfolio&month={ym}">Смотреть сделки →</a>')
+            f"Фонды {gen} отчитались за {NOM[m]}: сделки залиты по всем {d['funds']} фондам.")
 
 
 def fund_card(f: dict, ym: str) -> dict:
@@ -114,8 +115,7 @@ def icon(ticker: str, uk_id) -> str:
 def fund_message(f: dict, ym: str) -> str:
     m = int(ym[5:7]) - 1
     return (f"{icon(f['ticker'], f.get('uk_id'))}<b>{html.escape(f['name'] or f['ticker'])}</b>\n"
-            f"Отчитался за {NOM[m]}: сделки на сайте\n"
-            f'<a href="{SITE}/fund-trades">Сделки фондов →</a>')
+            f"Отчитался за {NOM[m]}: сделки на сайте")
 
 
 def pictures(cards: list) -> list:
@@ -160,7 +160,8 @@ def send_month(cat: str, ym: str, dry_run: bool) -> bool:
             dry(png, f"{NAME}_{cat}_{k}")
         print()
         return True
-    return send_slides(imgs, cap, NAME) if imgs else send(cap, NAME)
+    kw = {"meta": {"type": "fund_trades"}, "chart_url": f"{SITE}/fund-trades?tab=portfolio&month={ym}"}
+    return send_slides(imgs, cap, NAME, **kw) if imgs else send(cap, NAME, **kw)
 
 
 def run_once(dry_run: bool = False, today: dt.date | None = None) -> dict:
@@ -191,7 +192,7 @@ def run_once(dry_run: bool = False, today: dt.date | None = None) -> dict:
             from signals.funds_card import dry
             dry(png, f"{NAME}_fund_{j['ticker']}")
             print()
-        elif send_photo(png, msg, NAME, silent=True) if png else send(msg, NAME, silent=True):
+        elif (send_photo(png, msg, NAME, **FUND_KW) if png else send(msg, NAME, **FUND_KW)):
             summary["sent"] += 1
         else:
             summary["failed"] += 1

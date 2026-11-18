@@ -154,8 +154,7 @@ def chart_url(x: dict) -> str:
 
 def message(x: dict) -> str:
     return (f"{mark(x['window'])}<b>{html.escape(x['name'])}</b>\n{SIDES[x['side']]} {HORIZONS[x['tf']]}\n"
-            f"Рекорд {x['window']}\n"
-            f'<a href="{html.escape(chart_url(x))}">График →</a>')
+            f"Рекорд {x['window']}")
 
 
 def senior_only(new: list) -> list:
@@ -212,8 +211,9 @@ def run_once(dry_run: bool = False) -> dict:
             delivered.append(x)
             continue
         quiet = signal_marks.silent(x["window"])
-        if (send_photo(png, msg, NAME, bot="signal", silent=quiet) if png
-                else send(msg, NAME, bot="signal", silent=quiet)):
+        kw = {"bot": "signal", "silent": quiet, "meta": {"type": "funds_flow", "window": x["window"]},
+              "chart_url": chart_url(x)}
+        if (send_photo(png, msg, NAME, **kw) if png else send(msg, NAME, **kw)):
             summary["sent"] += 1
             delivered.append(x)
             for y in [x] + x.get("folded", []):

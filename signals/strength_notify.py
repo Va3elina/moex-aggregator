@@ -130,8 +130,7 @@ def message(rows: list, e: dict) -> str:
         head = "<b>Сила рынка</b>\n"
     prev = episodes(rows, e)
     tail = f"\nПрошлый раз — {month(prev[-1]['day'])}" if prev else ""
-    url = f"{SITE}/strength"
-    return f'{head}{html.escape(what)}{tail}\n<a href="{url}">График →</a>'
+    return f"{head}{html.escape(what)}{tail}"
 
 
 def picture(rows: list, e: dict) -> bytes | None:
@@ -189,7 +188,8 @@ def run_once(dry_run: bool = False, today: dt.date | None = None) -> dict:
             print()
             continue
         quiet = e["kind"] != "edge"
-        if send_photo(png, msg, NAME, bot="signal", silent=quiet) if png else send(msg, NAME, bot="signal", silent=quiet):
+        kw = {"bot": "signal", "silent": quiet, "meta": {"type": "strength"}, "chart_url": f"{SITE}/strength"}
+        if send_photo(png, msg, NAME, **kw) if png else send(msg, NAME, **kw):
             summary["sent"] += 1
         else:
             summary["failed"] += 1

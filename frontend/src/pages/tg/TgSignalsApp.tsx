@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiFetch } from '../../services/api';
+import { usePersistedState } from '../../hooks/usePersistedState';
 import './tg.css';
 
 interface TgButton { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void }
@@ -81,54 +82,37 @@ function readWait(): Wait | null {
   return null;
 }
 
-type Screen = 'cabinet' | 'signals' | 'rule' | 'asset' | 'sets' | 'quiet';
-type Group = 'fiz' | 'yur' | 'all';
-type Kind = 'level' | 'move' | 'record';
-interface Rule {
-  id: number; asset: string; group: Group; kind: Kind; power: 2 | 3 | 5; level: number; period: 'half' | 'year' | 'all';
-  repeat: boolean; every: '5m' | '1h' | '1d'; paused: boolean; last: string;
-}
+type Screen = 'cabinet' | 'signals' | 'type' | 'hidden' | 'quiet';
+type MinWindow = '3m' | '6m' | '1y' | 'all';
+interface TypePrefs { on?: boolean; min?: MinWindow; markets?: string[]; modes?: string[] }
+interface SignalPrefs { on?: boolean; types?: Record<string, TypePrefs>; hidden?: string[]; quiet?: { on: boolean; from: string; to: string } }
+interface AssetItem { key: string; code: string; name: string; kind: string }
 
-const ASSETS: Record<string, { name: string; hint: string; mark: string; color: string }> = {
-  Si: { name: 'Доллар/рубль', hint: 'фьючерс на курс доллара', mark: '$', color: '#2E7D5B' },
-  CNY: { name: 'Юань/рубль', hint: 'фьючерс на курс юаня', mark: '¥', color: '#B23A48' },
-  NG: { name: 'Газ', hint: 'фьючерс на природный газ', mark: 'NG', color: '#3A6EA5' },
-  BR: { name: 'Нефть Brent', hint: 'фьючерс на нефть', mark: 'BR', color: '#6B4E2E' },
-  GD: { name: 'Золото', hint: 'фьючерс на золото', mark: 'Au', color: '#B8892B' },
-  VK: { name: 'VK', hint: 'фьючерс на акции VK', mark: 'VK', color: '#2A5BD7' },
-  SR: { name: 'Сбербанк', hint: 'фьючерс на акции Сбера', mark: 'SR', color: '#1F9D55' },
-  MX: { name: 'Индекс МосБиржи', hint: 'фьючерс на индекс', mark: 'MX', color: '#8A4831' },
-};
-const GROUPS: [Group, string][] = [['fiz', 'Физлица'], ['yur', 'Юрлица'], ['all', 'Все']];
-const KINDS: [Kind, string][] = [['level', 'Пересечение уровня'], ['move', 'Резкое движение позиции'], ['record', 'Рекорд позиции за период']];
-const POWERS: [2 | 3 | 5, string, string][] = [[2, 'Заметное · 2×', 'примерно раз в неделю'], [3, 'Сильное · 3×', 'примерно раз в 2–3 недели'], [5, 'Редкое · 5×', 'примерно раз в 2 месяца']];
-const PERIODS: [Rule['period'], string][] = [['half', 'Полгода'], ['year', 'Год'], ['all', 'Всё время']];
-const EVERY: [Rule['every'], string][] = [['5m', '5 минут'], ['1h', 'Час'], ['1d', 'День']];
-const RULE_LIMIT = 20;
-const TIERS: Record<string, string> = { guest: 'Free', free: 'Free', basic: 'Basic', pro: 'Pro', premium: 'Premium', admin: 'Админ' };
-
-const DEMO_RULES: Rule[] = [
-  { id: 1, asset: 'Si', group: 'fiz', kind: 'move', power: 3, level: 10000, period: 'year', repeat: true, every: '5m', paused: false, last: 'вчера' },
-  { id: 2, asset: 'CNY', group: 'fiz', kind: 'level', power: 3, level: 12000, period: 'year', repeat: false, every: '1d', paused: false, last: 'ждёт' },
-  { id: 3, asset: 'NG', group: 'fiz', kind: 'record', power: 3, level: 10000, period: 'year', repeat: true, every: '1d', paused: true, last: 'пауза' },
+/** Ключ настроек — тот же читает бот (signals/signal_prefs.py, PREFS_KEY). */
+const PREFS_KEY = 'frame:signals:prefs';
+/** Виды сигналов бота — ключи как в signals/signal_prefs.TYPES; частота — по факту отправок. */
+const SIGNAL_TYPES: { key: string; title: string; hint: string; window?: boolean; windowNote?: string; assets?: boolean }[] = [
+  { key: 'oi_record', title: 'Рекорды позиций физлиц', hint: 'около 3 в торговый день', window: true, assets: true,
+    windowNote: 'С «3 месяцев» сообщений примерно вчетверо больше, чем с «года». «Всё время» — самые редкие и громкие.' },
+  { key: 'funds_flow', title: 'Рекорды притоков и оттоков фондов', hint: '1–2 в неделю', window: true,
+    windowNote: 'Рекорд потока за неделю или месяц против прошлых столбиков того же среза.' },
+  { key: 'funds_streak', title: 'Серии притоков и оттоков', hint: '1–2 в неделю' },
+  { key: 'season', title: 'Сезонность', hint: 'около 20 в месяц', assets: true },
+  { key: 'strength', title: 'Сила рынка', hint: 'около 5 в год' },
+  { key: 'buffett', title: 'Индикатор Баффетта', hint: '2–3 в год' },
+  { key: 'fund_trades', title: 'Сделки фондов', hint: 'в начале месяца, по мере отчётов' },
+  { key: 'cbr_flows', title: 'Потоки капитала ЦБ', hint: 'раз в месяц' },
 ];
-const title = (code: string) => (code === ASSETS[code].name ? code : `${ASSETS[code].name} · ${code}`);
-const groupWord = (g: Group) => GROUPS.find(([k]) => k === g)![1].toLowerCase();
-function ruleSub(r: Rule): string {
-  if (r.paused) return `${KINDS.find(([k]) => k === r.kind)![1].split(' ')[0]} · на паузе`;
-  if (r.kind === 'level') return `Уровень ${r.level.toLocaleString('ru-RU')} · ${r.repeat ? 'каждый раз' : 'один раз'}`;
-  if (r.kind === 'move') return `Резкое движение · ${groupWord(r.group)} · ${r.power}×`;
-  return `Рекорд · ${PERIODS.find(([k]) => k === r.period)![1].toLowerCase()} · ${groupWord(r.group)}`;
-}
+const MIN_WINDOWS: [MinWindow, string][] = [['3m', '3 мес'], ['6m', 'Полгода'], ['1y', 'Год'], ['all', 'Всё время']];
+const MARKETS = ['Акции', 'Валюта', 'Индексы', 'Сырьё'];
+const MODES: [string, string, string][] = [['positions', 'По объёму', 'сколько контрактов в лонге и шорте'], ['participants', 'По числу людей', 'сколько человек в лонге и шорте']];
+const TIERS: Record<string, string> = { guest: 'Free', free: 'Free', basic: 'Basic', pro: 'Pro', premium: 'Premium', admin: 'Админ' };
 
 const Chevron = () => (
   <svg width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: 'none', opacity: 0.35 }}><path d="M1 1l6 6-6 6" /></svg>
 );
 const Check = () => (
   <svg width="15" height="12" viewBox="0 0 15 12" fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: 'none' }}><path d="M1.5 6.5l4 4 8-9" /></svg>
-);
-const Logo = ({ code, off }: { code: string; off?: boolean }) => (
-  <span className={`tgs-lg${off ? ' off' : ''}`} style={{ background: ASSETS[code].color }}>{ASSETS[code].mark}</span>
 );
 function Seg<T extends string | number>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
   return (
@@ -143,14 +127,37 @@ function Seg<T extends string | number>({ value, options, onChange }: { value: T
 export default function TgSignalsApp() {
   const { tg, ready } = useTelegram();
   const { user, loading, isAuthenticated, login, logout, refreshUser } = useAuth();
-  const [stack, setStack] = useState<Screen[]>(['cabinet']);
+  // Кнопка «Настройки» под сигналом открывает сразу экран сигналов (?s=signals) и говорит, откуда пришли (from, asset, name)
+  const [ctx] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    return { open: q.get('s') === 'signals', type: q.get('from'), asset: q.get('asset'), name: q.get('name') };
+  });
+  const [stack, setStack] = useState<Screen[]>(() => (ctx.open ? ['cabinet', 'signals'] : ['cabinet']));
   const screen = stack[stack.length - 1];
-  const [enabled, setEnabled] = useState(true);
-  const [sets, setSets] = useState({ records: true, moves: false, season: false, minWindow: 'half', groups: ['Акции', 'Валюта', 'Сырьё'], digest: false });
-  const [muted, setMuted] = useState([{ asset: 'VK', until: 'тихо до 18 ноября, 14:35' }]);
-  const [rules, setRules] = useState(DEMO_RULES);
-  const [draft, setDraft] = useState<Rule | null>(null);
-  const [quiet, setQuiet] = useState({ on: true, from: '23:00', to: '08:00' });
+  // Настройки сигналов: лежат под frame:* — штатная синхронизация сайта (services/settingsSync) уносит их на сервер,
+  // бот читает их по привязанному чату (signals/signal_prefs.py). Нет ключа — приходит всё.
+  const [prefs, setPrefs] = usePersistedState<SignalPrefs>(PREFS_KEY, {});
+  const [typeKey, setTypeKey] = useState<string>('oi_record');
+  const [query, setQuery] = useState('');
+  const [assets, setAssets] = useState<AssetItem[]>([]);
+  const [hiddenNames, setHiddenNames] = usePersistedState<Record<string, string>>('frame:signals:hidden-names', {});
+  const hidden = prefs.hidden ?? [];
+  const typeOn = (k: string) => prefs.types?.[k]?.on !== false;
+  const setType = (k: string, patch: Partial<TypePrefs>) =>
+    setPrefs({ ...prefs, types: { ...(prefs.types ?? {}), [k]: { ...(prefs.types?.[k] ?? {}), ...patch } } });
+  /** Скрыть / вернуть актив; имя запоминаем рядом, чтобы список «Скрыты» был понятен и без поиска. */
+  const toggleHidden = (key: string, hide: boolean, name?: string | null) => {
+    const next = hide ? Array.from(new Set([...hidden, key])) : hidden.filter((k) => k !== key);
+    setPrefs({ ...prefs, hidden: next });
+    if (hide && name) setHiddenNames({ ...hiddenNames, [key]: name });
+    say(hide ? `${name ?? 'Актив'}: больше не присылаем` : `${name ?? 'Актив'}: снова присылаем`);
+  };
+  const typeSub = (k: string) => {
+    const t = SIGNAL_TYPES.find((x) => x.key === k)!;
+    if (!typeOn(k)) return 'не приходят';
+    const mn = prefs.types?.[k]?.min;
+    return t.window && mn && mn !== '3m' ? `от «${MIN_WINDOWS.find(([v]) => v === mn)?.[1].toLowerCase()}» · ${t.hint}` : t.hint;
+  };
   const [plan, setPlan] = useState<{ tier: string; expires_at: string | null; cancelled_at: string | null; is_trial: boolean } | null>(null);
   const [link, setLink] = useState<{ linked: boolean; username: string | null } | null>(null);
   const [toast, setToast] = useState('');
@@ -166,14 +173,8 @@ export default function TgSignalsApp() {
   const back = useCallback(() => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st)), []);
   const open = useCallback((url: string) => (tg ? tg.openLink(url) : window.open(url, '_blank', 'noopener')), [tg]);
 
-  const isNew = draft !== null && !rules.some((r) => r.id === draft.id);
-  const saveRule = useCallback(() => {
-    if (!draft) return;
-    setRules((rs) => (rs.some((r) => r.id === draft.id) ? rs.map((r) => (r.id === draft.id ? draft : r)) : [...rs, draft]));
-    say(isNew ? 'Правило создано' : 'Сохранено');
-    back();
-  }, [draft, isNew, say, back]);
-  const main = screen === 'rule' ? { text: isNew ? 'Создать правило' : 'Сохранить', run: saveRule } : null;
+  // главная кнопка Telegram сейчас не нужна (настройки сохраняются сразу); место под неё оставлено
+  const main = null as { text: string; run: () => void } | null;
 
   // Кнопки самого Telegram: «Назад» в шапке и главная кнопка внизу
   useEffect(() => {
@@ -196,17 +197,31 @@ export default function TgSignalsApp() {
   const sw = (on: boolean, label: string, set: (v: boolean) => void) => (
     <button type="button" className={`tgs-sw${on ? ' on' : ''}`} aria-pressed={on} aria-label={label} onClick={() => { tap(); set(!on); }} />
   );
-  const editRule = (r: Rule) => { setDraft({ ...r }); go('rule'); };
-  const newRule = () => {
-    if (rules.length >= RULE_LIMIT) { say('На тарифе Basic — до 20 правил'); return; }
-    setDraft({ id: Date.now(), asset: 'Si', group: 'fiz', kind: 'move', power: 3, level: 10000, period: 'year', repeat: false, every: '1d', paused: false, last: 'новое' });
-    go('rule');
-  };
-  const removeRule = () => {
-    if (!draft) return;
-    confirmThen(`Удалить правило по «${title(draft.asset)}»?`, () => { setRules((rs) => rs.filter((r) => r.id !== draft.id)); say('Правило удалено'); back(); });
-  };
-  const patch = (p: Partial<Rule>) => setDraft((d) => (d ? { ...d, ...p } : d));
+
+  // Список для поиска «Компании и активы»: фьючерсы (рекорды позиций, ключ oi:<базовый тикер>) и акции/индексы
+  // (сезонность, ключ se:<тикер>) — тот же справочник инструментов, что у сайта.
+  useEffect(() => {
+    if (screen !== 'hidden' || assets.length) return;
+    let dead = false;
+    (async () => {
+      try {
+        const r = await apiFetch('/api/instruments');
+        if (!r.ok) return;
+        const j = (await r.json()) as { instruments: { sec_id: string; sectype: string; name: string; type: string; group?: string }[] };
+        const seen = new Set<string>();
+        const out: AssetItem[] = [];
+        for (const i of j.instruments) {
+          const fut = i.type === 'futures';
+          const key = fut ? `oi:${i.sectype}` : `se:${i.sec_id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({ key, code: fut ? i.sectype : i.sec_id, name: i.name, kind: fut ? `позиции · ${i.group ?? 'фьючерс'}` : 'сезонность' });
+        }
+        if (!dead) setAssets(out);
+      } catch { /* сеть: поиск пустой, скрытые всё равно видны */ }
+    })();
+    return () => { dead = true; };
+  }, [screen, assets.length]);
 
   // Кабинет: тариф и привязка Telegram — настоящие. Перечитываем при возврате в окно (после привязки в боте).
   useEffect(() => {
@@ -409,8 +424,8 @@ export default function TgSignalsApp() {
           {link?.linked
             ? <div className="tgs-row"><span className="tgs-g"><span>Telegram подключён</span><span className="tgs-s">{link.username ? `@${link.username}` : 'сигналы приходят в этот чат'}</span></span><Check /></div>
             : <button type="button" className="tgs-row tgs-accent" onClick={connect}><span className="tgs-g"><span>Подключить Telegram</span><span className="tgs-s">{tg ? 'Сигналы будут приходить в этот чат' : 'Откроется бот — нажмите «Запустить»'}</span></span><Chevron /></button>}
-          {/* Настройка сигналов пока демо — показываем только админам, клиентам кабинет без ненастоящего */}
-          {user.role === 'admin' && <button type="button" className="tgs-row" onClick={() => go('signals')}><span className="tgs-g"><span>Настройка сигналов</span><span className="tgs-s">Демо: пока не сохраняется</span></span><Chevron /></button>}
+          {/* Сигналы бота пока приходят только админам — и настройку видят только они (до раскатки всем) */}
+          {user.role === 'admin' && <button type="button" className="tgs-row" onClick={() => go('signals')}><span className="tgs-g"><span>Настройка сигналов</span><span className="tgs-s">Что присылать и что скрыть</span></span><Chevron /></button>}
         </div>
         <div className="tgs-gap" />
         <div className="tgs-sec">
@@ -425,139 +440,120 @@ export default function TgSignalsApp() {
       </>
     );
   } else if (screen === 'signals') {
+    const fromName = ctx.name || ctx.asset;
+    const hiddenNow = !!ctx.asset && hidden.includes(ctx.asset);
     body = (
       <>
+        {ctx.type && (
+          <div className="tgs-ctx">
+            <span className="tgs-g"><span>Вы пришли из сигнала{fromName ? ` по ${fromName}` : ''}</span><span className="tgs-s">{SIGNAL_TYPES.find((t) => t.key === ctx.type)?.title ?? ''}</span></span>
+          </div>
+        )}
+        {ctx.asset && (
+          <div className="tgs-sec">
+            <div className="tgs-row"><span className="tgs-g">Не присылать по {fromName}</span>{sw(hiddenNow, `Не присылать по ${fromName}`, (v) => toggleHidden(ctx.asset!, v, fromName))}</div>
+          </div>
+        )}
         <div className="tgs-gap" />
         <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g"><span>{enabled ? 'Сигналы включены' : 'Сигналы на паузе'}</span><span className="tgs-s">{enabled ? 'Выключите — всё встанет на паузу' : 'Ничего не приходит, настройки сохранены'}</span></span>{sw(enabled, 'Сигналы включены', setEnabled)}</div>
+          <div className="tgs-row"><span className="tgs-g"><span>{prefs.on !== false ? 'Сигналы включены' : 'Сигналы на паузе'}</span><span className="tgs-s">{prefs.on !== false ? 'Выключите — ничего не будет приходить' : 'Ничего не приходит, настройки сохранены'}</span></span>{sw(prefs.on !== false, 'Сигналы включены', (on) => setPrefs({ ...prefs, on }))}</div>
         </div>
-        <div className="tgs-h">Подборки FRAME</div>
-        <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g">Рекорды позиций</span>{sw(sets.records, 'Рекорды позиций', (v) => setSets({ ...sets, records: v }))}</div>
-          <div className="tgs-row"><span className="tgs-g">Резкие сдвиги</span>{sw(sets.moves, 'Резкие сдвиги', (v) => setSets({ ...sets, moves: v }))}</div>
-          <button type="button" className="tgs-row" onClick={() => go('sets')}><span className="tgs-g">Настроить подборки</span><Chevron /></button>
-        </div>
-        <div className="tgs-h">Мои правила · {rules.length} из {RULE_LIMIT}</div>
-        <div className="tgs-sec">
-          {rules.map((r) => (
-            <button key={r.id} type="button" className="tgs-row" onClick={() => editRule(r)}>
-              <Logo code={r.asset} off={r.paused} />
-              <span className="tgs-g"><span className={r.paused ? 'tgs-dim' : ''}>{title(r.asset)}</span><span className="tgs-s tgs-1l">{ruleSub(r)}</span></span>
-              <span className="tgs-s">{r.paused ? 'пауза' : r.last}</span><Chevron />
-            </button>
-          ))}
-          <button type="button" className="tgs-row tgs-accent" onClick={newRule}><span className="tgs-lg tgs-plus">+</span><span className="tgs-g">Новое правило</span></button>
-        </div>
-        <div className="tgs-gap" />
-        <div className="tgs-sec">
-          <button type="button" className="tgs-row" onClick={() => go('quiet')}><span className="tgs-g">Тихие часы</span><span className="tgs-v">{quiet.on ? `${quiet.from}–${quiet.to}` : 'выключены'}</span><Chevron /></button>
-        </div>
-        <div className="tgs-demo">Демо: данные условные, изменения не сохраняются. Настоящая настройка — следующим шагом.</div>
-      </>
-    );
-  } else if (screen === 'rule' && draft) {
-    body = (
-      <>
-        <div className="tgs-gap" />
-        <div className="tgs-sec">
-          <button type="button" className="tgs-row" onClick={() => go('asset')}><Logo code={draft.asset} /><span className="tgs-g"><span>{title(draft.asset)}</span><span className="tgs-s">{ASSETS[draft.asset].hint}</span></span><Chevron /></button>
-        </div>
-        <div className="tgs-h">Чьи позиции</div>
-        <Seg value={draft.group} options={GROUPS} onChange={(group) => patch({ group })} />
-        <div className="tgs-h">Что ловить</div>
-        <div className="tgs-sec">
-          {KINDS.map(([k, label]) => (
-            <button key={k} type="button" className="tgs-row" aria-pressed={draft.kind === k} onClick={() => { tap(); patch({ kind: k }); }}><span className="tgs-g">{label}</span>{draft.kind === k && <Check />}</button>
-          ))}
-        </div>
-        {draft.kind === 'move' && (
-          <>
-            <div className="tgs-h">Сила сигнала</div>
-            <Seg value={draft.power} options={POWERS.map(([v, l]) => [v, l] as [2 | 3 | 5, string])} onChange={(power) => patch({ power })} />
-            <div className="tgs-f">По этому активу срабатывает {POWERS.find(([v]) => v === draft.power)![2]}.</div>
-          </>
-        )}
-        {draft.kind === 'level' && (
-          <>
-            <div className="tgs-h">Уровень</div>
-            <div className="tgs-sec">
-              <label className="tgs-row"><span className="tgs-g">Чистая позиция, контрактов</span><input className="tgs-in" type="number" inputMode="numeric" value={draft.level} onChange={(e) => patch({ level: Number(e.target.value) || 0 })} /></label>
-            </div>
-            <div className="tgs-f">Сообщим, когда позиция пересечёт этот уровень в любую сторону.</div>
-          </>
-        )}
-        {draft.kind === 'record' && (
-          <>
-            <div className="tgs-h">Рекорд за</div>
-            <Seg value={draft.period} options={PERIODS} onChange={(period) => patch({ period })} />
-            <div className="tgs-f">Сообщим, когда позиция станет самой большой за этот срок.</div>
-          </>
-        )}
-        <div className="tgs-h">Как часто проверять</div>
-        <Seg value={draft.every} options={EVERY} onChange={(every) => patch({ every })} />
-        <div className="tgs-gap" />
-        <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g">Присылать каждый раз</span>{sw(draft.repeat, 'Присылать каждый раз', (repeat) => patch({ repeat }))}</div>
-          <div className="tgs-row"><span className="tgs-g">Правило на паузе</span>{sw(draft.paused, 'Правило на паузе', (paused) => patch({ paused }))}</div>
-        </div>
-        {!isNew && (
-          <>
-            <div className="tgs-gap" />
-            <div className="tgs-sec"><button type="button" className="tgs-row tgs-center tgs-danger" onClick={removeRule}>Удалить правило</button></div>
-          </>
-        )}
-      </>
-    );
-  } else if (screen === 'asset' && draft) {
-    body = (
-      <>
-        <div className="tgs-h">Актив</div>
-        <div className="tgs-sec">
-          {Object.keys(ASSETS).map((code) => (
-            <button key={code} type="button" className="tgs-row" onClick={() => { tap(); patch({ asset: code }); back(); }}>
-              <Logo code={code} /><span className="tgs-g"><span>{title(code)}</span><span className="tgs-s">{ASSETS[code].hint}</span></span>{draft.asset === code && <Check />}
-            </button>
-          ))}
-        </div>
-        <div className="tgs-f">В демо — восемь активов; в рабочей версии будет поиск по всем фьючерсам.</div>
-      </>
-    );
-  } else if (screen === 'sets') {
-    const toggleGroup = (g: string) => setSets({ ...sets, groups: sets.groups.includes(g) ? sets.groups.filter((x) => x !== g) : [...sets.groups, g] });
-    body = (
-      <>
         <div className="tgs-h">Что присылать</div>
         <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g"><span>Рекорды позиций</span><span className="tgs-s">Такой позиции у физлиц давно не было</span></span>{sw(sets.records, 'Рекорды позиций', (v) => setSets({ ...sets, records: v }))}</div>
-          <div className="tgs-row"><span className="tgs-g"><span>Резкие сдвиги</span><span className="tgs-s">Позиция изменилась сильнее обычного</span></span>{sw(sets.moves, 'Резкие сдвиги', (v) => setSets({ ...sets, moves: v }))}</div>
-          <div className="tgs-row"><span className="tgs-g"><span>Сезонность</span><span className="tgs-s">Начался сильный сезонный период</span></span>{sw(sets.season, 'Сезонность', (v) => setSets({ ...sets, season: v }))}</div>
-        </div>
-        <div className="tgs-h">Рекорд не короче</div>
-        <Seg value={sets.minWindow} options={[['3m', '3 месяца'], ['half', 'Полгода'], ['year', 'Год'], ['all', 'Всё время']]} onChange={(minWindow) => setSets({ ...sets, minWindow })} />
-        <div className="tgs-f">С «3 месяцев» сообщений вдвое больше.</div>
-        <div className="tgs-h">Активы</div>
-        <div className="tgs-sec">
-          {['Акции', 'Валюта', 'Индексы', 'Сырьё'].map((g) => (
-            <button key={g} type="button" className="tgs-row" aria-pressed={sets.groups.includes(g)} onClick={() => { tap(); toggleGroup(g); }}><span className="tgs-g">{g}</span>{sets.groups.includes(g) && <Check />}</button>
+          {SIGNAL_TYPES.map((t) => (
+            <div key={t.key} className="tgs-row">
+              <button type="button" className="tgs-g tgs-btn" onClick={() => { setTypeKey(t.key); go('type'); }}><span>{t.title}</span><span className="tgs-s">{typeSub(t.key)}</span></button>
+              {sw(typeOn(t.key), t.title, (on) => setType(t.key, { on }))}
+            </div>
           ))}
         </div>
-        <div className="tgs-h">Как присылать</div>
+        <div className="tgs-f">Новые виды сигналов будут включаться сами.</div>
+        <div className="tgs-h">Не присылать</div>
         <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g"><span>Только сводка дня</span><span className="tgs-s">Одним сообщением в 19:00</span></span>{sw(sets.digest, 'Только сводка дня', (v) => setSets({ ...sets, digest: v }))}</div>
+          <button type="button" className="tgs-row" onClick={() => go('hidden')}><span className="tgs-g">Компании и активы</span><span className="tgs-v">{hidden.length ? `${hidden.length} скрыто` : 'все приходят'}</span><Chevron /></button>
+          <button type="button" className="tgs-row" onClick={() => go('quiet')}><span className="tgs-g">Тихие часы</span><span className="tgs-v">{prefs.quiet?.on ? `${prefs.quiet.from}–${prefs.quiet.to}` : 'выключены'}</span><Chevron /></button>
         </div>
-        {muted.length > 0 && (
+        <div className="tgs-f">Свои уведомления по уровням цены и позиций — на сайте, в разделе «Алерты».</div>
+      </>
+    );
+  } else if (screen === 'type') {
+    const t = SIGNAL_TYPES.find((x) => x.key === typeKey)!;
+    const tp = prefs.types?.[t.key] ?? {};
+    const markets = tp.markets ?? MARKETS;
+    const modes = tp.modes ?? MODES.map(([k]) => k);
+    const flip = <T extends string>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+    body = (
+      <>
+        <div className="tgs-gap" />
+        <div className="tgs-sec">
+          <div className="tgs-row"><span className="tgs-g"><span>Присылать</span><span className="tgs-s">{t.hint}</span></span>{sw(typeOn(t.key), 'Присылать', (on) => setType(t.key, { on }))}</div>
+        </div>
+        {t.window && (
           <>
-            <div className="tgs-h">На тишине</div>
+            <div className="tgs-h">Рекорд не короче</div>
+            <Seg value={(tp.min ?? '3m') as MinWindow} options={MIN_WINDOWS} onChange={(min) => setType(t.key, { min })} />
+            <div className="tgs-f">{t.windowNote}</div>
+          </>
+        )}
+        {t.key === 'oi_record' && (
+          <>
+            <div className="tgs-h">Рынки</div>
             <div className="tgs-sec">
-              {muted.map((m) => (
-                <div key={m.asset} className="tgs-row"><Logo code={m.asset} /><span className="tgs-g"><span>{title(m.asset)}</span><span className="tgs-s">{m.until}</span></span><button type="button" className="tgs-lk" onClick={() => { setMuted(muted.filter((x) => x.asset !== m.asset)); say(`${title(m.asset)}: звук возвращён`); }}>Вернуть</button></div>
+              {MARKETS.map((m) => (
+                <button key={m} type="button" className="tgs-row" aria-pressed={markets.includes(m)} onClick={() => { tap(); setType(t.key, { markets: flip(markets, m) }); }}><span className="tgs-g">{m}</span>{markets.includes(m) && <Check />}</button>
+              ))}
+            </div>
+            <div className="tgs-h">Позиция</div>
+            <div className="tgs-sec">
+              {MODES.map(([k, label, sub]) => (
+                <button key={k} type="button" className="tgs-row" aria-pressed={modes.includes(k)} onClick={() => { tap(); setType(t.key, { modes: flip(modes, k) }); }}><span className="tgs-g"><span>{label}</span><span className="tgs-s">{sub}</span></span>{modes.includes(k) && <Check />}</button>
               ))}
             </div>
           </>
         )}
+        {t.assets && (
+          <>
+            <div className="tgs-gap" />
+            <div className="tgs-sec">
+              <button type="button" className="tgs-row" onClick={() => go('hidden')}><span className="tgs-g">Компании и активы</span><span className="tgs-v">{hidden.length ? `все, кроме ${hidden.length}` : 'все'}</span><Chevron /></button>
+            </div>
+          </>
+        )}
+      </>
+    );
+  } else if (screen === 'hidden') {
+    const q = query.trim().toLowerCase();
+    const found = q ? assets.filter((a) => a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q)).slice(0, 40) : [];
+    const nameOf = (key: string) => assets.find((a) => a.key === key)?.name ?? hiddenNames[key] ?? key.split(':')[1] ?? key;
+    body = (
+      <>
+        <div className="tgs-gap" />
+        <input className="tgs-search" type="search" placeholder="Поиск: компания, валюта, товар" value={query} onChange={(e) => setQuery(e.target.value)} />
+        {found.length > 0 && (
+          <>
+            <div className="tgs-h">Найдено</div>
+            <div className="tgs-sec">
+              {found.map((a) => (
+                <button key={a.key} type="button" className="tgs-row" aria-pressed={hidden.includes(a.key)} onClick={() => { tap(); toggleHidden(a.key, !hidden.includes(a.key), a.name); }}>
+                  <span className="tgs-g"><span>{a.name}</span><span className="tgs-s">{a.kind}</span></span>{hidden.includes(a.key) ? <span className="tgs-v">скрыт</span> : <span className="tgs-v tgs-accent">Скрыть</span>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <div className="tgs-h">Скрыты</div>
+        <div className="tgs-sec">
+          {hidden.length === 0 && <div className="tgs-row"><span className="tgs-g tgs-dim">Ничего не скрыто — приходит всё</span></div>}
+          {hidden.map((k) => (
+            <div key={k} className="tgs-row"><span className="tgs-g"><span>{nameOf(k)}</span><span className="tgs-s">ни по одному сигналу</span></span><button type="button" className="tgs-lk" onClick={() => toggleHidden(k, false, nameOf(k))}>Вернуть</button></div>
+          ))}
+        </div>
+        <div className="tgs-f">Скрытая компания не приходит ни в каком виде сигналов: ни рекордом позиции, ни сезонностью.</div>
       </>
     );
   } else if (screen === 'quiet') {
+    const quiet = prefs.quiet ?? { on: false, from: '23:00', to: '08:00' };
+    const setQuiet = (q: typeof quiet) => setPrefs({ ...prefs, quiet: q });
     body = (
       <>
         <div className="tgs-gap" />

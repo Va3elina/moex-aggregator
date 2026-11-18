@@ -134,7 +134,7 @@ def message(rows: list, i: int, side: str, w: str, ref: int | None) -> str:
     body = f"Капитализация / ВВП — {pct(v)}: {phrase(rows, i, side, w, ref)}\n"
     if ref is not None:
         body += f"{'Ниже' if side == 'min' else 'Выше'} было в {month(rows[ref][0])}: {pct(rows[ref][1])}\n"
-    return head + html.escape(body) + f'<a href="{SITE}/buffett">График →</a>'
+    return head + html.escape(body.rstrip("\n"))
 
 
 def picture(rows: list, i: int, side: str, w: str, ref: int | None) -> bytes | None:
@@ -189,7 +189,8 @@ def run_once(dry_run: bool = False, today: dt.date | None = None) -> dict:
             print()
             continue
         quiet = signal_marks.silent(w)
-        if send_photo(png, msg, NAME, bot="signal", silent=quiet) if png else send(msg, NAME, bot="signal", silent=quiet):
+        kw = {"bot": "signal", "silent": quiet, "meta": {"type": "buffett", "window": w}, "chart_url": f"{SITE}/buffett"}
+        if send_photo(png, msg, NAME, **kw) if png else send(msg, NAME, **kw):
             summary["sent"] += 1
             sent[side] = {"day": rows[i][0], "rank": RANK[w]}
         else:

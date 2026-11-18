@@ -64,7 +64,7 @@ def test_message_texts():
     assert "Приток после 21 рабочего дня оттока" in fs.message(x)
     x = {**S, "tf": "1d", "kind": "streak", "side": "out", "n": 22, "record": False}
     assert "Отток идёт 22 рабочих дня подряд" in fs.message(x)
-    assert "tf=1d" in fs.message(x) and "period=1y" in fs.message(x)
+    assert "tf=1d" in fs.chart_url(x) and "period=1y" in fs.chart_url(x)     # ссылка — кнопкой под сообщением
 
 
 def test_senior_only():
