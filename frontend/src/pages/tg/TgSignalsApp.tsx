@@ -90,6 +90,16 @@ interface AssetItem { key: string; code: string; name: string; kind: string }
 /** Настройки сигналов — своя серверная ручка (api/routers/user_settings.py → ключ srv:signals:prefs, его читает бот
  *  signals/signal_prefs.py). Не localStorage + общая синхронизация: та затирала бы их со старых вкладок сайта. */
 const PREFS_API = '/api/settings/signals';
+/** Сохранения настроек строго по очереди (одно окно — одна очередь): частые нажатия не обгоняют друг друга. */
+let saveChain: Promise<void> = Promise.resolve();
+function queueSave(prefs: object, onError: (text: string) => void) {
+  saveChain = saveChain.then(async () => {
+    try {
+      const r = await apiFetch(PREFS_API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prefs }) });
+      if (!r.ok) onError('Не сохранилось — попробуйте ещё раз');
+    } catch { onError('Нет связи — настройка не сохранилась'); }
+  });
+}
 /** Виды сигналов бота — ключи как в signals/signal_prefs.TYPES; частота — по факту отправок. */
 const SIGNAL_TYPES: { key: string; title: string; hint: string; window?: boolean; windowNote?: string; assets?: boolean }[] = [
   { key: 'oi_record', title: 'Рекорды позиций физлиц', hint: 'около 3 в торговый день', window: true, assets: true,
@@ -137,6 +147,8 @@ export default function TgSignalsApp() {
   // Настройки сигналов: с сервера (PREFS_API), каждое изменение сохраняется сразу. Пустые — приходит всё.
   const [prefs, setPrefsState] = useState<SignalPrefs>({});
   const [prefsReady, setPrefsReady] = useState(false);
+  const [prefsError, setPrefsError] = useState(false);
+  const [prefsTry, setPrefsTry] = useState(0);
   const [typeKey, setTypeKey] = useState<string>('oi_record');
   const [query, setQuery] = useState('');
   const [assets, setAssets] = useState<AssetItem[]>([]);
@@ -144,12 +156,7 @@ export default function TgSignalsApp() {
   const hiddenNames = prefs.names ?? {};
   const setPrefs = (next: SignalPrefs) => {
     setPrefsState(next);
-    void (async () => {
-      try {
-        const r = await apiFetch(PREFS_API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prefs: next }) });
-        if (!r.ok) setToast('Не сохранилось — попробуйте ещё раз');
-      } catch { setToast('Нет связи — настройка не сохранилась'); }
-    })();
+    queueSave(next, setToast);
   };
   const typeOn = (k: string) => prefs.types?.[k]?.on !== false;
   const setType = (k: string, patch: Partial<TypePrefs>) =>
@@ -210,14 +217,22 @@ export default function TgSignalsApp() {
     if (!isAuthenticated) return;
     let dead = false;
     (async () => {
+      // не загрузились — редактировать нельзя: иначе первое нажатие сохранило бы «всё по умолчанию» поверх настоящих
+      let ok = false;
       try {
         const r = await apiFetch(PREFS_API);
-        if (r.ok && !dead) setPrefsState(((await r.json()) as { prefs: SignalPrefs }).prefs ?? {});
-      } catch { /* сеть: показываем «всё включено», сохранение повторит запрос */ }
-      if (!dead) setPrefsReady(true);
+        if (r.ok) {
+          const j = (await r.json()) as { prefs: SignalPrefs };
+          if (!dead) setPrefsState(j.prefs ?? {});
+          ok = true;
+        }
+      } catch { /* сеть — ниже */ }
+      if (dead) return;
+      setPrefsError(!ok);
+      setPrefsReady(ok);
     })();
     return () => { dead = true; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, prefsTry]);
 
   // Список для поиска «Компании и активы»: фьючерсы (рекорды позиций, ключ oi:<базовый тикер>) и акции/индексы
   // (сезонность, ключ se:<тикер>) — тот же справочник инструментов, что у сайта.
@@ -461,7 +476,13 @@ export default function TgSignalsApp() {
       </>
     );
   } else if ((screen === 'signals' || screen === 'type' || screen === 'hidden' || screen === 'quiet') && !prefsReady) {
-    body = <div className="tgs-f" style={{ paddingTop: 24 }}>Загружаем настройки…</div>;
+    body = prefsError ? (
+      <>
+        <div className="tgs-f" style={{ paddingTop: 24 }}>Не получилось загрузить настройки. Пока они не загружены, менять их нельзя — чтобы не затереть сохранённые.</div>
+        <div className="tgs-gap" />
+        <div className="tgs-sec"><button type="button" className="tgs-row tgs-center tgs-accent" onClick={() => { setPrefsError(false); setPrefsTry((n) => n + 1); }}>Попробовать ещё раз</button></div>
+      </>
+    ) : <div className="tgs-f" style={{ paddingTop: 24 }}>Загружаем настройки…</div>;
   } else if (screen === 'signals') {
     const fromName = ctx.name || ctx.asset;
     const hiddenNow = !!ctx.asset && hidden.includes(ctx.asset);

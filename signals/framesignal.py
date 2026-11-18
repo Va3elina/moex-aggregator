@@ -112,16 +112,18 @@ def send_photo(png: bytes, caption: str, tag: str = "framesignal", bot: str = "s
                     data["reply_markup"] = kb
                 r = requests.post(f"{root}/bot{tok}/sendPhoto", timeout=60, data=data,
                                   files={"photo": ("signal.png", png, "image/png")})
+                use_kb = bool(kb)
                 if not r.json().get("ok") and kb:
                     print(f"[{tag}] чат {chat}: фото с кнопками не принято, шлю без них: {r.text[:200].replace(tok, '<REDACTED>')}")
                     data.pop("reply_markup")
+                    use_kb = False
                     r = requests.post(f"{root}/bot{tok}/sendPhoto", timeout=60, data=data,
                                       files={"photo": ("signal.png", png, "image/png")})
                 if not r.json().get("ok"):                # картинку не взяли — сигнал уходит текстом, как раньше
                     print(f"[{tag}] чат {chat}: фото не принято, шлю текстом: {r.text[:200].replace(tok, '<REDACTED>')}")
                     r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data={
                         "chat_id": chat, "text": caption, "parse_mode": "HTML", "disable_web_page_preview": True,
-                        "disable_notification": quiet, **({"reply_markup": kb} if kb else {})})
+                        "disable_notification": quiet, **({"reply_markup": kb} if use_kb else {})})
                 if r.json().get("ok"):
                     ok = True
                     break

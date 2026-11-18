@@ -79,7 +79,8 @@ def put_settings(
         raise HTTPException(status_code=413, detail="Снапшот настроек слишком большой")
 
     now = datetime.now(timezone.utc)
-    row = db.get(UserSettings, user.id)
+    # строка под замком: сохранение с сайта и из мини-приложения в один момент не вернёт старое значение srv:*
+    row = db.get(UserSettings, user.id, with_for_update=True)
     if row is None:
         row = UserSettings(user_id=user.id, data=body.data, updated_at=now)
         db.add(row)
@@ -113,7 +114,7 @@ def put_signal_prefs(body: SignalPrefsBody, user: User = Depends(get_current_use
     if len(raw.encode("utf-8")) > SIGNALS_MAX_BYTES:
         raise HTTPException(status_code=413, detail="Настройки сигналов слишком большие")
     now = datetime.now(timezone.utc)
-    row = db.get(UserSettings, user.id)
+    row = db.get(UserSettings, user.id, with_for_update=True)
     if row is None:
         db.add(UserSettings(user_id=user.id, data={SIGNALS_KEY: raw}, updated_at=now))
     else:

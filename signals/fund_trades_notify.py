@@ -39,8 +39,9 @@ GEN = ["января", "февраля", "марта", "апреля", "мая",
 CAT = {"stocks": ("акций", "Фонды акций"), "bonds": ("облигаций", "Фонды облигаций")}
 # кнопки и настройки получателя (signals/signal_prefs): «фонд отчитался» — без звука
 FUND_KW = {"silent": True, "meta": {"type": "fund_trades"}, "chart_url": "https://framedata.ru/fund-trades"}
-FRESH_MONTHS = 2
-JOB_WINDOW_DAYS = 14                # справки, залитые за столько дней, сверяются со списком показанных                    # «фонд отчитался» — только за свежие месяцы (перечитки истории не шлём)
+FRESH_MONTHS = 2                    # «фонд отчитался» — только за свежие месяцы (перечитки истории не шлём)
+JOB_WINDOW_DAYS = 14                # справки, залитые за столько дней, сверяются со списком показанных
+
 
 
 def dump(*args: str):
@@ -197,10 +198,15 @@ def run_once(dry_run: bool = False, today: dt.date | None = None) -> dict:
             f.setdefault("uk_id", j.get("uk_id"))
             msg = fund_message(f, j["period"])
             png = render(fund_card(f, j["period"])) if (f["buy"] or f["sell"]) else None
-        except Exception as e:  # noqa: BLE001 — фонд не собрался (нет в справочнике сайта и т. п.): не держим остальных
-            print(f"[{NAME}] {j['ticker']} {j['period']}: {type(e).__name__}: {e}")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            # временное (api-контейнер перезапускается при выкатке, таймаут docker exec) — повторим следующим прогоном
+            print(f"[{NAME}] {j['ticker']} {j['period']}: пока не собрать: {type(e).__name__}: {e}")
             summary["failed"] += 1
-            seen.add(j["id"])                           # не пытаемся каждые полчаса — ошибка в логе
+            continue
+        except Exception as e:  # noqa: BLE001 — устойчивая ошибка данных фонда: не держим остальных и не долбим
+            print(f"[{NAME}] {j['ticker']} {j['period']}: пропускаю: {type(e).__name__}: {e}")
+            summary["failed"] += 1
+            seen.add(j["id"])
             save()
             continue
         if dry_run:
