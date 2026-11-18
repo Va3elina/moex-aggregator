@@ -115,13 +115,18 @@ def _send_rich(root: str, tok: str, chat: str, html_: str, png: bytes | None, kb
         else:
             data.pop("reply_markup", None)
         try:
-            r = requests.post(f"{root}/bot{tok}/sendRichMessage", timeout=120, data=data, files=files)
+            r = requests.post(f"{root}/bot{tok}/sendRichMessage", timeout=(10, 40), data=data, files=files)
             if r.json().get("ok"):
                 return True
             print(f"[framesignal] чат {chat}: rich не принят{' (с кнопками)' if with_kb else ''}: "
                   f"{r.text[:200].replace(tok, '<REDACTED>')}")
-        except requests.RequestException as e:
+        except requests.ReadTimeout:
+            # запрос ушёл, ответа нет — Telegram мог его принять: не повторяем, иначе у получателя 2–3 копии (ревью)
+            print(f"[framesignal] чат {chat}: rich — нет ответа, считаю отправленным")
+            return True
+        except requests.RequestException as e:          # не дошли до Telegram/релея — дальше обычный путь
             print(f"[framesignal] чат {chat}: rich: {str(e).replace(tok, '<REDACTED>')}")
+            return False
     return False
 
 
