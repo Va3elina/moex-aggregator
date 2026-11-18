@@ -84,7 +84,7 @@ export class Annotator {
   }
 
   /** Крупная подпись в свободном месте и стрелка к цели (tx, ty). avoid — направление, вдоль которого стрелке нельзя. */
-  headline(text: string, tx: number, ty: number, color: string, opts: { gap?: number; avoidAngle?: number; minLen?: number; maxLen?: number; above?: number; rect?: Rect } = {}) {
+  headline(text: string, tx: number, ty: number, color: string, opts: { gap?: number; avoidAngle?: number; minLen?: number; maxLen?: number; above?: number; rect?: Rect; noArrow?: boolean } = {}) {
     const words = text.split(' ');
     // перенос — перед предлогом («рекордный отток / за год», «приток / после 27 недель оттока»), иначе пополам
     const pi = words.findIndex((w, i) => i > 0 && (w === 'за' || w === 'после'));
@@ -133,16 +133,28 @@ export class Annotator {
     this.out.push(lines.map((l, k) => `<text x="${best.x}" y="${best.y + SZ + k * LH - 6}" fill="${color}" font-size="${SZ}" font-weight="800" letter-spacing="-0.5" ${this.haloText(8)}>${l}</text>`).join(''));
     this.block({ x: best.x, y: best.y, w, h });
     tx = best.tx; ty = best.ty;
-    const a = Math.atan2(ty - best.sy, tx - best.sx), ex = tx - Math.cos(a) * gap, ey = ty - Math.sin(a) * gap, L = 15;
-    if (Math.hypot(ex - best.sx, ey - best.sy) > 30) {
-      const hx = ex - Math.cos(a) * L * 0.8, hy = ey - Math.sin(a) * L * 0.8;
-      const wing = (s: number) => `${ex - Math.cos(a) * L + Math.cos(a + s * Math.PI / 2) * L * 0.6},${ey - Math.sin(a) * L + Math.sin(a + s * Math.PI / 2) * L * 0.6}`;
-      const shaft = `<line x1="${best.sx}" y1="${best.sy}" x2="${hx}" y2="${hy}" stroke="${color}" stroke-width="5" stroke-linecap="round"/>`;
-      const head = `<polygon points="${ex},${ey} ${wing(1)} ${wing(-1)}" fill="${color}" stroke="${color}" stroke-width="1" stroke-linejoin="round"/>`;
-      this.out.push(this.halo(shaft, 6) + this.halo(head, 6) + shaft + head);
-      // стрелка — тоже занятое место: подписи меток, поставленные после, на неё не лезут
-      const n = Math.ceil(Math.hypot(ex - best.sx, ey - best.sy) / 4);
-      for (let k = 0; k <= n; k++) this.block({ x: best.sx + ((ex - best.sx) * k) / n - 6, y: best.sy + ((ey - best.sy) * k) / n - 6, w: 12, h: 12 });
-    }
+    if (!opts.noArrow) this.arrow(best.sx, best.sy, tx, ty, color, gap);
   }
+
+  /** Стрелка-указатель от (sx, sy) к (tx, ty), с зазором gap перед целью и обводкой цветом фона. */
+  arrow(sx: number, sy: number, tx: number, ty: number, color: string, gap = 0, width = 5, L = 15) {
+    const a = Math.atan2(ty - sy, tx - sx), ex = tx - Math.cos(a) * gap, ey = ty - Math.sin(a) * gap;
+    if (Math.hypot(ex - sx, ey - sy) <= 30) return;
+    const hx = ex - Math.cos(a) * L * 0.8, hy = ey - Math.sin(a) * L * 0.8;
+    const wing = (s: number) => `${ex - Math.cos(a) * L + Math.cos(a + s * Math.PI / 2) * L * 0.6},${ey - Math.sin(a) * L + Math.sin(a + s * Math.PI / 2) * L * 0.6}`;
+    const shaft = `<line x1="${sx}" y1="${sy}" x2="${hx}" y2="${hy}" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/>`;
+    const head = `<polygon points="${ex},${ey} ${wing(1)} ${wing(-1)}" fill="${color}" stroke="${color}" stroke-width="1" stroke-linejoin="round"/>`;
+    this.out.push(this.halo(shaft, 6) + this.halo(head, 6) + shaft + head);
+    // стрелка — тоже занятое место: подписи, поставленные после, на неё не лезут
+    const n = Math.ceil(Math.hypot(ex - sx, ey - sy) / 4);
+    for (let k = 0; k <= n; k++) this.block({ x: sx + ((ex - sx) * k) / n - 6, y: sy + ((ey - sy) * k) / n - 6, w: 12, h: 12 });
+  }
+
+  /** Крупный знак (например «?») в точке, с обводкой цветом фона. */
+  glyph(text: string, x: number, y: number, color: string, size = 60) {
+    const w = this.measure(text, size, 800);
+    this.out.push(`<text x="${x}" y="${y}" text-anchor="middle" fill="${color}" font-size="${size}" font-weight="800" ${this.haloText(8)}>${text}</text>`);
+    this.block({ x: x - w / 2 - 4, y: y - size, w: w + 8, h: size + 8 });
+  }
+
 }

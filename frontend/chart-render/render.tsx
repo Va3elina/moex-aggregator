@@ -504,12 +504,38 @@ function annotateKind(L: Layout, BW: number, BH: number): string {
     // поле сезонности — SVG с viewBox 0..1000 по X (доля года); период — от сегодня на 3 месяца вперёд
     const plot = big.find((p) => p.el.getAttribute('viewBox'));
     if (!plot) return '';
-    const x0 = plot.x + sig.from * plot.w, x1 = plot.x + Math.min(sig.to, 1) * plot.w;
-    A.frame({ x: x0, y: plot.y + 4, w: Math.max(x1 - x0, 20), h: plot.h - 8 }, color);
-    const R = { x: x0, y: plot.y + 4, w: Math.max(x1 - x0, 20), h: plot.h - 8 };
-    // окно переходит через Новый год — его начало года тоже в рамке (без подписи)
-    if (sig.to > 1) A.frame({ x: plot.x, y: R.y, w: Math.max((sig.to - 1) * plot.w, 20), h: R.h }, color);
-    A.headline(sig.headline, x0 - 4, plot.y + plot.h * 0.35, color, { gap: 8, above: 40, maxLen: 420, rect: R });
+    // Вадим 18.11: зон на сезонности не нужно — от конца линии текущего года стрелка вверх или вниз с «?»
+    // (правило канала: «?» + стрелка — «что дальше»); крупная подпись — без своей стрелки
+    const vb = nums(plot.el.getAttribute('viewBox'));
+    const sx = vb.length === 4 ? plot.w / vb[2] : 1, sy = vb.length === 4 ? plot.h / vb[3] : 1;
+    // линия текущего года — цвет акцента (YearlySeasonalityChart: CHART_COLORS.accent), средняя — приглушённая
+    const cur = Array.from(plot.el.querySelectorAll('path')).find((p) => (p.getAttribute('stroke') ?? '').includes('accent'));
+    const pts = cur ? pathPts(cur.getAttribute('d') ?? '', plot.x, plot.y, sx, sy) : [];
+    const end = pts.length ? pts[pts.length - 1] : { x: plot.x + sig.from * plot.w, y: plot.y + plot.h / 2 };
+    const up = sig.dir !== 'down';
+    const right = plot.x + plot.w - 16;
+    const dx = Math.max(0, Math.min(90, right - end.x - 40));          // у правого края года — почти вертикально
+    // направление — всегда как у сигнала; острие не выходит за поле (ревью #1845: конец линии у верха/низа поля)
+    const top = plot.y + 10, bot = plot.y + plot.h - 10;
+    const room = up ? end.y - 14 - top : bot - end.y - 14;
+    const MIN = 80;
+    const tight = room < MIN;
+    let tip: { x: number; y: number }, from: { x: number; y: number };
+    if (tight) {
+      // места мало — вертикальная стрелка правее точки, острие у края поля
+      tip = { x: Math.min(end.x + 30, plot.x + plot.w - 14), y: up ? top : bot };
+      from = { x: tip.x, y: up ? top + MIN : bot - MIN };
+    } else {
+      const dy = Math.max(50, Math.min(120, room, up ? end.y - plot.y - 70 : plot.y + plot.h - end.y - 20));
+      tip = { x: Math.min(end.x + 10 + dx, plot.x + plot.w - 14), y: up ? end.y - 14 - dy : end.y + 14 + dy };
+      from = { x: Math.min(end.x + 10, tip.x), y: up ? end.y - 14 : end.y + 14 };
+    }
+    A.arrow(from.x, from.y, tip.x, tip.y, color, 0, 6, 18);
+    // «?» сбоку от острия (справа, у края года — слева); у вертикальной — на середине стрелки
+    const qx = tip.x + 44 <= right ? tip.x + 44 : tip.x - 44;
+    const qy = tight ? (from.y + tip.y) / 2 + 22 : tip.y + 22;
+    A.glyph('?', qx, Math.min(Math.max(qy, plot.y + 60), plot.y + plot.h - 8), color, 64);
+    A.headline(sig.headline, end.x, end.y, color, { above: 40, minLen: 0, maxLen: 4000, noArrow: true });
   }
   return A.out.join('');
 }
