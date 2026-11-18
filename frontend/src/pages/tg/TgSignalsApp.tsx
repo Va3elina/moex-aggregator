@@ -437,7 +437,7 @@ export default function TgSignalsApp() {
     const onCount = SIGNAL_TYPES.filter((t) => typeOn(t.key)).length;
     const signalsNote = !prefsReady ? 'Что присылать и когда'
       : prefs.on === false ? 'Выключены'
-      : `${onCount === SIGNAL_TYPES.length ? 'Все виды' : `${onCount} из ${SIGNAL_TYPES.length} видов`}${prefs.quiet?.on ? ` · тихо ${prefs.quiet.from}–${prefs.quiet.to}` : ''}`;
+      : `${onCount === SIGNAL_TYPES.length ? 'Все виды' : `${onCount} из ${SIGNAL_TYPES.length} видов`}${prefs.quiet?.on ? ` · тихо ${prefs.quiet.from ?? '23:00'}–${prefs.quiet.to ?? '08:00'}` : ''}`;
     const until = plan?.expires_at ? new Date(plan.expires_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
     body = (
       <>
