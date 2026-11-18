@@ -30,6 +30,12 @@ def test_off_hidden_and_type():
     assert sp.decide({"hidden": ["oi:SR"]}, {**REC, "asset": "oi:GZ"}, DAY) == "sound"
 
 
+def test_hidden_per_type():
+    p = {"types": {"oi_record": {"hidden": ["oi:SR"]}}}
+    assert sp.decide(p, REC, DAY) is None
+    assert sp.decide(p, {"type": "season", "asset": "oi:SR"}, DAY) == "sound"     # у сезонности своё
+
+
 def test_min_window_markets_modes():
     p = {"types": {"oi_record": {"min": "1y"}}}
     assert sp.decide(p, REC, DAY) is None                                   # полгода < года

@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.database import get_db
@@ -122,3 +123,29 @@ def put_signal_prefs(body: SignalPrefsBody, user: User = Depends(get_current_use
         row.updated_at = now
     db.commit()
     return {"prefs": body.prefs}
+
+
+
+# Активы для скрытия в настройках сигналов — свои у каждого вида (Вадим 18.11: «называются одинаково, но они
+# разные»): рекорды позиций — фьючерсы (ключ oi:<базовый тикер>, как signals/record_notify), сезонность — индексы,
+# валюты, золото и акции с фьючерсом (ключ se:<код>, как signals/insights/season.assets).
+SIGNAL_GROUPS = ("Акции", "Валюта", "Индексы", "Сырьё")
+SEASON_INDEXES = (("IMOEX", "Индекс МосБиржи", "Индексы"), ("RTSI", "Индекс РТС", "Индексы"),
+                  ("RGBI", "Индекс гособлигаций", "Индексы"), ("USD000UTSTOM", "Доллар", "Валюта"),
+                  ("CNYRUB_TOM", "Юань", "Валюта"), ("EUR_RUB__TOM", "Евро", "Валюта"), ("GLDRUB_TOM", "Золото", "Сырьё"))
+
+
+@router.get("/signals/assets")
+def signal_assets(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    fut = db.execute(text("""
+        SELECT sectype, min(name), min("group") FROM instruments
+        WHERE type = 'futures' AND NOT hidden AND "group" = ANY(:g)
+        GROUP BY sectype ORDER BY min("group"), min(name)"""), {"g": list(SIGNAL_GROUPS)}).all()
+    stocks = db.execute(text("""
+        SELECT stock_ticker, max(display_name) FROM ticker_futures_map
+        WHERE display_name IS NOT NULL GROUP BY stock_ticker ORDER BY max(display_name)""")).all()
+    return {
+        "oi_record": [{"key": f"oi:{s}", "code": s, "name": n, "group": g} for s, n, g in fut],
+        "season": [{"key": f"se:{c}", "code": c, "name": n, "group": g} for c, n, g in SEASON_INDEXES]
+                  + [{"key": f"se:{c}", "code": c, "name": n, "group": "Акции"} for c, n in stocks],
+    }

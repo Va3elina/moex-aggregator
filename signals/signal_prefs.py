@@ -9,7 +9,8 @@ users.telegram_chat_id = чат → user_settings.data[PREFS_KEY] (строка 
      "types": {"oi_record": {"on": true, "min": "3m", "markets": ["Акции", ...], "modes": ["positions", "participants"]},
                "funds_flow": {"on": true, "min": "3m"}, "funds_streak": {"on": true}, "season": {"on": true},
                "strength": {"on": true}, "buffett": {"on": true}, "fund_trades": {"on": true}, "cbr_flows": {"on": true}},
-     "hidden": ["oi:SR", "se:SBER"],
+     "types": {..., "oi_record": {..., "hidden": ["oi:SR"]}, "season": {"hidden": ["se:SBER"]}},   # по виду
+     "hidden": [...],                                            # прежний общий список (ещё читается)
      "quiet": {"on": false, "from": "23:00", "to": "08:00"}}
 Тихие часы не глушат сигнал, а присылают его без звука (по Москве).
 """
@@ -91,7 +92,8 @@ def _decide(p: dict | None, meta: dict | None, now: dt.datetime | None = None) -
     t = (p.get("types") or {}).get(meta.get("type") or "", {})
     if t.get("on") is False:
         return None
-    if meta.get("asset") and meta["asset"] in set(p.get("hidden") or []):
+    # скрытые активы — свои у каждого вида (types[вид].hidden); общий hidden — прежний формат
+    if meta.get("asset") and meta["asset"] in set(p.get("hidden") or []) | set(t.get("hidden") or []):
         return None
     w, mn = meta.get("window"), t.get("min")
     if w and mn in MIN_WINDOW and WINDOW_DAYS.get(w, 0) < WINDOW_DAYS[MIN_WINDOW[mn]]:
