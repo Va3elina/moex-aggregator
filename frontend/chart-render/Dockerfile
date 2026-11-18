@@ -9,7 +9,10 @@ COPY frontend/ ./
 WORKDIR /app/frontend/chart-render
 RUN npm install --no-audit --no-fund --omit=dev \
  && cd .. && npx vite build --config chart-render/vite.config.mjs \
- && cp chart-render/theme-*.json chart-render/dist/ && cp -r chart-render/fonts chart-render/dist/fonts
+ && cp chart-render/theme-*.json chart-render/dist/ && cp -r chart-render/fonts chart-render/dist/fonts \
+ && cp -r chart-render/assets chart-render/dist/assets \
+ && mkdir -p chart-render/dist/logos/indiv && cp -r public/logos/sm chart-render/dist/logos/sm \
+ && cp src/assets/plzl.png chart-render/dist/logos/indiv/PLZL.png
 
 FROM node:20-bookworm-slim
 WORKDIR /render
