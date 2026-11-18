@@ -129,8 +129,12 @@ def message(rows: list, e: dict) -> str:
                 else f"Выше EMA{EMA} снова меньше половины акций индекса: {v}%")
         head = "<b>Сила рынка</b>\n"
     prev = episodes(rows, e)
+    _ROWS[0] = rows
     tail = f"\nПрошлый раз — {month(prev[-1]['day'])}" if prev else ""
     return f"{head}{html.escape(what)}{tail}" + history(prev)
+
+
+_ROWS: list = [[]]            # ряд (дата, доля, IMOEX) последней загрузки — для истории без лишнего запроса
 
 
 def history(prev: list) -> str:
@@ -139,11 +143,7 @@ def history(prev: list) -> str:
         return ""
     from signals import signal_history as sh
     try:
-        db = sh.session()
-        try:
-            px = sh.imoex(db)
-        finally:
-            db.close()
+        px = [(dt.date.fromisoformat(d), ix) for d, _, ix in _ROWS[0]]   # индекс уже в ряду страницы — без БД
         rows = [(p["day"], [sh.price_after(px, dt.date.fromisoformat(p["day"]) + dt.timedelta(days=1), n) for n in (21, 63)])
                 for p in prev]
         up = sh.base_up(px, dt.date(2010, 1, 1), 21)

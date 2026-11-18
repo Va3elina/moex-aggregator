@@ -37,7 +37,15 @@ def plural(n: int, one: str, few: str, many: str) -> str:
 
 
 def price_after(px: Sequence[tuple], day: dt.date, n: int) -> float | None:
+    """Как hot.price_after, но без выдумки: событие раньше начала ряда цен или в дыре данных (ближайшая цена дальше
+    недели) — None. Иначе hot отсчитал бы от первой цены в базе (ревью 18.11: золото до 2020 давало +4,9% на всё)."""
+    from bisect import bisect_left
     from api.services.hot import price_after as pa
+    if not px or day < px[0][0]:
+        return None
+    i = bisect_left([d for d, _ in px], day)
+    if i >= len(px) or (px[i][0] - day).days > 7:
+        return None
     return pa(px, day, n)
 
 
@@ -65,7 +73,8 @@ def block(title: str, horizons: Sequence[str], rows: Iterable[tuple], footer: st
 
 
 def cases_title(n: int) -> str:
-    return f"История · {n} {plural(n, 'похожий случай', 'похожих случая', 'похожих случаев')}"
+    t = f"История · {n} {plural(n, 'похожий случай', 'похожих случая', 'похожих случаев')}"
+    return t + (f", последние {MAX_ROWS}" if n > MAX_ROWS else "")
 
 
 def imoex(db) -> list[tuple]:

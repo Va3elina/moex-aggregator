@@ -87,6 +87,18 @@ def rich_html(caption: str, photo: bool) -> str | None:
     return f"{img}<p>{main}</p><details><summary>{title}</summary>{table}{footer}</details>"
 
 
+def _no_icons(kb: str | None) -> str | None:
+    """Клавиатура без значков на кнопках: если Telegram не примет icon_custom_emoji_id, кнопки останутся."""
+    import json
+    if not kb:
+        return kb
+    k = json.loads(kb)
+    for row in k.get("inline_keyboard", []):
+        for b in row:
+            b.pop("icon_custom_emoji_id", None)
+    return json.dumps(k, ensure_ascii=False)
+
+
 def _send_rich(root: str, tok: str, chat: str, html_: str, png: bytes | None, kb: str | None, quiet: bool) -> bool:
     """sendRichMessage (Bot API 10.1+); с кнопками, не принял — без них. False — пусть идёт обычный путь."""
     import json
@@ -96,9 +108,10 @@ def _send_rich(root: str, tok: str, chat: str, html_: str, png: bytes | None, kb
         rich["media"] = [{"id": "p0", "media": {"type": "photo", "media": "attach://p0"}}]
         files = {"p0": ("signal.png", png, "image/png")}
     data = {"chat_id": chat, "rich_message": json.dumps(rich, ensure_ascii=False), "disable_notification": quiet}
-    for with_kb in ((True, False) if kb else (False,)):
+    for variant in ((kb, _no_icons(kb), None) if kb else (None,)):
+        with_kb = variant is not None
         if with_kb:
-            data["reply_markup"] = kb
+            data["reply_markup"] = variant
         else:
             data.pop("reply_markup", None)
         try:
@@ -138,6 +151,9 @@ def send(text: str, tag: str = "framesignal", bot: str = "signal", silent: bool 
                 if kb:
                     data["reply_markup"] = kb
                 r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data=data)
+                if not r.json().get("ok") and kb:          # сначала без значков на кнопках
+                    data["reply_markup"] = _no_icons(kb)
+                    r = requests.post(f"{root}/bot{tok}/sendMessage", timeout=20, data=data)
                 if not r.json().get("ok") and kb:          # кнопки не приняты — сигнал важнее кнопок
                     print(f"[{tag}] чат {chat}: с кнопками не принято, шлю без них: {r.text[:200].replace(tok, '<REDACTED>')}")
                     data.pop("reply_markup")
@@ -176,6 +192,10 @@ def send_photo(png: bytes, caption: str, tag: str = "framesignal", bot: str = "s
                     data["reply_markup"] = kb
                 r = requests.post(f"{root}/bot{tok}/sendPhoto", timeout=60, data=data,
                                   files={"photo": ("signal.png", png, "image/png")})
+                if not r.json().get("ok") and kb:          # сначала без значков на кнопках
+                    data["reply_markup"] = _no_icons(kb)
+                    r = requests.post(f"{root}/bot{tok}/sendPhoto", timeout=60, data=data,
+                                      files={"photo": ("signal.png", png, "image/png")})
                 use_kb = bool(kb)
                 if not r.json().get("ok") and kb:
                     print(f"[{tag}] чат {chat}: фото с кнопками не принято, шлю без них: {r.text[:200].replace(tok, '<REDACTED>')}")

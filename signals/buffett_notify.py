@@ -141,7 +141,9 @@ def history(rows: list, i: int, side: str, w: str) -> str:
     """Прошлые месяцы с таким же или более глубоким рекордом в ту же сторону и индекс МосБиржи через 3 и 12 месяцев."""
     from signals import signal_history as sh
     try:
-        hits = [k for k in range(12, i) if any(sd == side and RANK[ww] <= RANK[w] for sd, ww, _ in record(rows, k))]
+        # «за всё время» — только при истории от 5 лет (как у рекордов позиций): с 60-го месяца
+        hits = [k for k in range(60 if RANK[w] == 0 else 12, i)
+                if any(sd == side and RANK[ww] <= RANK[w] for sd, ww, _ in record(rows, k))]
         eps = sh.episodes(hits, i, 3)
         if not eps:
             return ""

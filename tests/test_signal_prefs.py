@@ -68,3 +68,18 @@ def test_rich_history_details_table():
     assert "<details><summary>История · 2 похожих случая</summary><table" in h and h.endswith("</details>")
     assert "<th>через 2 нед</th>" in h and "<footer>В обычный день" in h
     assert fs.rich_html("<b>x</b>\nбез истории", photo=True) is None
+
+
+def test_price_after_no_invention():
+    from signals import signal_history as sh
+    px = [(dt.date(2020, 1, 9) + dt.timedelta(days=i), 100.0 + i) for i in range(60)]
+    assert sh.price_after(px, dt.date(2014, 3, 3), 14) is None                 # событие раньше ряда цен
+    assert sh.price_after(px, dt.date(2020, 1, 10), 14) is not None
+    gap = px[:10] + px[30:]
+    assert sh.price_after(gap, dt.date(2020, 1, 25), 5) is None                 # дыра в данных больше недели
+
+
+def test_buttons_without_icons():
+    kb = fs._markup({**REC, "name": "Сбербанк"}, "https://framedata.ru/oi")
+    row = json.loads(fs._no_icons(kb))["inline_keyboard"][0]
+    assert all("icon_custom_emoji_id" not in b for b in row) and len(row) == 2

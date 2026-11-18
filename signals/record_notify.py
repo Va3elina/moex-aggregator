@@ -207,7 +207,8 @@ def history(x: dict, ser: pd.Series | None, px: list) -> str:
     hits = []
     if cur == 0:                                         # «за всё время»: прошлые разы выше всей прежней истории
         top = np.maximum.accumulate(vals)
-        hits = [i for i in range(MIN_HISTORY, len(vals)) if vals[i] > 0 and vals[i] > top[i - 1]]
+        hits = [i for i in range(MIN_HISTORY, len(vals)) if vals[i] > 0 and vals[i] > top[i - 1]
+                and (dates[i] - dates[0]).days >= ALL_TIME_MIN_DAYS]       # «за всё время» — с 5 лет истории
     else:
         for i in range(MIN_HISTORY, len(vals)):
             w = window(vals[:i], dates[:i], float(vals[i]), dates[i])
@@ -297,6 +298,7 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
             px = sh.asset_prices(db, x["sec"])
         except Exception as e:  # noqa: BLE001
             print(f"[{NAME}] цена {x['sec']}: {type(e).__name__}: {e}")
+            db.rollback()                                  # иначе сессия «aborted» и у следующих рекордов цен не будет
             px = []
         msg = message(x, None if live else day, ser, px)
         if dry_run:
