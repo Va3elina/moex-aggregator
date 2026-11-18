@@ -101,3 +101,4 @@ button.tgs-row:active, a.tgs-row:active { background: color-mix(in srgb, var(--t
   background: var(--tg-theme-section-bg-color, var(--tg-theme-secondary-bg-color, #fff)); color: inherit; outline: none; }
 .tgs-ic { flex: none; display: inline-flex; width: 30px; height: 30px; }
 .tgs-ctxsec { margin-top: 8px; }
+.tgs-off { opacity: .4; pointer-events: none; filter: grayscale(.6); transition: opacity .15s; }

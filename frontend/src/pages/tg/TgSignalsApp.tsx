@@ -479,8 +479,10 @@ export default function TgSignalsApp() {
         )}
         <div className="tgs-gap" />
         <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g">Сигналы</span>{sw(prefs.on !== false, 'Сигналы', (on) => setPrefs({ ...prefs, on }))}</div>
+          <div className="tgs-row"><span className="tgs-g"><span>Сигналы</span><span className="tgs-s">{prefs.on !== false ? 'Выключите — ничего не будет приходить' : 'Ничего не приходит, настройки сохранены'}</span></span>{sw(prefs.on !== false, 'Сигналы', (on) => setPrefs({ ...prefs, on }))}</div>
         </div>
+        {/* всё выключено — остальные настройки видны, но затемнены и не нажимаются (Вадим 18.11) */}
+        <div className={prefs.on === false ? 'tgs-off' : undefined} aria-disabled={prefs.on === false}>
         <div className="tgs-h">Что присылать</div>
         <div className="tgs-sec">
           {SIGNAL_TYPES.map((t) => (
@@ -493,6 +495,7 @@ export default function TgSignalsApp() {
         <div className="tgs-gap" />
         <div className="tgs-sec">
           <button type="button" className="tgs-row" onClick={() => go('quiet')}><span className="tgs-g">Тихие часы</span><span className="tgs-v">{prefs.quiet?.on ? `${prefs.quiet.from}–${prefs.quiet.to}` : 'выкл'}</span><Chevron /></button>
+        </div>
         </div>
       </>
     );
@@ -509,6 +512,7 @@ export default function TgSignalsApp() {
         <div className="tgs-sec">
           <div className="tgs-row"><span className="tgs-g">Присылать</span>{sw(typeOn(t.key), 'Присылать', (on) => setType(t.key, { on }))}</div>
         </div>
+        <div className={typeOn(t.key) && prefs.on !== false ? undefined : 'tgs-off'} aria-disabled={!typeOn(t.key) || prefs.on === false}>
         {t.window && (
           <>
             <div className="tgs-h">Рекорд не короче</div>
@@ -539,6 +543,7 @@ export default function TgSignalsApp() {
             </div>
           </>
         )}
+        </div>
       </>
     );
   } else if (screen === 'hidden') {
