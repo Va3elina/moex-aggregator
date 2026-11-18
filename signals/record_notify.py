@@ -42,6 +42,7 @@ from api.database import SessionLocal  # noqa: E402
 from signals.framesignal import SITE, send, send_photo  # noqa: E402
 from signals import record_card  # noqa: E402
 from signals import signal_marks  # noqa: E402
+from signals import signal_history as sh  # noqa: E402
 from signals.insights import data, fresh  # noqa: E402
 from signals.insights import detect as det  # noqa: E402
 from signals.insights.expiry import near_expiry  # noqa: E402
@@ -178,10 +179,60 @@ def mark(w: str) -> str:
     return signal_marks.mark(w)
 
 
-def message(x: dict, close_day=None) -> str:
+def _num(v: float) -> str:
+    return f"{abs(v):,.0f}".replace(",", "\u00a0")
+
+
+def numbers(x: dict, ser: pd.Series | None) -> str:
+    """Строка цифр (макет 18.11): сколько сейчас и как изменилось за месяц (21 торговый день назад)."""
+    unit = "контр." if x["leg"] in ("netl", "nets") else "чел."
+    out = f"{_num(x['value'])} {unit}"
+    if ser is not None and len(ser) > 22:
+        prev = float(ser.values[-22])
+        v = float(x["value"])
+        if prev > 0 and v / prev >= 2:
+            out += f" · ×{v / prev:.1f} за месяц".replace(".", ",")
+        elif prev > 0:
+            out += f" · {sh.pct((v / prev - 1) * 100, 0)} за месяц"
+    return out
+
+
+def history(x: dict, ser: pd.Series | None, px: list) -> str:
+    """Прошлые такие же рекорды (окно не короче нынешнего) и цена базового актива через день и через 2 недели —
+    как «Главное» сайта (OI_HORIZONS); внизу — то же «в обычный день»."""
+    if ser is None or len(ser) < MIN_HISTORY + 10 or not px:
+        return ""
+    vals, dates = ser.values.astype(float), ser.index
+    cur = RANK[x["window"]]
+    hits = []
+    if cur == 0:                                         # «за всё время»: прошлые разы выше всей прежней истории
+        top = np.maximum.accumulate(vals)
+        hits = [i for i in range(MIN_HISTORY, len(vals)) if vals[i] > 0 and vals[i] > top[i - 1]]
+    else:
+        for i in range(MIN_HISTORY, len(vals)):
+            w = window(vals[:i], dates[:i], float(vals[i]), dates[i])
+            if w and RANK[w] <= cur:
+                hits.append(i)
+    eps = sh.episodes(hits, len(vals), 20)
+    rows = [(dates[i].date(), [sh.price_after(px, dates[i].date() + timedelta(days=1), n) for n in (1, 14)]) for i in eps]
+    up = sh.base_up(px, dates[0].date(), 14)
+    return sh.block(sh.cases_title(len(rows)), ["через день", "через 2 нед"], rows,
+                    f"В обычный день цена через 2 недели росла в {up}% случаев" if up is not None else None)
+
+
+def message(x: dict, close_day=None, ser: pd.Series | None = None, px: list | None = None) -> str:
+    """Макет 18.11: значок и логотип, название; что случилось; цифры; история похожих случаев (раскрывается)."""
     tail = f" · по закрытию {pd.Timestamp(close_day):%d.%m}" if close_day is not None else ""
-    return (f"{mark(x['window'])}{signal_marks.logo('oi:' + x['sec'])}<b>{html.escape(x['name'])}</b>\n"
-            f"{LEGS[x['leg']]}\nРекорд {x['window']}{tail}")   # «Открыть график» — кнопкой под сообщением
+    side = "Лонг" if x["leg"] in ("netl", "ntl") else "Шорт"
+    who = "физлиц" if x["leg"] in ("netl", "nets") else "физлиц по числу людей"
+    head = f"{mark(x['window'])}{signal_marks.logo('oi:' + x['sec'])}<b>{html.escape(x['name'])}</b>\n"
+    body = f"{side} {who} — рекорд {x['window']}\n{numbers(x, ser)}{tail}"
+    try:
+        hist = history(x, ser, px or [])
+    except Exception as e:  # noqa: BLE001 — без истории лучше, чем без сигнала
+        print(f"[{NAME}] история {x['sec']}: {type(e).__name__}: {e}")
+        hist = ""
+    return head + html.escape(body) + hist
 
 
 def meta(x: dict) -> dict:
@@ -238,8 +289,16 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
     new = [x for x in recs if due(x, sent.get(_key(x)), day)]
     new.sort(key=lambda x: (RANK[x["window"]], x["name"], list(LEGS).index(x["leg"])))
     summary["new"] = len(new)
+    P = det.load_positions() if new else None
+    db = sh.session() if new else None
     for x in new:
-        msg = message(x, None if live else day)
+        ser = _series(P, x["leg"], x["sec"]) if P is not None else None
+        try:
+            px = sh.asset_prices(db, x["sec"])
+        except Exception as e:  # noqa: BLE001
+            print(f"[{NAME}] цена {x['sec']}: {type(e).__name__}: {e}")
+            px = []
+        msg = message(x, None if live else day, ser, px)
         if dry_run:
             print(msg + "\n")
             continue
@@ -253,6 +312,8 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
         else:
             summary["failed"] += 1
         time.sleep(1.1)                   # лимит Telegram — около сообщения в секунду на чат
+    if db is not None:
+        db.close()
     if not dry_run and new:
         _save_sent(sent, (day - timedelta(days=COOLDOWN_DAYS + 7)).date().isoformat())
     return summary

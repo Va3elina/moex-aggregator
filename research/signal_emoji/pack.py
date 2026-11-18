@@ -1,6 +1,7 @@
 """Пак своих эмодзи шкалы силы сигналов: t.me/addemoji/frame_signals_by_framesignalbot (запуск на сервере, от root).
 
     python3 pack.py create   создать пак из out/ (make_emoji.py), владелец — Вадим (ADMIN_CHAT_ID); потом sync
+    python3 pack.py add      дописать в пак значки, которых в нём ещё нет (по порядку ITEMS)
     python3 pack.py sync     номера значков → ids.json (имя → custom_emoji_id), сопоставление по порядку в паке
     python3 pack.py test     одно сообщение Вадиму: все 7 уровней шкалы и пример рекорда
 
@@ -24,7 +25,9 @@ UA = "Mozilla/5.0 (compatible; frame-robots/1.0)"
 # порядок в паке = порядок здесь; запасной эмодзи — то, что видно в пуш-уведомлении и без Premium
 # Вадим 18.11: три ступени — «вау» (за всё время) горящий огонь, «сильно» (2–5 лет) переливающийся кружок,
 # «для понимания» (3 мес–год) без значка
-ITEMS = [("pulse", "wave0.webm", "video", "🟠"), ("fire", "fire.webm", "video", "🔥")]
+ITEMS = [("pulse", "wave0.webm", "video", "🟠"), ("fire", "fire.webm", "video", "🔥"),
+         # значки кнопок под сигналом (Вадим 18.11): make_buttons.py → out_buttons/
+         ("gear", "../out_buttons/gear.webm", "video", "⚙️"), ("chart", "../out_buttons/chart.webm", "video", "📈")]
 
 
 def env() -> dict:
@@ -99,6 +102,17 @@ def create() -> None:
     sync()
 
 
+def add() -> None:
+    have = len(api("getStickerSet", dict(name=set_name()))["stickers"])
+    for name, fn, fmt, emoji in ITEMS[have:]:
+        sticker = dict(sticker="attach://f", format=fmt, emoji_list=[emoji], keywords=[name])
+        api("addStickerToSet", dict(user_id=env()["chat"], name=set_name(), sticker=sticker),
+            {"f": (pathlib.Path(fn).name, (OUT / fn).read_bytes(), "video/webm" if fmt == "video" else "image/png")})
+        print("добавлен", name)
+        time.sleep(1)
+    sync()
+
+
 def sync() -> None:
     got = api("getStickerSet", dict(name=set_name()))["stickers"]
     if len(got) != len(ITEMS):
@@ -134,4 +148,4 @@ def test() -> None:
 
 
 if __name__ == "__main__":
-    {"create": create, "sync": sync, "test": test}[sys.argv[1]]()
+    {"create": create, "add": add, "sync": sync, "test": test}[sys.argv[1]]()

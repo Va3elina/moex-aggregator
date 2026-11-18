@@ -45,14 +45,15 @@ def _markup(meta: dict | None, chart_url: str | None) -> str | None:
     if not meta and not chart_url:
         return None
     import json
-    from signals import signal_prefs
+    from signals import signal_marks, signal_prefs
     row = []
     if chart_url:
         # у сделок фондов и потоков ЦБ на сайте таблицы, а не график
         label = "Открыть на сайте" if (meta or {}).get("type") in ("fund_trades", "cbr_flows") else "Открыть график"
-        row.append({"text": label, "url": chart_url})
+        row.append({"text": label, "url": chart_url, "icon_custom_emoji_id": signal_marks.CHART_ID})
     if meta:
-        row.append({"text": "Настройки", "web_app": {"url": signal_prefs.settings_url(SITE, meta)}})
+        row.append({"text": "Настройки", "web_app": {"url": signal_prefs.settings_url(SITE, meta)},
+                    "icon_custom_emoji_id": signal_marks.GEAR_ID})
     return json.dumps({"inline_keyboard": [row]}, ensure_ascii=False)
 
 

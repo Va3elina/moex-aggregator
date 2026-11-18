@@ -52,7 +52,8 @@ def test_quiet_hours_mute_not_drop():
 
 def test_buttons():
     kb = json.loads(fs._markup({**REC, "name": "Сбербанк"}, "https://framedata.ru/oi?instrument=SR"))["inline_keyboard"][0]
-    assert kb[0] == {"text": "Открыть график", "url": "https://framedata.ru/oi?instrument=SR"}
+    assert kb[0]["text"] == "Открыть график" and kb[0]["url"] == "https://framedata.ru/oi?instrument=SR"
+    assert kb[0]["icon_custom_emoji_id"] and kb[1]["icon_custom_emoji_id"]          # анимированные значки пака
     assert kb[1]["text"] == "Настройки"
     assert kb[1]["web_app"]["url"].startswith("https://framedata.ru/tg?s=signals&from=oi_record&asset=oi%3ASR")
     assert fs._markup(None, None) is None

@@ -130,7 +130,28 @@ def message(rows: list, e: dict) -> str:
         head = "<b>Сила рынка</b>\n"
     prev = episodes(rows, e)
     tail = f"\nПрошлый раз — {month(prev[-1]['day'])}" if prev else ""
-    return f"{head}{html.escape(what)}{tail}"
+    return f"{head}{html.escape(what)}{tail}" + history(prev)
+
+
+def history(prev: list) -> str:
+    """Прошлые такие же события и индекс МосБиржи через месяц и через 3 месяца (как «Главное»: FUND_HORIZONS)."""
+    if not prev:
+        return ""
+    from signals import signal_history as sh
+    try:
+        db = sh.session()
+        try:
+            px = sh.imoex(db)
+        finally:
+            db.close()
+        rows = [(p["day"], [sh.price_after(px, dt.date.fromisoformat(p["day"]) + dt.timedelta(days=1), n) for n in (21, 63)])
+                for p in prev]
+        up = sh.base_up(px, dt.date(2010, 1, 1), 21)
+        return sh.block(sh.cases_title(len(rows)), ["индекс через мес", "через 3 мес"], rows,
+                        f"В обычный день индекс через месяц рос в {up}% случаев" if up is not None else None)
+    except Exception as ex:  # noqa: BLE001
+        print(f"[{NAME}] история: {type(ex).__name__}: {ex}")
+        return ""
 
 
 def picture(rows: list, e: dict) -> bytes | None:

@@ -152,9 +152,27 @@ def chart_url(x: dict) -> str:
     return f"{SITE}/funds-money?" + urllib.parse.urlencode(p, safe=",")
 
 
+def bn(v: float) -> str:
+    """Поток в млрд ₽ со знаком: «−5,3 млрд ₽»."""
+    v = round(v, 1) + 0.0
+    return ("+" if v > 0 else "−" if v < 0 else "") + f"{abs(v):.1f}".replace(".", ",") + " млрд ₽"
+
+
 def message(x: dict) -> str:
-    return (f"{mark(x['window'])}<b>{html.escape(x['name'])}</b>\n{SIDES[x['side']]} {HORIZONS[x['tf']]}\n"
-            f"Рекорд {x['window']}")
+    """Макет 18.11: срез; что случилось; цифры — поток столбика и с чем сравнили (прежний рекорд или когда было
+    больше)."""
+    from signals.signal_history import day_label
+    line = f"{SIDES[x['side']]} {HORIZONS[x['tf']]} — рекорд {x['window']}"
+    nums = f"{bn(x['flow'])} {HORIZONS[x['tf']]}"
+    bars = x.get("_bars") or []
+    sgn = 1 if x["side"] == "in" else -1
+    if x["window"] == "за всё время" and len(bars) > 1:
+        prev = max(bars[:-1], key=lambda b: sgn * b["flow"])
+        if sgn * prev["flow"] > 0:
+            nums += f" · прежний рекорд {bn(prev['flow'])}, {day_label(prev['period_end'])}"
+    elif x.get("prev_day") and x.get("prev_flow") is not None:
+        nums += f" · {'больше' if sgn > 0 else 'сильнее'} было {day_label(x['prev_day'])}: {bn(x['prev_flow'])}"
+    return f"{mark(x['window'])}<b>{html.escape(x['name'])}</b>\n{html.escape(line)}\n{html.escape(nums)}"
 
 
 def senior_only(new: list) -> list:

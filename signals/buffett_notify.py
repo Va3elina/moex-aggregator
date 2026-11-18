@@ -134,7 +134,30 @@ def message(rows: list, i: int, side: str, w: str, ref: int | None) -> str:
     body = f"Капитализация / ВВП — {pct(v)}: {phrase(rows, i, side, w, ref)}\n"
     if ref is not None:
         body += f"{'Ниже' if side == 'min' else 'Выше'} было в {month(rows[ref][0])}: {pct(rows[ref][1])}\n"
-    return head + html.escape(body.rstrip("\n"))
+    return head + html.escape(body.rstrip("\n")) + history(rows, i, side, w)
+
+
+def history(rows: list, i: int, side: str, w: str) -> str:
+    """Прошлые месяцы с таким же или более глубоким рекордом в ту же сторону и индекс МосБиржи через 3 и 12 месяцев."""
+    from signals import signal_history as sh
+    try:
+        hits = [k for k in range(12, i) if any(sd == side and RANK[ww] <= RANK[w] for sd, ww, _ in record(rows, k))]
+        eps = sh.episodes(hits, i, 3)
+        if not eps:
+            return ""
+        db = sh.session()
+        try:
+            px = sh.imoex(db)
+        finally:
+            db.close()
+        out = [(rows[k][0], [sh.price_after(px, dt.date.fromisoformat(rows[k][0]) + dt.timedelta(days=1), n) for n in (63, 252)])
+               for k in eps]
+        up = sh.base_up(px, dt.date(2005, 1, 1), 63)
+        return sh.block(sh.cases_title(len(out)), ["индекс через 3 мес", "через год"], out,
+                        f"В обычный день индекс через 3 месяца рос в {up}% случаев" if up is not None else None)
+    except Exception as e:  # noqa: BLE001
+        print(f"[{NAME}] история: {type(e).__name__}: {e}")
+        return ""
 
 
 def picture(rows: list, i: int, side: str, w: str, ref: int | None) -> bytes | None:

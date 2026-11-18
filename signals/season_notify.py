@@ -31,6 +31,7 @@ from datetime import date, datetime, timedelta, timezone  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from signals import funds_card, signal_marks  # noqa: E402
+from signals import signal_history as sh  # noqa: E402
 from signals.framesignal import SITE, send, send_photo  # noqa: E402
 from signals.insights import fresh, season  # noqa: E402
 
@@ -79,9 +80,40 @@ def message(p: dict, start: date, today: date) -> str:
     up = p["dir"] == "up"
     end = start + timedelta(days=p["days"])
     head = signal_marks.logo("se:" + p["code"])   # логотип актива вместо 📅: только свои значки (Вадим 18.11)
-    what = "Сезонность: время для покупки" if up else "Сезонность: период снижения"
+    # макет 18.11: «Сезонно растёт следующие 3 месяца / до 17 февраля / Рост в 10 из 11 лет · обычно +9%» и по годам
+    what = f"Сезонно {'растёт' if up else 'падает'} {span((end - today).days).lower()}"
     hits = f"{'Рост' if up else 'Падение'} в {p['hits']} из {p['years']} лет"
-    return f"{head}<b>{html.escape(p['name'])}</b>\n{what}\n{span((end - today).days)}, до {end:%d.%m}\n{hits}"
+    if p.get("median") is not None:
+        hits += f" · обычно {sh.pct(p['median'] * 100, 0)}"
+    try:
+        years = by_years(p, start)
+    except Exception as e:  # noqa: BLE001 — без таблицы лучше, чем без сигнала
+        print(f"[{NAME}] по годам {p['code']}: {type(e).__name__}: {e}")
+        years = ""
+    return (f"{head}<b>{html.escape(p['name'])}</b>\n{what}\nдо {end.day} {GEN[end.month - 1]}\n{hits}"
+            + years)
+
+
+GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября",
+       "декабря"]
+
+
+def by_years(p: dict, start: date, n: int = 10) -> str:
+    """Тот же отрезок года в каждом из прошлых лет (как «Главное» сайта: hot.season_years) — раскрывающимся блоком."""
+    from api.services.hot import season_years
+    _, ser = season.series(p["code"])
+    if ser is None or not len(ser):
+        return ""
+    closes = [(d.date(), float(v)) for d, v in ser.items()]
+    rows = season_years(closes, start, start.year - n)
+    if not rows:
+        return ""
+    end = start + timedelta(days=p["days"])
+    ms = sh.MS
+    lines = [f"<b>По годам · {len(rows)} {sh.plural(len(rows), 'год', 'года', 'лет')}</b>",
+             f"Год · {start.day} {ms[start.month - 1]} → {end.day} {ms[end.month - 1]}"]
+    lines += [f"{y} · {sh.pct(v)}" for y, v in rows[::-1]]
+    return "\n<blockquote expandable>" + "\n".join(html.escape(x) if not x.startswith("<b>") else x for x in lines) + "</blockquote>"
 
 
 def _key(p: dict, start: date) -> str:
