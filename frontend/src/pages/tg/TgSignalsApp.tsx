@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiFetch } from '../../services/api';
 import InstrumentIcon from '../../components/InstrumentIcon';
+import { Bell, Crown, Globe, MessageCircle, Send } from 'lucide-react';
 import './tg.css';
 
 interface TgButton { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void }
@@ -30,6 +31,8 @@ interface TgWebApp {
 
 const SDK = 'https://telegram.org/js/telegram-web-app.js';
 const SITE = 'https://framedata.ru';
+/** Поддержка — как на сайте (ContactsPage.tsx SUPPORT_TELEGRAM) */
+const SUPPORT_TG = 'https://t.me/TorSasha';
 
 /** SDK Telegram. tg = null — открыто в обычном браузере (SDK там есть, но platform = unknown);
  *  ready = false, пока SDK не загрузился: до этого не знаем, в Telegram мы или нет. */
@@ -125,6 +128,10 @@ const iconCode = (a: AssetItem) => a.code;
 const MODES: [string, string][] = [['positions', 'По объёму'], ['participants', 'По числу людей']];
 const TIERS: Record<string, string> = { guest: 'Free', free: 'Free', basic: 'Basic', pro: 'Pro', premium: 'Premium', admin: 'Админ' };
 
+/** Плитка-значок раздела, как в настройках Telegram: цветной квадрат, белый знак. */
+const Tile = ({ color, children }: { color: string; children: ReactNode }) => (
+  <span className="tgs-tile" style={{ background: color }} aria-hidden="true">{children}</span>
+);
 const Chevron = () => (
   <svg width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: 'none', opacity: 0.35 }}><path d="M1 1l6 6-6 6" /></svg>
 );
@@ -191,6 +198,8 @@ export default function TgSignalsApp() {
   const go = useCallback((s: Screen) => setStack((st) => [...st, s]), []);
   const back = useCallback(() => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st)), []);
   const open = useCallback((url: string) => (tg ? tg.openLink(url) : window.open(url, '_blank', 'noopener')), [tg]);
+  /** Ссылка t.me — внутри Telegram открывается сразу чатом, без браузера */
+  const openChat = useCallback((url: string) => (tg?.openTelegramLink ? tg.openTelegramLink(url) : open(url)), [tg, open]);
 
   // главная кнопка Telegram сейчас не нужна (настройки сохраняются сразу); место под неё оставлено
   const main = null as { text: string; run: () => void } | null;
@@ -425,6 +434,10 @@ export default function TgSignalsApp() {
   } else if (screen === 'cabinet') {
     const name = user.display_name || user.email.split('@')[0];
     const tier = TIERS[plan?.tier ?? ''] ?? '—';
+    const onCount = SIGNAL_TYPES.filter((t) => typeOn(t.key)).length;
+    const signalsNote = !prefsReady ? 'Что присылать и когда'
+      : prefs.on === false ? 'Выключены'
+      : `${onCount === SIGNAL_TYPES.length ? 'Все виды' : `${onCount} из ${SIGNAL_TYPES.length} видов`}${prefs.quiet?.on ? ` · тихо ${prefs.quiet.from}–${prefs.quiet.to}` : ''}`;
     const until = plan?.expires_at ? new Date(plan.expires_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
     body = (
       <>
@@ -433,15 +446,31 @@ export default function TgSignalsApp() {
           <div className="tgs-name">{name}</div>
           <div className="tgs-s" style={{ fontSize: 15, lineHeight: '20px' }}>{user.requires_email_setup ? 'почта не указана' : user.email}</div>
         </div>
+        {/* Порядок (Вадим 18.11: «важное наверх, остальное вниз»): сигналы и Telegram → тариф → поддержка → выход.
+            Значки разделов — плитки в духе настроек Telegram. */}
+        <div className="tgs-sec">
+          {/* Сигналы бота пока приходят только админам — и настройку видят только они (до раскатки всем) */}
+          {user.role === 'admin' && (
+            <button type="button" className="tgs-row" onClick={() => go('signals')}>
+              <Tile color="#ff5c2b"><Bell size={17} strokeWidth={2.4} /></Tile>
+              <span className="tgs-g"><span>Сигналы</span><span className="tgs-s">{signalsNote}</span></span><Chevron />
+            </button>
+          )}
+          {link?.linked
+            ? <div className="tgs-row"><Tile color="#2aabee"><Send size={16} strokeWidth={2.4} /></Tile><span className="tgs-g"><span>Telegram подключён</span><span className="tgs-s">{link.username ? `@${link.username}` : 'сигналы приходят в этот чат'}</span></span><Check /></div>
+            : <button type="button" className="tgs-row tgs-accent" onClick={connect}><Tile color="#2aabee"><Send size={16} strokeWidth={2.4} /></Tile><span className="tgs-g"><span>Подключить Telegram</span><span className="tgs-s">{tg ? 'Сигналы будут приходить в этот чат' : 'Откроется бот — нажмите «Запустить»'}</span></span><Chevron /></button>}
+        </div>
+        <div className="tgs-gap" />
         {/* Админу тариф выбирать незачем: доступ даёт роль, а не подписка */}
         {user.role === 'admin' ? (
           <div className="tgs-sec">
-            <div className="tgs-row"><span className="tgs-g"><span>Доступ администратора</span><span className="tgs-s">Все разделы открыты</span></span></div>
+            <div className="tgs-row"><Tile color="#af52de"><Crown size={16} strokeWidth={2.4} /></Tile><span className="tgs-g"><span>Доступ администратора</span><span className="tgs-s">Все разделы открыты</span></span></div>
           </div>
         ) : (
           <>
           <div className="tgs-sec">
             <button type="button" className="tgs-row" onClick={() => open(`${SITE}/pricing`)}>
+              <Tile color="#af52de"><Crown size={16} strokeWidth={2.4} /></Tile>
               <span className="tgs-g"><span>Тариф {tier}</span><span className="tgs-s">{until ? `${plan?.is_trial ? 'пробный период до' : plan?.cancelled_at ? 'действует до' : 'продлится'} ${until}` : 'Подписки нет'}</span></span>
               <span className="tgs-v tgs-accent">{until ? 'Изменить' : 'Выбрать'}</span><Chevron />
             </button>
@@ -449,18 +478,17 @@ export default function TgSignalsApp() {
           <div className="tgs-f">Оплата открывается на сайте.</div>
           </>
         )}
-        <div className="tgs-h">Уведомления</div>
-        <div className="tgs-sec">
-          {link?.linked
-            ? <div className="tgs-row"><span className="tgs-g"><span>Telegram подключён</span><span className="tgs-s">{link.username ? `@${link.username}` : 'сигналы приходят в этот чат'}</span></span><Check /></div>
-            : <button type="button" className="tgs-row tgs-accent" onClick={connect}><span className="tgs-g"><span>Подключить Telegram</span><span className="tgs-s">{tg ? 'Сигналы будут приходить в этот чат' : 'Откроется бот — нажмите «Запустить»'}</span></span><Chevron /></button>}
-          {/* Сигналы бота пока приходят только админам — и настройку видят только они (до раскатки всем) */}
-          {user.role === 'admin' && <button type="button" className="tgs-row" onClick={() => go('signals')}><span className="tgs-g">Настройка сигналов</span><Chevron /></button>}
-        </div>
         <div className="tgs-gap" />
         <div className="tgs-sec">
-          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/profile`)}><span className="tgs-g">Профиль на сайте</span><Chevron /></button>
-          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/contacts`)}><span className="tgs-g">Написать в поддержку</span><Chevron /></button>
+          {/* Поддержка — чат в самом Telegram, без перехода на сайт (Вадим 18.11) */}
+          <button type="button" className="tgs-row" onClick={() => openChat(SUPPORT_TG)}>
+            <Tile color="#34c759"><MessageCircle size={16} strokeWidth={2.4} /></Tile>
+            <span className="tgs-g"><span>Написать в поддержку</span><span className="tgs-s">Ответим здесь, в Telegram</span></span><Chevron />
+          </button>
+          <button type="button" className="tgs-row" onClick={() => open(`${SITE}/profile`)}>
+            <Tile color="#8e8e93"><Globe size={16} strokeWidth={2.4} /></Tile>
+            <span className="tgs-g">Профиль на сайте</span><Chevron />
+          </button>
         </div>
         <div className="tgs-gap" />
         <div className="tgs-sec">
