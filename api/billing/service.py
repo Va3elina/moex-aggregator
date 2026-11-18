@@ -413,6 +413,33 @@ def _verify_with_provider(sub: Subscription, provider_name: str | None = None) -
     return info.get("Status", "").upper() == "CONFIRMED"
 
 
+def renewal_period_start(now: datetime, prev_expires: list[datetime | None]) -> datetime:
+    """
+    С какого момента считать срок новой подписки: с конца самого позднего ещё
+    не истёкшего периода того же tier, иначе с `now`. Не раньше `now` — если
+    старый период уже кончился (оплата прошла со 2-3 попытки), дыру не
+    компенсируем задним числом.
+    """
+    start = now
+    for exp in prev_expires:
+        if exp is not None and _aware(exp) > start:
+            start = _aware(exp)
+    return start
+
+
+def _paid_until(db: Session, sub: Subscription, now: datetime) -> datetime:
+    """Конец уже оплаченного доступа того же tier (без триалов) или now."""
+    prev = db.query(Subscription.expires_at).filter(
+        Subscription.user_id == sub.user_id,
+        Subscription.id != sub.id,
+        Subscription.tier == sub.tier,
+        Subscription.status == "active",
+        Subscription.is_trial.is_(False),
+        Subscription.expires_at > now,
+    ).all()
+    return renewal_period_start(now, [r[0] for r in prev])
+
+
 def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | None:
     """
     Активирует подписку после webhook.payment.succeeded.
@@ -483,8 +510,13 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
     plan = get_plan(sub.plan_id)
     now = datetime.now(timezone.utc)
     sub.status = "active"
+    # started_at = момент оплаты (по нему считает выручку /admin/stats).
+    # Срок считаем от конца уже оплаченного периода того же tier: продление
+    # списывает за сутки до конца, и раньше новый период начинался с момента
+    # списания — клиент терял ~23ч каждый месяц.
     sub.started_at = now
-    sub.expires_at = now + timedelta(days=plan.duration_days) if plan else None
+    period_start = _paid_until(db, sub, now)
+    sub.expires_at = period_start + timedelta(days=plan.duration_days) if plan else None
     sub.yk_method = event.payment_method
 
     # Если webhook принёс RebillId (карта) ИЛИ AccountToken (СБП) — это был
