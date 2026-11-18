@@ -57,3 +57,14 @@ def test_buttons():
     assert kb[1]["text"] == "Настройки"
     assert kb[1]["web_app"]["url"].startswith("https://framedata.ru/tg?s=signals&from=oi_record&asset=oi%3ASR")
     assert fs._markup(None, None) is None
+
+
+def test_rich_history_details_table():
+    cap = ("<b>RL</b>\nЛонг\n602 чел.\n<blockquote expandable><b>История · 2 похожих случая</b>\n"
+           "Дата · через день · через 2 нед\n21 янв 2026 · +1,0% · −6,9%\n25 фев 2025 · −4,2% · +3,5%\n"
+           "В обычный день цена росла в 45% случаев</blockquote>")
+    h = fs.rich_html(cap, photo=True)
+    assert h.startswith('<img src="tg://photo?id=p0"/><p><b>RL</b><br/>Лонг<br/>602 чел.</p>')
+    assert "<details><summary>История · 2 похожих случая</summary><table" in h and h.endswith("</details>")
+    assert "<th>через 2 нед</th>" in h and "<footer>В обычный день" in h
+    assert fs.rich_html("<b>x</b>\nбез истории", photo=True) is None
