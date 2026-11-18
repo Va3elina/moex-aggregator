@@ -112,12 +112,15 @@ def build(x: dict, value: float, day, cases: list | None = None) -> dict | None:
         # период — самый короткий, где видны все они и прошлый раз «выше» (Вадим 18.11: «в истории 3, на графике 2»)
         idx = {p["time"][:10]: i for i, p in enumerate(line)}
         dates = sorted(idx)
-        peaks = []
+        found = []
         for c in sorted(cases, reverse=True):
             k = next((d for d in dates if d >= str(c)), None)
-            if k is not None and idx[k] < len(vals) - 1:
-                peaks.append(idx[k])
-        if peaks and start:
+            # дата графика дальше недели от случая (график начинается позже, дыра в данных) — не рисуем не туда
+            if k is not None and idx[k] < len(vals) - 1 and (dt.date.fromisoformat(k) - c).days <= 7:
+                found.append(idx[k])
+        if found:
+            peaks = found
+        if found and start:
             oldest = min(dt.date.fromisoformat(line[i]["time"][:10]) for i in peaks)
             if oldest.isoformat() < start:                    # старший случай не влез — период длиннее
                 need = (day - oldest).days * 1.15 + 20
@@ -134,7 +137,8 @@ def build(x: dict, value: float, day, cases: list | None = None) -> dict | None:
         "meta": {"title": f"Открытые позиции — {title}", "asset": x["name"],
                  "ticker": front_ticker(x["sec"], switches, day), "details": ["1д", period, "Физлица"]},
         "signal": {"headline": head, "colorVar": "--oi-cyan", "dir": "high" if sg > 0 else "low",
-                   "peaks": [{"date": line[i]["time"][:10], "value": sg * vals[i], "label": lab(i)} for i in peaks]},
+                   "peaks": [{"date": line[i]["time"][:10], "value": sg * vals[i], "label": lab(i)} for i in peaks],
+                   "cases": bool(cases)},
     }
 
 
