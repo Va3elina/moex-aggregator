@@ -88,6 +88,15 @@ const root = createRoot(win.document.getElementById('root')!);
 // вид графика — как на соответствующей странице сайта: /oi — SimpleChart, «Деньги в фондах» — FlowsHistogram,
 // «Сезонность» (годовая) — YearlySeasonalityChart
 const KIND = card.kind ?? 'oi';
+// форматы подписей по имени (в JSON карточки функций нет): как их задают страницы сайта
+const FMT = (f: Record<string, string>) => {
+  const fn: Record<string, (v: number) => string> = {
+    pct1: (v) => `${v.toFixed(1)}%`, pct2: (v) => `${v.toFixed(2)}%`, int: (v) => String(Math.round(v)),
+    trln: (v) => `${v.toFixed(2)} трлн ₽`,
+  };
+  const keys: Record<string, string> = { value: 'formatValue', primaryAxis: 'formatPrimaryAxis', secondaryValue: 'formatSecondaryValue', secondaryAxis: 'formatSecondaryAxis' };
+  return Object.fromEntries(Object.entries(f).filter(([k, v]) => keys[k] && fn[v]).map(([k, v]) => [keys[k], fn[v]]));
+};
 let chartEl;
 if (KIND === 'flows') {
   const { default: FlowsHistogram } = await import('/src/components/funds/FlowsHistogram');
@@ -126,6 +135,9 @@ if (KIND === 'flows') {
     primaryLabel: card.asset, secondaryLabel: card.lineLabel, showValueHeader: false, legendPosition: 'top',
     showDownloadButton: false, showNavigator: false, chartPadding: { left: 120, right: 120 },
     annotations: [], showWatermark: false,   // без меток экспираций и водяного знака (Вадим 18.11)
+    // другие страницы на SimpleChart (Индикатор Баффетта) — их же цвета, поля и форматы осей
+    ...(card.chartProps ?? {}),
+    ...(card.fmt ? FMT(card.fmt) : {}),
   });
 }
 root.render(React.createElement(ThemeProvider, null, React.createElement(NoChartAnimCtx.Provider, { value: true }, chartEl)));
@@ -196,7 +208,7 @@ const n = card.price.length;
 const xOf = (i: number) => padL + (i / Math.max(n - 1, 1)) * (plotW - 10);
 const idxOf = (d: string) => { const i = card.price.findIndex((p: { time: string }) => p.time.slice(0, 10) >= d); return i < 0 ? n - 1 : i; };
 const secTicks = [...plotG.querySelectorAll('text[text-anchor="start"]')]
-  .map((t) => ({ v: Number((t.textContent ?? '').replace(/\s/g, '').replace('−', '-').replace(',', '.')), y: Number(t.getAttribute('y')) }))
+  .map((t) => ({ v: Number((t.textContent ?? '').replace(/\s/g, '').replace('−', '-').replace(',', '.').replace(/[^\d.+-]/g, '')), y: Number(t.getAttribute('y')) }))
   .filter((t) => Number.isFinite(t.v) && Number.isFinite(t.y));
 const t0 = secTicks[0], t1 = secTicks[secTicks.length - 1];
 const yOf = (v: number) => padT + t0.y + ((v - t0.v) * (t1.y - t0.y)) / (t1.v - t0.v);
@@ -204,7 +216,7 @@ const yOf = (v: number) => padT + t0.y + ((v - t0.v) * (t1.y - t0.y)) / (t1.v - 
 // стрелка от неё к точке — по пустому полю и с обводкой цветом фона, кружки на прежних пиках с подписью строго над
 // или под кружком, тонкий пунктир уровня главного прежнего пика. Заливок и скобок нет.
 const priTicks = [...plotG.querySelectorAll('text[text-anchor="end"]')]
-  .map((t) => ({ v: Number((t.textContent ?? '').replace(/\s/g, '').replace('−', '-').replace(',', '.')), y: Number(t.getAttribute('y')) }))
+  .map((t) => ({ v: Number((t.textContent ?? '').replace(/\s/g, '').replace('−', '-').replace(',', '.').replace(/[^\d.+-]/g, '')), y: Number(t.getAttribute('y')) }))
   .filter((t) => Number.isFinite(t.v) && Number.isFinite(t.y));
 const p0 = priTicks[0], p1 = priTicks[priTicks.length - 1];
 const yPri = (v: number) => padT + p0.y + ((v - p0.v) * (p1.y - p0.y)) / (p1.v - p0.v);
@@ -214,9 +226,10 @@ const BG = THEME['--bg-primary'];
 const plotR = padL + plotW - 10, plotB = padT + plotH;
 
 // Карта занятости поля сеткой 4 px: линии обеих серий (с вертикальными перепадами между точками) и подписи.
-const G = 4, GW = Math.ceil((padL + plotW + 40) / G), GH = Math.ceil((plotB + 40) / G);
+// сетка начинается выше поля на полосу легенды (OY): иначе легенда (отрицательный y) не попадала в занятость
+const G = 4, OY = LEG_H + 12, GW = Math.ceil((padL + plotW + 40) / G), GH = Math.ceil((plotB + 40 + OY) / G);
 const grid = new Float32Array(GW * GH);
-const mark = (x: number, y: number, v = 1) => { const c = Math.floor(x / G), r = Math.floor(y / G); if (c >= 0 && r >= 0 && c < GW && r < GH) grid[r * GW + c] += v; };
+const mark = (x: number, y: number, v = 1) => { const c = Math.floor(x / G), r = Math.floor((y + OY) / G); if (c >= 0 && r >= 0 && c < GW && r < GH) grid[r * GW + c] += v; };
 const trace = (ys: number[]) => ys.forEach((y, i) => {
   const x = xOf(i); mark(x, y);
   if (i > 0) { const y0 = ys[i - 1], x0 = xOf(i - 1), n = Math.ceil(Math.abs(y - y0) / G); for (let k = 1; k < n; k++) mark(x0 + ((x - x0) * k) / n, y0 + ((y - y0) * k) / n); }
@@ -226,7 +239,7 @@ trace(card.line.map((p: { value: number }) => yOf(p.value)));
 const block = (x: number, y: number, w: number, h: number, v = 50) => { for (let yy = y; yy < y + h; yy += G) for (let xx = x; xx < x + w; xx += G) mark(xx, yy, v); };
 const sum = (x: number, y: number, w: number, h: number) => {
   let t = 0; const c0 = Math.max(0, Math.floor(x / G)), c1 = Math.min(GW - 1, Math.floor((x + w) / G));
-  const r0 = Math.max(0, Math.floor(y / G)), r1 = Math.min(GH - 1, Math.floor((y + h) / G));
+  const r0 = Math.max(0, Math.floor((y + OY) / G)), r1 = Math.min(GH - 1, Math.floor((y + h + OY) / G));
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) t += grid[r * GW + c];
   return t;
 };
@@ -293,11 +306,12 @@ const ring0 = `<circle cx="${tgt.x}" cy="${tgt.y}" r="18" fill="none" stroke="${
 over += halo(ring0, 4) + ring0;
 block(tgt.x - 24, tgt.y - 24, 48, 48);
 // легенда сайта над полем — занята (в координатах графика она выше нуля на LEG_H)
-block((BOX_W - legW) / 2 - PAD - 10, -LEG_H - 4, legW + 20, 28);
+block((BOX_W - legW) / 2 - PAD - 12, -LEG_H - 4, legW + 24, 30);
 if (sig.headline) {
   const SZ = 42, LH = 48;
   const words = String(sig.headline).split(' ');
-  const za = words.indexOf('за');
+  // перенос — перед «за»/«с» («рекордный лонг / за 2 года», «минимум / с 2001 года»)
+  const za = words.findIndex((x, k) => k > 0 && (x === 'за' || x === 'с'));
   const cut = za > 0 ? za : Math.ceil(words.length / 2);
   const lines = measure(sig.headline, SZ, 800) > plotW * 0.45 && words.length > 1
     ? [words.slice(0, cut).join(' '), words.slice(cut).join(' ')] : [sig.headline];
