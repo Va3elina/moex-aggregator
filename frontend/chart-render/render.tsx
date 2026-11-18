@@ -515,12 +515,26 @@ function annotateKind(L: Layout, BW: number, BH: number): string {
     const up = sig.dir !== 'down';
     const right = plot.x + plot.w - 16;
     const dx = Math.max(0, Math.min(90, right - end.x - 40));          // у правого края года — почти вертикально
-    const dy = Math.max(50, Math.min(120, up ? end.y - plot.y - 70 : plot.y + plot.h - end.y - 20)); // направление — всегда как у сигнала
-    const tip = { x: end.x + 10 + dx, y: up ? end.y - 14 - dy : end.y + 14 + dy };
-    A.arrow(end.x + 10, up ? end.y - 14 : end.y + 14, tip.x, tip.y, color, 0, 6, 18);
-    // «?» сбоку от острия (справа, у края года — слева), по высоте острия: внутри поля и вверх, и вниз
+    // направление — всегда как у сигнала; острие не выходит за поле (ревью #1845: конец линии у верха/низа поля)
+    const top = plot.y + 10, bot = plot.y + plot.h - 10;
+    const room = up ? end.y - 14 - top : bot - end.y - 14;
+    const MIN = 80;
+    const tight = room < MIN;
+    let tip: { x: number; y: number }, from: { x: number; y: number };
+    if (tight) {
+      // места мало — вертикальная стрелка правее точки, острие у края поля
+      tip = { x: Math.min(end.x + 30, plot.x + plot.w - 14), y: up ? top : bot };
+      from = { x: tip.x, y: up ? top + MIN : bot - MIN };
+    } else {
+      const dy = Math.max(50, Math.min(120, room, up ? end.y - plot.y - 70 : plot.y + plot.h - end.y - 20));
+      tip = { x: Math.min(end.x + 10 + dx, plot.x + plot.w - 14), y: up ? end.y - 14 - dy : end.y + 14 + dy };
+      from = { x: Math.min(end.x + 10, tip.x), y: up ? end.y - 14 : end.y + 14 };
+    }
+    A.arrow(from.x, from.y, tip.x, tip.y, color, 0, 6, 18);
+    // «?» сбоку от острия (справа, у края года — слева); у вертикальной — на середине стрелки
     const qx = tip.x + 44 <= right ? tip.x + 44 : tip.x - 44;
-    A.glyph('?', qx, Math.min(Math.max(tip.y + 22, plot.y + 60), plot.y + plot.h - 8), color, 64);
+    const qy = tight ? (from.y + tip.y) / 2 + 22 : tip.y + 22;
+    A.glyph('?', qx, Math.min(Math.max(qy, plot.y + 60), plot.y + plot.h - 8), color, 64);
     A.headline(sig.headline, end.x, end.y, color, { above: 40, minLen: 0, maxLen: 4000, noArrow: true });
   }
   return A.out.join('');
