@@ -75,7 +75,7 @@ def _local_peaks(vals: list, lo: int, hi: int, k: int) -> list:
     return out
 
 
-def build(x: dict, value: float, day) -> dict | None:
+def build(x: dict, value: float, day, cases: list | None = None) -> dict | None:
     """Карточка для движка: x — рекорд из record_notify (sec, name, leg, window), value — значение показателя в точке
     рекорда (со знаком показателя: у шорта — величина шорта), day — день рекорда."""
     mode, sg = LEG[x["leg"]]
@@ -107,6 +107,22 @@ def build(x: dict, value: float, day) -> dict | None:
         start = (day - dt.timedelta(days=days)).isoformat() if days else None
         peaks = [ref] + [i for i in _local_peaks(vals, ref + 1, len(vals) - 20, 1) if vals[i] >= 0.6 * v and i - ref >= 60]
         head = f"рекордный {side} {x['window']}"
+    if cases:
+        # кружки — ровно случаи из таблицы истории (record_notify.cases), свежий первым (у него пунктир уровня);
+        # период — самый короткий, где видны все они и прошлый раз «выше» (Вадим 18.11: «в истории 3, на графике 2»)
+        idx = {p["time"][:10]: i for i, p in enumerate(line)}
+        dates = sorted(idx)
+        peaks = []
+        for c in sorted(cases, reverse=True):
+            k = next((d for d in dates if d >= str(c)), None)
+            if k is not None and idx[k] < len(vals) - 1:
+                peaks.append(idx[k])
+        if peaks and start:
+            oldest = min(dt.date.fromisoformat(line[i]["time"][:10]) for i in peaks)
+            if oldest.isoformat() < start:                    # старший случай не влез — период длиннее
+                need = (day - oldest).days * 1.15 + 20
+                period, days = next(((p, n) for p, n in PRESETS if n >= need), ("Всё", None))
+                start = (day - dt.timedelta(days=days)).isoformat() if days else None
     if start:
         off = next((i for i, p in enumerate(line) if p["time"][:10] >= start), 0)
         price, line, vals = price[off:], line[off:], vals[off:]
@@ -143,9 +159,9 @@ def render(card: dict, timeout: int = 120) -> bytes | None:
             return fh.read()
 
 
-def picture(x: dict, value: float, day) -> bytes | None:
+def picture(x: dict, value: float, day, cases: list | None = None) -> bytes | None:
     try:
-        card = build(x, value, day)
+        card = build(x, value, day, cases)
     except Exception as e:  # noqa: BLE001 — без картинки лучше, чем без сигнала
         print(f"[record_card] {x.get('sec')}: данные графика: {type(e).__name__}: {e}")
         return None

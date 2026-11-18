@@ -146,9 +146,7 @@ def history(prev: list) -> str:
         px = [(dt.date.fromisoformat(d), ix) for d, _, ix in _ROWS[0]]   # индекс уже в ряду страницы — без БД
         rows = [(p["day"], [sh.price_after(px, dt.date.fromisoformat(p["day"]) + dt.timedelta(days=1), n) for n in (21, 63)])
                 for p in prev]
-        up = sh.base_up(px, dt.date(2010, 1, 1), 21)
-        return sh.block(sh.cases_title(len(rows)), ["индекс через мес", "через 3 мес"], rows,
-                        f"В обычный день индекс через месяц рос в {up}% случаев" if up is not None else None)
+        return sh.block(sh.cases_title(len(rows)), ["индекс через мес", "через 3 мес"], rows)
     except Exception as ex:  # noqa: BLE001
         print(f"[{NAME}] история: {type(ex).__name__}: {ex}")
         return ""
