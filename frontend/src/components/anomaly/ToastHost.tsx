@@ -160,7 +160,8 @@ export function ToastHost() {
     setSubscribing(null);
   }, [isAuthenticated, showUpgrade]);
 
-  if (!toastsEnabled) return null;
+  // мини-приложение Telegram (/tg) — свой экран кабинета: тосты аномалий сайта там лишние (Вадим 18.11)
+  if (!toastsEnabled || window.location.pathname.startsWith('/tg')) return null;
   if (!visible.length && !digest) return null;
 
   const containerStyle: React.CSSProperties = mobile

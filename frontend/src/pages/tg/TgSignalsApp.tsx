@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiFetch } from '../../services/api';
+import InstrumentIcon from '../../components/InstrumentIcon';
 import './tg.css';
 
 interface TgButton { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void }
@@ -83,9 +84,9 @@ function readWait(): Wait | null {
 
 type Screen = 'cabinet' | 'signals' | 'type' | 'hidden' | 'quiet';
 type MinWindow = '3m' | '6m' | '1y' | 'all';
-interface TypePrefs { on?: boolean; min?: MinWindow; markets?: string[]; modes?: string[] }
+interface TypePrefs { on?: boolean; min?: MinWindow; markets?: string[]; modes?: string[]; hidden?: string[] }
 interface SignalPrefs { on?: boolean; types?: Record<string, TypePrefs>; hidden?: string[]; names?: Record<string, string>; quiet?: { on: boolean; from: string; to: string } }
-interface AssetItem { key: string; code: string; name: string; kind: string }
+interface AssetItem { key: string; code: string; name: string; group: string }
 
 /** Настройки сигналов — своя серверная ручка (api/routers/user_settings.py → ключ srv:signals:prefs, его читает бот
  *  signals/signal_prefs.py). Не localStorage + общая синхронизация: та затирала бы их со старых вкладок сайта. */
@@ -101,21 +102,21 @@ function queueSave(prefs: object, onError: (text: string) => void) {
   });
 }
 /** Виды сигналов бота — ключи как в signals/signal_prefs.TYPES; частота — по факту отправок. */
-const SIGNAL_TYPES: { key: string; title: string; hint: string; window?: boolean; windowNote?: string; assets?: boolean }[] = [
-  { key: 'oi_record', title: 'Рекорды позиций физлиц', hint: 'около 3 в торговый день', window: true, assets: true,
-    windowNote: 'С «3 месяцев» сообщений примерно вчетверо больше, чем с «года». «Всё время» — самые редкие и громкие.' },
-  { key: 'funds_flow', title: 'Рекорды притоков и оттоков фондов', hint: '1–2 в неделю', window: true,
-    windowNote: 'Рекорд потока за неделю или месяц против прошлых столбиков того же среза.' },
-  { key: 'funds_streak', title: 'Серии притоков и оттоков', hint: '1–2 в неделю' },
-  { key: 'season', title: 'Сезонность', hint: 'около 20 в месяц', assets: true },
-  { key: 'strength', title: 'Сила рынка', hint: 'около 5 в год' },
-  { key: 'buffett', title: 'Индикатор Баффетта', hint: '2–3 в год' },
-  { key: 'fund_trades', title: 'Сделки фондов', hint: 'в начале месяца, по мере отчётов' },
-  { key: 'cbr_flows', title: 'Потоки капитала ЦБ', hint: 'раз в месяц' },
+const SIGNAL_TYPES: { key: string; title: string; window?: boolean; assets?: boolean }[] = [
+  { key: 'oi_record', title: 'Рекорды позиций физлиц', window: true, assets: true },
+  { key: 'funds_flow', title: 'Рекорды притоков и оттоков фондов', window: true },
+  { key: 'funds_streak', title: 'Серии притоков и оттоков' },
+  { key: 'season', title: 'Сезонность', assets: true },
+  { key: 'strength', title: 'Сила рынка' },
+  { key: 'buffett', title: 'Индикатор Баффетта' },
+  { key: 'fund_trades', title: 'Сделки фондов' },
+  { key: 'cbr_flows', title: 'Потоки капитала ЦБ' },
 ];
 const MIN_WINDOWS: [MinWindow, string][] = [['3m', '3 мес'], ['6m', 'Полгода'], ['1y', 'Год'], ['all', 'Всё время']];
 const MARKETS = ['Акции', 'Валюта', 'Индексы', 'Сырьё'];
-const MODES: [string, string, string][] = [['positions', 'По объёму', 'сколько контрактов в лонге и шорте'], ['participants', 'По числу людей', 'сколько человек в лонге и шорте']];
+/** Код для логотипа сайта (InstrumentIcon): у фьючерса — базовый тикер, у сезонности — тикер акции или индекса. */
+const iconCode = (a: AssetItem) => a.code;
+const MODES: [string, string][] = [['positions', 'По объёму'], ['participants', 'По числу людей']];
 const TIERS: Record<string, string> = { guest: 'Free', free: 'Free', basic: 'Basic', pro: 'Pro', premium: 'Premium', admin: 'Админ' };
 
 const Chevron = () => (
@@ -151,9 +152,10 @@ export default function TgSignalsApp() {
   const [prefsTry, setPrefsTry] = useState(0);
   const [typeKey, setTypeKey] = useState<string>('oi_record');
   const [query, setQuery] = useState('');
-  const [assets, setAssets] = useState<AssetItem[]>([]);
-  const hidden = prefs.hidden ?? [];
-  const hiddenNames = prefs.names ?? {};
+  const [assets, setAssets] = useState<Record<string, AssetItem[]>>({});
+  const [assetsError, setAssetsError] = useState(false);
+  /** Скрытые активы вида: свои у каждого вида сигналов (фьючерс у позиций и акция у сезонности — разные вещи). */
+  const hiddenOf = (k: string) => Array.from(new Set([...(prefs.types?.[k]?.hidden ?? []), ...(prefs.hidden ?? [])]));
   const setPrefs = (next: SignalPrefs) => {
     setPrefsState(next);
     queueSave(next, setToast);
@@ -161,18 +163,14 @@ export default function TgSignalsApp() {
   const typeOn = (k: string) => prefs.types?.[k]?.on !== false;
   const setType = (k: string, patch: Partial<TypePrefs>) =>
     setPrefs({ ...prefs, types: { ...(prefs.types ?? {}), [k]: { ...(prefs.types?.[k] ?? {}), ...patch } } });
-  /** Скрыть / вернуть актив; имя запоминаем рядом, чтобы список «Скрыты» был понятен и без поиска. */
-  const toggleHidden = (key: string, hide: boolean, name?: string | null) => {
-    const next = hide ? Array.from(new Set([...hidden, key])) : hidden.filter((k) => k !== key);
-    setPrefs({ ...prefs, hidden: next, names: hide && name ? { ...hiddenNames, [key]: name } : hiddenNames });
-    say(hide ? `${name ?? 'Актив'}: больше не присылаем` : `${name ?? 'Актив'}: снова присылаем`);
+  const toggleHidden = (type: string, key: string, hide: boolean, name?: string | null) => {
+    // прежний общий список (prefs.hidden) переносим в вид: вернуть актив можно отсюда же
+    const cur = hiddenOf(type);
+    const next = hide ? Array.from(new Set([...cur, key])) : cur.filter((k) => k !== key);
+    setPrefs({ ...prefs, hidden: [], types: { ...(prefs.types ?? {}), [type]: { ...(prefs.types?.[type] ?? {}), hidden: next } } });
+    if (name) say(hide ? `${name}: не присылаем` : `${name}: присылаем`);
   };
-  const typeSub = (k: string) => {
-    const t = SIGNAL_TYPES.find((x) => x.key === k)!;
-    if (!typeOn(k)) return 'не приходят';
-    const mn = prefs.types?.[k]?.min;
-    return t.window && mn && mn !== '3m' ? `от «${MIN_WINDOWS.find(([v]) => v === mn)?.[1].toLowerCase()}» · ${t.hint}` : t.hint;
-  };
+
   const [plan, setPlan] = useState<{ tier: string; expires_at: string | null; cancelled_at: string | null; is_trial: boolean } | null>(null);
   const [link, setLink] = useState<{ linked: boolean; username: string | null } | null>(null);
   const [toast, setToast] = useState('');
@@ -234,30 +232,20 @@ export default function TgSignalsApp() {
     return () => { dead = true; };
   }, [isAuthenticated, prefsTry]);
 
-  // Список для поиска «Компании и активы»: фьючерсы (рекорды позиций, ключ oi:<базовый тикер>) и акции/индексы
-  // (сезонность, ключ se:<тикер>) — тот же справочник инструментов, что у сайта.
+  // Списки активов для скрытия — свои у вида (api/routers/user_settings.py signal_assets)
   useEffect(() => {
-    if (screen !== 'hidden' || assets.length) return;
+    if (screen !== 'hidden' || Object.keys(assets).length || assetsError) return;
     let dead = false;
     (async () => {
+      let ok = false;
       try {
-        const r = await apiFetch('/api/instruments');
-        if (!r.ok) return;
-        const j = (await r.json()) as { instruments: { sec_id: string; sectype: string; name: string; type: string; group?: string }[] };
-        const seen = new Set<string>();
-        const out: AssetItem[] = [];
-        for (const i of j.instruments) {
-          const fut = i.type === 'futures';
-          const key = fut ? `oi:${i.sectype}` : `se:${i.sec_id}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          out.push({ key, code: fut ? i.sectype : i.sec_id, name: i.name, kind: fut ? `позиции · ${i.group ?? 'фьючерс'}` : 'сезонность' });
-        }
-        if (!dead) setAssets(out);
-      } catch { /* сеть: поиск пустой, скрытые всё равно видны */ }
+        const r = await apiFetch('/api/settings/signals/assets');
+        if (r.ok && !dead) { setAssets((await r.json()) as Record<string, AssetItem[]>); ok = true; }
+      } catch { /* сеть — ниже */ }
+      if (!dead) setAssetsError(!ok);
     })();
     return () => { dead = true; };
-  }, [screen, assets.length]);
+  }, [screen, assets, assetsError]);
 
   // Кабинет: тариф и привязка Telegram — настоящие. Перечитываем при возврате в окно (после привязки в боте).
   useEffect(() => {
@@ -461,7 +449,7 @@ export default function TgSignalsApp() {
             ? <div className="tgs-row"><span className="tgs-g"><span>Telegram подключён</span><span className="tgs-s">{link.username ? `@${link.username}` : 'сигналы приходят в этот чат'}</span></span><Check /></div>
             : <button type="button" className="tgs-row tgs-accent" onClick={connect}><span className="tgs-g"><span>Подключить Telegram</span><span className="tgs-s">{tg ? 'Сигналы будут приходить в этот чат' : 'Откроется бот — нажмите «Запустить»'}</span></span><Chevron /></button>}
           {/* Сигналы бота пока приходят только админам — и настройку видят только они (до раскатки всем) */}
-          {user.role === 'admin' && <button type="button" className="tgs-row" onClick={() => go('signals')}><span className="tgs-g"><span>Настройка сигналов</span><span className="tgs-s">Что присылать и что скрыть</span></span><Chevron /></button>}
+          {user.role === 'admin' && <button type="button" className="tgs-row" onClick={() => go('signals')}><span className="tgs-g">Настройка сигналов</span><Chevron /></button>}
         </div>
         <div className="tgs-gap" />
         <div className="tgs-sec">
@@ -485,39 +473,34 @@ export default function TgSignalsApp() {
     ) : <div className="tgs-f" style={{ paddingTop: 24 }}>Загружаем настройки…</div>;
   } else if (screen === 'signals') {
     const fromName = ctx.name || ctx.asset;
-    const hiddenNow = !!ctx.asset && hidden.includes(ctx.asset);
+    const fromType = ctx.type ?? '';
     body = (
       <>
-        {ctx.type && (
-          <div className="tgs-ctx">
-            <span className="tgs-g"><span>Вы пришли из сигнала{fromName ? ` по ${fromName}` : ''}</span><span className="tgs-s">{SIGNAL_TYPES.find((t) => t.key === ctx.type)?.title ?? ''}</span></span>
-          </div>
-        )}
-        {ctx.asset && (
-          <div className="tgs-sec">
-            <div className="tgs-row"><span className="tgs-g">Не присылать по {fromName}</span>{sw(hiddenNow, `Не присылать по ${fromName}`, (v) => toggleHidden(ctx.asset!, v, fromName))}</div>
+        {ctx.asset && fromType && (
+          <div className="tgs-sec tgs-ctxsec">
+            <div className="tgs-row"><span className="tgs-g"><span>Не присылать по {fromName}</span><span className="tgs-s">{SIGNAL_TYPES.find((t) => t.key === fromType)?.title}</span></span>{sw(hiddenOf(fromType).includes(ctx.asset), `Не присылать по ${fromName}`, (v) => toggleHidden(fromType, ctx.asset!, v, fromName))}</div>
           </div>
         )}
         <div className="tgs-gap" />
         <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g"><span>{prefs.on !== false ? 'Сигналы включены' : 'Сигналы на паузе'}</span><span className="tgs-s">{prefs.on !== false ? 'Выключите — ничего не будет приходить' : 'Ничего не приходит, настройки сохранены'}</span></span>{sw(prefs.on !== false, 'Сигналы включены', (on) => setPrefs({ ...prefs, on }))}</div>
+          <div className="tgs-row"><span className="tgs-g"><span>Сигналы</span><span className="tgs-s">{prefs.on !== false ? 'Выключите — ничего не будет приходить' : 'Ничего не приходит, настройки сохранены'}</span></span>{sw(prefs.on !== false, 'Сигналы', (on) => setPrefs({ ...prefs, on }))}</div>
         </div>
+        {/* всё выключено — остальные настройки видны, но затемнены и не нажимаются (Вадим 18.11) */}
+        <div className={prefs.on === false ? 'tgs-off' : undefined} aria-disabled={prefs.on === false}>
         <div className="tgs-h">Что присылать</div>
         <div className="tgs-sec">
           {SIGNAL_TYPES.map((t) => (
             <div key={t.key} className="tgs-row">
-              <button type="button" className="tgs-g tgs-btn" onClick={() => { setTypeKey(t.key); go('type'); }}><span>{t.title}</span><span className="tgs-s">{typeSub(t.key)}</span></button>
+              <button type="button" className="tgs-g tgs-btn" onClick={() => { setTypeKey(t.key); go('type'); }}>{t.title}</button>
               {sw(typeOn(t.key), t.title, (on) => setType(t.key, { on }))}
             </div>
           ))}
         </div>
-        <div className="tgs-f">Новые виды сигналов будут включаться сами.</div>
-        <div className="tgs-h">Не присылать</div>
+        <div className="tgs-gap" />
         <div className="tgs-sec">
-          <button type="button" className="tgs-row" onClick={() => go('hidden')}><span className="tgs-g">Компании и активы</span><span className="tgs-v">{hidden.length ? `${hidden.length} скрыто` : 'все приходят'}</span><Chevron /></button>
-          <button type="button" className="tgs-row" onClick={() => go('quiet')}><span className="tgs-g">Тихие часы</span><span className="tgs-v">{prefs.quiet?.on ? `${prefs.quiet.from}–${prefs.quiet.to}` : 'выключены'}</span><Chevron /></button>
+          <button type="button" className="tgs-row" onClick={() => go('quiet')}><span className="tgs-g">Тихие часы</span><span className="tgs-v">{prefs.quiet?.on ? `${prefs.quiet.from}–${prefs.quiet.to}` : 'выкл'}</span><Chevron /></button>
         </div>
-        <div className="tgs-f">Свои уведомления по уровням цены и позиций — на сайте, в разделе «Алерты».</div>
+        </div>
       </>
     );
   } else if (screen === 'type') {
@@ -526,17 +509,18 @@ export default function TgSignalsApp() {
     const markets = tp.markets ?? MARKETS;
     const modes = tp.modes ?? MODES.map(([k]) => k);
     const flip = <T extends string>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+    const nHidden = hiddenOf(t.key).length;
     body = (
       <>
         <div className="tgs-gap" />
         <div className="tgs-sec">
-          <div className="tgs-row"><span className="tgs-g"><span>Присылать</span><span className="tgs-s">{t.hint}</span></span>{sw(typeOn(t.key), 'Присылать', (on) => setType(t.key, { on }))}</div>
+          <div className="tgs-row"><span className="tgs-g">Присылать</span>{sw(typeOn(t.key), 'Присылать', (on) => setType(t.key, { on }))}</div>
         </div>
+        <div className={typeOn(t.key) && prefs.on !== false ? undefined : 'tgs-off'} aria-disabled={!typeOn(t.key) || prefs.on === false}>
         {t.window && (
           <>
             <div className="tgs-h">Рекорд не короче</div>
             <Seg value={(tp.min ?? '3m') as MinWindow} options={MIN_WINDOWS} onChange={(min) => setType(t.key, { min })} />
-            <div className="tgs-f">{t.windowNote}</div>
           </>
         )}
         {t.key === 'oi_record' && (
@@ -549,8 +533,8 @@ export default function TgSignalsApp() {
             </div>
             <div className="tgs-h">Позиция</div>
             <div className="tgs-sec">
-              {MODES.map(([k, label, sub]) => (
-                <button key={k} type="button" className="tgs-row" aria-pressed={modes.includes(k)} onClick={() => { tap(); setType(t.key, { modes: flip(modes, k) }); }}><span className="tgs-g"><span>{label}</span><span className="tgs-s">{sub}</span></span>{modes.includes(k) && <Check />}</button>
+              {MODES.map(([k, label]) => (
+                <button key={k} type="button" className="tgs-row" aria-pressed={modes.includes(k)} onClick={() => { tap(); setType(t.key, { modes: flip(modes, k) }); }}><span className="tgs-g">{label}</span>{modes.includes(k) && <Check />}</button>
               ))}
             </div>
           </>
@@ -559,40 +543,42 @@ export default function TgSignalsApp() {
           <>
             <div className="tgs-gap" />
             <div className="tgs-sec">
-              <button type="button" className="tgs-row" onClick={() => go('hidden')}><span className="tgs-g">Компании и активы</span><span className="tgs-v">{hidden.length ? `все, кроме ${hidden.length}` : 'все'}</span><Chevron /></button>
+              <button type="button" className="tgs-row" onClick={() => { setQuery(''); go('hidden'); }}><span className="tgs-g">{t.key === 'season' ? 'Активы' : 'Компании и активы'}</span><span className="tgs-v">{nHidden ? `скрыто ${nHidden}` : 'все'}</span><Chevron /></button>
             </div>
           </>
         )}
+        </div>
       </>
     );
   } else if (screen === 'hidden') {
+    const list = assets[typeKey] ?? [];
+    const off = new Set(hiddenOf(typeKey));
     const q = query.trim().toLowerCase();
-    const found = q ? assets.filter((a) => a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q)).slice(0, 40) : [];
-    const nameOf = (key: string) => assets.find((a) => a.key === key)?.name ?? hiddenNames[key] ?? key.split(':')[1] ?? key;
+    const shown = q ? list.filter((a) => a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q)) : list;
+    const groups = MARKETS.filter((g) => shown.some((a) => a.group === g));
     body = (
       <>
         <div className="tgs-gap" />
-        <input className="tgs-search" type="search" placeholder="Поиск: компания, валюта, товар" value={query} onChange={(e) => setQuery(e.target.value)} />
-        {found.length > 0 && (
-          <>
-            <div className="tgs-h">Найдено</div>
+        <input className="tgs-search" type="search" placeholder="Поиск" value={query} onChange={(e) => setQuery(e.target.value)} />
+        {!list.length && !assetsError && <div className="tgs-f" style={{ paddingTop: 16 }}>Загружаем список…</div>}
+        {!list.length && assetsError && (
+          <div className="tgs-sec" style={{ marginTop: 12 }}><button type="button" className="tgs-row tgs-center tgs-accent" onClick={() => setAssetsError(false)}>Не загрузилось — попробовать ещё раз</button></div>
+        )}
+        {list.length > 0 && q && !shown.length && <div className="tgs-f" style={{ paddingTop: 16 }}>Ничего не найдено</div>}
+        {groups.map((g) => (
+          <div key={g}>
+            <div className="tgs-h">{g}</div>
             <div className="tgs-sec">
-              {found.map((a) => (
-                <button key={a.key} type="button" className="tgs-row" aria-pressed={hidden.includes(a.key)} onClick={() => { tap(); toggleHidden(a.key, !hidden.includes(a.key), a.name); }}>
-                  <span className="tgs-g"><span>{a.name}</span><span className="tgs-s">{a.kind}</span></span>{hidden.includes(a.key) ? <span className="tgs-v">скрыт</span> : <span className="tgs-v tgs-accent">Скрыть</span>}
-                </button>
+              {shown.filter((a) => a.group === g).map((a) => (
+                <div key={a.key} className="tgs-row">
+                  <span className="tgs-ic"><InstrumentIcon sectype={iconCode(a)} size={30} /></span>
+                  <span className={`tgs-g${off.has(a.key) ? ' tgs-dim' : ''}`}>{a.name}</span>
+                  {sw(!off.has(a.key), a.name, (on) => toggleHidden(typeKey, a.key, !on))}
+                </div>
               ))}
             </div>
-          </>
-        )}
-        <div className="tgs-h">Скрыты</div>
-        <div className="tgs-sec">
-          {hidden.length === 0 && <div className="tgs-row"><span className="tgs-g tgs-dim">Ничего не скрыто — приходит всё</span></div>}
-          {hidden.map((k) => (
-            <div key={k} className="tgs-row"><span className="tgs-g"><span>{nameOf(k)}</span><span className="tgs-s">ни по одному сигналу</span></span><button type="button" className="tgs-lk" onClick={() => toggleHidden(k, false, nameOf(k))}>Вернуть</button></div>
-          ))}
-        </div>
-        <div className="tgs-f">Фьючерс и акция компании — разные строки: фьючерс — рекорды позиций, акция — сезонность. Индексы и валюты сезонности скрываются кнопкой «Настройки» под их сигналом.</div>
+          </div>
+        ))}
       </>
     );
   } else if (screen === 'quiet') {
@@ -606,7 +592,7 @@ export default function TgSignalsApp() {
           {quiet.on && <label className="tgs-row"><span className="tgs-g">С</span><input className="tgs-in" type="time" value={quiet.from} onChange={(e) => setQuiet({ ...quiet, from: e.target.value })} /></label>}
           {quiet.on && <label className="tgs-row"><span className="tgs-g">До</span><input className="tgs-in" type="time" value={quiet.to} onChange={(e) => setQuiet({ ...quiet, to: e.target.value })} /></label>}
         </div>
-        <div className="tgs-f">В это время сигналы приходят без звука. Время московское.</div>
+        <div className="tgs-f">Без звука, по Москве.</div>
       </>
     );
   }

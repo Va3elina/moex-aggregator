@@ -99,3 +99,6 @@ button.tgs-row:active, a.tgs-row:active { background: color-mix(in srgb, var(--t
 .tgs-btn { background: none; border: 0; padding: 0; margin: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
 .tgs-search { width: 100%; box-sizing: border-box; border: 0; border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 15px;
   background: var(--tg-theme-section-bg-color, var(--tg-theme-secondary-bg-color, #fff)); color: inherit; outline: none; }
+.tgs-ic { flex: none; display: inline-flex; width: 30px; height: 30px; }
+.tgs-ctxsec { margin-top: 8px; }
+.tgs-off { opacity: .4; pointer-events: none; filter: grayscale(.6); transition: opacity .15s; }
