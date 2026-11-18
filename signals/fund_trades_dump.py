@@ -55,7 +55,15 @@ def complete(db) -> dict:
         cur = ms[-1]
         prev = months[ms[-2]] if len(ms) > 1 else set()
         missing = sorted(prev - months[cur])
-        out[cat] = {"month": cur, "complete": not missing, "have": len(months[cur]), "missing": missing}
+        # последний ПОЛНЫЙ месяц среди трёх свежих: отстающий фонд может донести октябрь, когда другие уже сдали
+        # ноябрь — тогда итог октября всё равно должен уйти
+        full = None
+        for k in range(len(ms) - 1, max(len(ms) - 4, 0), -1):
+            if not (months[ms[k - 1]] - months[ms[k]]):
+                full = ms[k]
+                break
+        out[cat] = {"month": cur, "complete": not missing, "have": len(months[cur]), "missing": missing,
+                    "complete_month": full}
     return out
 
 
