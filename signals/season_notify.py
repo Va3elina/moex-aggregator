@@ -81,8 +81,7 @@ def message(p: dict, start: date, today: date) -> str:
     head = signal_marks.logo("se:" + p["code"])   # логотип актива вместо 📅: только свои значки (Вадим 18.11)
     what = "Сезонность: время для покупки" if up else "Сезонность: период снижения"
     hits = f"{'Рост' if up else 'Падение'} в {p['hits']} из {p['years']} лет"
-    return (f"{head}<b>{html.escape(p['name'])}</b>\n{what}\n{span((end - today).days)}, до {end:%d.%m}\n{hits}\n"
-            f'<a href="{html.escape(chart_url(p))}">График →</a>')
+    return f"{head}<b>{html.escape(p['name'])}</b>\n{what}\n{span((end - today).days)}, до {end:%d.%m}\n{hits}"
 
 
 def _key(p: dict, start: date) -> str:
@@ -124,7 +123,9 @@ def run_once(dry_run: bool = False, today: date | None = None) -> dict:
             funds_card.dry(png, f"{NAME}_{k}")
             print()
             continue
-        if send_photo(png, msg, NAME, bot="signal") if png else send(msg, NAME, bot="signal"):
+        kw = {"bot": "signal", "meta": {"type": "season", "asset": "se:" + p["code"], "name": p["name"]},
+              "chart_url": chart_url(p)}
+        if send_photo(png, msg, NAME, **kw) if png else send(msg, NAME, **kw):
             summary["sent"] += 1
             sent.add(_key(p, st))
         else:

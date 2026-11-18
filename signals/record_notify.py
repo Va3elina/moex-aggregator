@@ -130,7 +130,8 @@ def records_close() -> tuple[pd.Timestamp, list]:
                 continue
             w = window(ser.values[:-1].astype(float), ser.index[:-1], float(ser.values[-1]), until)
             if w:
-                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w, "value": float(ser.values[-1])})
+                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w, "value": float(ser.values[-1]),
+                            "group": groups.get(s)})
     return until, out
 
 
@@ -158,7 +159,8 @@ def records_live() -> tuple[pd.Timestamp | None, list]:
                 continue
             w = window(ser.values.astype(float), ser.index, float(v), day)
             if w:
-                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w, "value": float(v)})
+                out.append({"sec": s, "name": names.get(s, s), "leg": leg, "window": w, "value": float(v),
+                            "group": groups.get(s)})
     return day, out
 
 
@@ -179,8 +181,13 @@ def mark(w: str) -> str:
 def message(x: dict, close_day=None) -> str:
     tail = f" · по закрытию {pd.Timestamp(close_day):%d.%m}" if close_day is not None else ""
     return (f"{mark(x['window'])}{signal_marks.logo('oi:' + x['sec'])}<b>{html.escape(x['name'])}</b>\n"
-            f"{LEGS[x['leg']]}\nРекорд {x['window']}{tail}\n"
-            f'<a href="{html.escape(chart_url(x))}">График →</a>')
+            f"{LEGS[x['leg']]}\nРекорд {x['window']}{tail}")   # «Открыть график» — кнопкой под сообщением
+
+
+def meta(x: dict) -> dict:
+    """Вид сигнала для настроек получателя и кнопки «Настройки» (signals/signal_prefs)."""
+    return {"type": "oi_record", "asset": "oi:" + x["sec"], "name": x["name"], "window": x["window"],
+            "market": x.get("group"), "mode": "positions" if x["leg"] in ("netl", "nets") else "participants"}
 
 
 def _key(x: dict) -> str:
@@ -239,7 +246,8 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
         # картинка — график сайта с разметкой сигнала (signals/record_card.py); не вышла — текст как раньше
         png = record_card.picture(x, x["value"], day)
         quiet = signal_marks.silent(x["window"])               # рядовые — без звука (Вадим 18.11)
-        if (send_photo(png, msg, NAME, silent=quiet) if png else send(msg, NAME, silent=quiet)):
+        kw = {"silent": quiet, "meta": meta(x), "chart_url": chart_url(x)}
+        if (send_photo(png, msg, NAME, **kw) if png else send(msg, NAME, **kw)):
             summary["sent"] += 1
             sent[_key(x)] = {"day": str(pd.Timestamp(day).date()), "rank": RANK[x["window"]]}
         else:

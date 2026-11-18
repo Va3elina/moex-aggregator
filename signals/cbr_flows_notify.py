@@ -181,8 +181,7 @@ def build(db, day: str) -> tuple[list, str]:
     cap = (f"<b>Потоки капитала · {NOM[m]} {day[:4]}</b>\n"
            f"Банк России выпустил обзор рисков финансовых рынков — потоки капитала обновлены за {NOM[m]}.\n\n"
            + "\n".join(f"• {p}" for p in pts)
-           + f'\n\n<a href="{SITE}/cbr-flows">Смотреть потоки капитала →</a>  '
-           f'<a href="https://cbr.ru/analytics/fin_stab/orfr/ORFR_{day[:4]}-{int(day[5:7])}/">Обзор на сайте ЦБ →</a>')
+           + f'\n\n<a href="https://cbr.ru/analytics/fin_stab/orfr/ORFR_{day[:4]}-{int(day[5:7])}/">Обзор на сайте ЦБ →</a>')
     return cards, cap
 
 
@@ -196,8 +195,10 @@ def _load_state() -> dict:
 
 def _save_state(st: dict) -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
-    with open(STATE_FILE, "w", encoding="utf-8") as fh:
+    tmp = STATE_FILE + ".tmp"                   # атомарно: оборванная запись не оставит битый JSON
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(st, fh, ensure_ascii=False)
+    os.replace(tmp, STATE_FILE)
 
 
 def send_month(db, day: str, dry_run: bool) -> bool:
@@ -215,7 +216,8 @@ def send_month(db, day: str, dry_run: bool) -> bool:
         for k, png in enumerate(imgs or [None]):
             dry(png, f"{NAME}_{k}")
         return True
-    return send_slides(imgs, cap, NAME) if imgs else send(cap, NAME)
+    kw = {"meta": {"type": "cbr_flows"}, "chart_url": f"{SITE}/cbr-flows"}
+    return send_slides(imgs, cap, NAME, **kw) if imgs else send(cap, NAME, **kw)
 
 
 def run_once(dry_run: bool = False) -> dict:

@@ -151,7 +151,7 @@ def message(x: dict) -> str:
         body = f"{WORD[x['side']]} идёт {span(x['n'], x['tf'])} подряд\n"
         if x.get("record"):
             body += f"Самая долгая серия {WORD_GEN[x['side']]} с {x['since']} года\n"
-    return head + body + f'<a href="{html.escape(chart_url(x))}">График →</a>'
+    return head + body.rstrip("\n")
 
 
 def senior_only(new: list) -> list:
@@ -224,7 +224,8 @@ def run_once(dry_run: bool = False) -> dict:
             print()
             delivered.append(x)
             continue
-        if send_photo(png, msg, NAME, bot="signal") if png else send(msg, NAME, bot="signal"):
+        kw = {"bot": "signal", "meta": {"type": "funds_streak"}, "chart_url": chart_url(x)}
+        if send_photo(png, msg, NAME, **kw) if png else send(msg, NAME, **kw):
             summary["sent"] += 1
             delivered.append(x)
         else:

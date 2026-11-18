@@ -62,3 +62,48 @@ def test_cbr_rows_sorted_with_prev_note():
     r = cb.rows(F, "stocks", "2026-10-31", "2026-09-30", "сентябре")
     assert [x["name"] for x in r] == ["НФО", "Физлица"]
     assert r[1]["note"] == "в сентябре +29,0" and r[1]["color"] == "down"
+
+
+def _ft_env(monkeypatch, tmp_path, jobs, fail_tickers=(), comp=None):
+    monkeypatch.setattr(ft, "STATE_FILE", str(tmp_path / "st.json"))
+    monkeypatch.setattr(ft, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(ft.time, "sleep", lambda s: None)
+    comp = comp or {"stocks": {"complete_month": "2026-09"}}
+
+    def dump(cmd, *a):
+        if cmd == "complete":
+            return comp
+        if cmd == "imported":
+            return jobs
+        if cmd == "fund":
+            return {"ticker": a[0], "name": a[0], "uk_id": None, "buy": [], "sell": []}
+    sent = []
+    monkeypatch.setattr(ft, "dump", dump)
+    monkeypatch.setattr(ft, "send", lambda msg, tag, **kw: (sent.append(msg), not any(t in msg for t in fail_tickers))[1])
+    monkeypatch.setattr(ft, "send_month", lambda cat, m, dry: sent.append(f"итог {cat} {m}") or True)
+    return sent
+
+
+def test_fund_trades_failure_does_not_resend(monkeypatch, tmp_path):
+    j = lambda i, t: {"id": i, "ticker": t, "period": "2026-10", "name": t, "uk_id": None, "category": "stocks"}  # noqa: E731
+    sent = _ft_env(monkeypatch, tmp_path, [j(1, "AAA")])
+    ft.run_once(today=dt.date(2026, 11, 18))                       # первый прогон — молча
+    assert sent == []
+    sent = _ft_env(monkeypatch, tmp_path, [j(1, "AAA"), j(3, "CCC"), j(2, "BBB")], fail_tickers=("BBB",))
+    ft.run_once(today=dt.date(2026, 11, 18))
+    assert [m for m in sent if "CCC" in m] and [m for m in sent if "BBB" in m]
+    sent = _ft_env(monkeypatch, tmp_path, [j(1, "AAA"), j(3, "CCC"), j(2, "BBB")])
+    ft.run_once(today=dt.date(2026, 11, 18))
+    assert not [m for m in sent if "CCC" in m]                    # ушедший фонд не повторяется
+    assert [m for m in sent if "BBB" in m]                        # не дошедший — повторяется
+
+
+def test_fund_trades_month_summary_once(monkeypatch, tmp_path):
+    sent = _ft_env(monkeypatch, tmp_path, [])
+    ft.run_once(today=dt.date(2026, 11, 18))
+    sent = _ft_env(monkeypatch, tmp_path, [], comp={"stocks": {"complete_month": "2026-10"}})
+    ft.run_once(today=dt.date(2026, 11, 18))
+    assert sent == ["итог stocks 2026-10"]
+    sent = _ft_env(monkeypatch, tmp_path, [], comp={"stocks": {"complete_month": "2026-10"}})
+    ft.run_once(today=dt.date(2026, 11, 18))
+    assert sent == []

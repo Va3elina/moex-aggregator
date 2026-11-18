@@ -130,8 +130,7 @@ def message(rows: list, e: dict) -> str:
         head = "<b>Сила рынка</b>\n"
     prev = episodes(rows, e)
     tail = f"\nПрошлый раз — {month(prev[-1]['day'])}" if prev else ""
-    url = f"{SITE}/strength"
-    return f'{head}{html.escape(what)}{tail}\n<a href="{url}">График →</a>'
+    return f"{head}{html.escape(what)}{tail}"
 
 
 def picture(rows: list, e: dict) -> bytes | None:
@@ -173,29 +172,44 @@ def run_once(dry_run: bool = False, today: dt.date | None = None) -> dict:
             _save_state(st)
         summary["seeded"] = True
         return summary
-    new = []
+    # по дням: день разобран — состояние сохранено; событие дня не дошло — день повторим, но уже ушедшие события
+    # этого дня (st["sent_day"]) второй раз не шлём (ревью 18.11)
+    import copy
     for d, v, _ in closed:
-        if d > st["day"]:
-            new += step(st, d, v)
-    summary["events"] = len(new)
-    ok = True
-    for k, e in enumerate(new):
-        msg = message(rows, e)
-        png = picture(rows, e)
-        if dry_run:
-            print(msg)
-            from signals.funds_card import dry
-            dry(png, f"{NAME}_{k}")
-            print()
+        if d <= st["day"]:
             continue
-        quiet = e["kind"] != "edge"
-        if send_photo(png, msg, NAME, bot="signal", silent=quiet) if png else send(msg, NAME, bot="signal", silent=quiet):
-            summary["sent"] += 1
-        else:
-            summary["failed"] += 1
-            ok = False
-        time.sleep(1.1)
-    if not dry_run and ok:
+        before = copy.deepcopy(st)
+        evs = step(st, d, v)
+        done_today = set(before.get("sent_day", [])) if before.get("sent_for") == d else set()
+        summary["events"] += len(evs)
+        ok = True
+        for k, e in enumerate(evs):
+            key = f"{e['kind']}|{e['side']}"
+            if key in done_today:
+                continue
+            msg, png = message(rows, e), picture(rows, e)
+            if dry_run:
+                print(msg)
+                from signals.funds_card import dry
+                dry(png, f"{NAME}_{d}_{k}")
+                print()
+                continue
+            quiet = e["kind"] != "edge"
+            kw = {"bot": "signal", "silent": quiet, "meta": {"type": "strength"}, "chart_url": f"{SITE}/strength"}
+            if send_photo(png, msg, NAME, **kw) if png else send(msg, NAME, **kw):
+                summary["sent"] += 1
+                done_today.add(key)
+            else:
+                summary["failed"] += 1
+                ok = False
+            time.sleep(1.1)
+        if dry_run:
+            continue
+        if not ok:                                      # день не закрыт: откат, но помним, что уже ушло
+            _save_state({**before, "sent_for": d, "sent_day": sorted(done_today)})
+            break
+        st.pop("sent_for", None)
+        st.pop("sent_day", None)
         _save_state(st)
     return summary
 
