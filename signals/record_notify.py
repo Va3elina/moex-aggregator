@@ -40,6 +40,7 @@ import pandas as pd  # noqa: E402
 
 from api.database import SessionLocal  # noqa: E402
 from signals.framesignal import SITE, send  # noqa: E402
+from signals import signal_marks  # noqa: E402
 from signals.insights import data, fresh  # noqa: E402
 from signals.insights import detect as det  # noqa: E402
 from signals.insights.expiry import near_expiry  # noqa: E402
@@ -86,14 +87,23 @@ def _low_activity() -> set:
         return set()
 
 
+ALL_TIME_MIN_DAYS = 1825              # «за всё время» — только при истории от 5 лет (Вадим 18.11)
+
+
 def window(hist: np.ndarray, dates, v: float, t) -> str | None:
-    """Окно рекорда значения v на день t против истории строго до t; None — не рекорд."""
+    """Окно рекорда значения v на день t против истории строго до t; None — не рекорд. Выше всей истории — «за всё
+    время», только если истории не меньше ALL_TIME_MIN_DAYS: у контракта с прошлого года «за всё время» значит «за
+    год», и огонь «вау» на нём обесценивается (Вадим 18.11) — такой рекорд считается по длине истории."""
     if v <= 0:
         return None
     idx = np.flatnonzero(hist >= v)
     if not len(idx):
-        return "за всё время"
-    gap = (pd.Timestamp(t) - dates[idx[-1]]).days
+        span = (pd.Timestamp(t) - pd.Timestamp(dates[0])).days
+        if span >= ALL_TIME_MIN_DAYS:
+            return "за всё время"
+        gap = span
+    else:
+        gap = (pd.Timestamp(t) - dates[idx[-1]]).days
     return next((w for d, w in WINDOWS if gap >= d), None)
 
 
@@ -161,12 +171,8 @@ def chart_url(x: dict) -> str:
 
 
 def mark(w: str) -> str:
-    """Метка окна (Вадим 26.10): 3 месяца — без эмодзи, дальше по красному кружку на каждое следующее окно
-    (полгода — один, 5 лет — пять), за всё время — огонёк."""
-    if w == "за всё время":
-        return "🔥 "
-    n = len(WINDOWS) - RANK[w]
-    return "🔴" * n + " " if n else ""
+    """Значок ступени (signals/signal_marks, Вадим 18.11): за всё время — огонь, 2–5 лет — кружок, остальное — без."""
+    return signal_marks.mark(w)
 
 
 def message(x: dict, close_day=None) -> str:
@@ -228,7 +234,7 @@ def run_once(live: bool, dry_run: bool = False) -> dict:
         if dry_run:
             print(msg + "\n")
             continue
-        if send(msg, NAME):   # Вадим 03.11: рекорды пока в @framesignalbot, бот переработаем позже
+        if send(msg, NAME, silent=signal_marks.silent(x["window"])):   # рядовые — без звука (Вадим 18.11)
             summary["sent"] += 1
             sent[_key(x)] = {"day": str(pd.Timestamp(day).date()), "rank": RANK[x["window"]]}
         else:

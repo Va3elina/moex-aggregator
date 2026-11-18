@@ -35,6 +35,7 @@ from collections import Counter  # noqa: E402
 from datetime import date  # noqa: E402
 
 from api.services import fund_flows as ff  # noqa: E402
+from signals import signal_marks  # noqa: E402
 from signals.framesignal import SITE, send  # noqa: E402
 from signals.insights import fresh  # noqa: E402
 
@@ -142,7 +143,7 @@ def chart_url(x: dict) -> str:
 
 
 def message(x: dict) -> str:
-    head = f"{'🔥 ' if x.get('record') else ''}<b>{html.escape(x['name'])}</b>\n"
+    head = f"{signal_marks.FIRE + ' ' if x.get('record') else ''}<b>{html.escape(x['name'])}</b>\n"
     if x["kind"] == "break":
         opp = "out" if x["side"] == "in" else "in"
         body = f"{WORD[x['side']]} после {span_gen(x['n'], x['tf'])} {WORD_GEN[opp]}\n"

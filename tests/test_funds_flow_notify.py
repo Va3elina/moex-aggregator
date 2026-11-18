@@ -81,9 +81,12 @@ def test_slices_as_on_page():
 
 
 def test_bar_records_windows_and_sides():
-    hist = [0.5] * 400
+    hist = [0.5] * 2000                                        # история от 5 лет — «за всё время»
     assert fn.bar_records(_bars(hist + [1.0])) == [("in", "за всё время")]
     assert fn.bar_records(_bars(hist + [-1.0])) == [("out", "за всё время")]
+    # выше всей истории, но истории ~1,1 года — рекорд по её длине, не «за всё время» (Вадим 18.11)
+    assert fn.bar_records(_bars([0.5] * 400 + [1.0])) == [("in", "за год")]
+    assert fn.bar_records(_bars([0.5] * 800 + [1.0])) == [("in", "за 2 года")]
     # приток больше, чем 200 дней назад, но не больше, чем 300 дней назад → рекорд за полгода
     flows = [0.1] * 400
     flows[100] = 2.0
@@ -125,17 +128,20 @@ def test_senior_horizon_only_one_message():
     assert fn.senior_only([{**base, "side": "in", "tf": "1d"}, {**base, "side": "in", "tf": "1w"}])[0]["tf"] == "1w"
 
 
-def test_mark_matches_record_notify():
-    assert fn.mark("за 3 месяца") == ""
-    assert fn.mark("за полгода") == "🔴 "
-    assert fn.mark("за 5 лет") == "🔴🔴🔴🔴🔴 "
-    assert fn.mark("за всё время") == "🔥 "
+def test_mark_three_tiers():
+    from signals import signal_marks as sm
+    for w in ("за 3 месяца", "за полгода", "за год"):
+        assert fn.mark(w) == "" and sm.silent(w)               # для понимания: без значка и без звука
+    for w in ("за 2 года", "за 3 года", "за 5 лет"):
+        assert fn.mark(w) == sm.PULSE + " " and not sm.silent(w)
+    assert fn.mark("за всё время") == sm.FIRE + " " and not sm.silent("за всё время")
+    assert ">🔥</tg-emoji>" in sm.FIRE and ">🟠</tg-emoji>" in sm.PULSE   # запасной — эмодзи, иначе ENTITY_TEXT_INVALID
 
 
 def test_message_and_link():
     x = {**fn.slices(CATS)[1], "tf": "1w", "side": "out", "window": "за 2 года", "day": date(2026, 10, 24)}
     msg = fn.message(x)
-    assert msg.startswith("🔴🔴🔴 <b>Облигации · Длинные</b>\nОтток за неделю\nРекорд за 2 года\n")
+    assert msg.startswith(fn.signal_marks.PULSE + " <b>Облигации · Длинные</b>\nОтток за неделю\nРекорд за 2 года\n")
     assert "/funds-money?category=bonds&amp;funds=1,2&amp;tf=1w&amp;period=3y" in msg
     assert "млрд" not in msg and "₽" not in msg                # цифр потока в сообщении нет
 
