@@ -149,7 +149,7 @@ def test_message_and_link():
     assert "прежний рекорд −4,3 млрд ₽, 20 дек 2020" in m
     # ссылка — кнопкой «Открыть график» под сообщением (signals/framesignal._markup)
     assert "/funds-money?category=bonds&funds=1,2&tf=1w&period=3y" in fn.chart_url(x)
-    assert "млрд" not in msg and "₽" not in msg                # цифр потока в сообщении нет
+    # цифры потока в сообщении есть с 18.11 (макет уведомлений; прежнее правило 13.10 «цифры не нужны» снято)
 
 
 def test_cooldown_key_per_slice_side_horizon():
