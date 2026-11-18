@@ -100,6 +100,24 @@ if (KIND === 'flows') {
   chartEl = React.createElement(YearlySeasonalityChart, {
     yearlyData: card.yearly, tooltip: null, setTooltip: () => {}, chartHeight: H, showCurrentYear: true,
   });
+} else if (KIND === 'strength') {
+  // «Сила рынка»: у страницы две панели в своей разметке (StrengthPage) — индекс сверху, доля акций выше EMA снизу;
+  // повторяем ту же разметку (классы и высоты по умолчанию страницы) из её же компонентов IndexChart/BreadthChart
+  const { default: IndexChart } = await import('/src/components/strength/IndexChart');
+  const { default: BreadthChart } = await import('/src/components/strength/BreadthChart');
+  const { default: ChartLegend } = await import('/src/components/chart/ChartLegend');
+  // поля и высоты — токены страницы (--strength-pad-*, ПК) + место под пилюлю алерта справа, как у StrengthPage
+  // нижняя панель выше страничной (150): сигнал — на ней, в 150 px разметка не читается (Вадим 18.11: «вглядываться»)
+  const pad = { left: 70, right: 98, top: 14, bottom: 30 }, hTop = 220, hBot = 240;
+  const legend = (label: string) => React.createElement('div', { className: 'flex items-center justify-center relative z-10', style: { marginBottom: 'var(--chart-legend-mb, 2px)' } },
+    React.createElement(ChartLegend, { items: [{ color: 'var(--accent)', label }], fontWeight: 600, style: { color: 'var(--text-primary)' } }));
+  chartEl = React.createElement('div', null,
+    React.createElement('div', { className: 'px-4 pb-1 border-b border-theme relative overflow-hidden', style: { minHeight: hTop + 16, paddingTop: 'var(--chart-legend-top-gap, 8px)' } },
+      legend(card.indexLabel ?? 'Индекс МосБиржи'),
+      React.createElement(IndexChart, { syncedData: card.synced, hoverIndex: null, height: hTop, padding: pad })),
+    React.createElement('div', { className: 'px-4 pt-2 pb-1 relative overflow-hidden', style: { minHeight: hBot + 16 } },
+      legend(`% акций выше EMA${card.ema ?? 200}`),
+      React.createElement(BreadthChart, { syncedData: card.synced, hoverIndex: null, height: hBot, mode: card.mode ?? 'histogram', padding: pad })));
 } else {
   chartEl = React.createElement(SimpleChart, {
     data: card.price, secondaryData: card.line, showPrimary: true, showSecondary: true,
@@ -366,6 +384,15 @@ function annotateKind(L: Layout, BW: number, BH: number): string {
       if (pts.every((q) => Math.abs(q.y - pts[0].y) < 1) || pts.every((q) => Math.abs(q.x - pts[0].x) < 1)) continue;
       A.trace(pts, 6);
     }
+    // столбики гистограмм, нарисованные залитыми контурами (BreadthChart: M x,y V y1 H x2 V y2 Z)
+    for (const path of Array.from(p.el.querySelectorAll('path'))) {
+      const f = path.getAttribute('fill') ?? '';
+      if (!f || f === 'none' || (path.getAttribute('stroke') ?? 'none') !== 'none') continue;
+      for (const m of (path.getAttribute('d') ?? '').matchAll(/M([-\d.]+),([-\d.]+)V([-\d.]+)H([-\d.]+)V[-\d.]+Z/g)) {
+        const [x0, yb, yt, x1] = [m[1], m[2], m[3], m[4]].map(Number);
+        A.block({ x: p.x + x0 * sx, y: p.y + Math.min(yb, yt) * sy, w: Math.max((x1 - x0) * sx, 2), h: Math.abs(yb - yt) * sy }, 20);
+      }
+    }
     for (const rc of Array.from(p.el.querySelectorAll('rect'))) {
       const f = rc.getAttribute('fill') ?? '';
       if (!f.includes('funds-flow')) continue;
@@ -415,6 +442,34 @@ function annotateKind(L: Layout, BW: number, BH: number): string {
       // у правого края рамки: середину края оставляем стрелке
       else A.tag(sig.amount, 0, sig.dir === 'low' ? fy0 : fy1, 6, color, 20, sig.dir === 'low' ? 'above' : 'below', fx1);
     }
+  } else if (KIND === 'strength') {
+    // нижняя панель «Силы рынка» (BreadthChart): поле — clipPath, столбик i — по центру шага, 0–100% снизу вверх
+    const br = big.find((p) => p.el.querySelector('clipPath#breadthChartClip'));
+    const cr = br?.el.querySelector('clipPath#breadthChartClip rect');
+    if (!br || !cr) return '';
+    const [cx, cy, cw, ch] = ['x', 'y', 'width', 'height'].map((k) => Number(cr.getAttribute(k)) || 0);
+    const n = card.synced.length;
+    const xOf = (i: number) => br.x + cx + (i * cw) / Math.max(n - 1, 1);
+    const yOf = (v: number) => br.y + cy + ch * (1 - v / 100);
+    // пунктир порога — как пунктир прежнего пика у позиций; под столбиками сигнала он не теряется — поверх
+    if (sig.level != null) {
+      const y = yOf(sig.level);
+      A.out.push(`<line x1="${br.x + cx}" x2="${br.x + cx + cw}" y1="${y}" y2="${y}" stroke="${color}" stroke-opacity="0.8" stroke-width="1.5" stroke-dasharray="6 6"/>`);
+    }
+    const last = n - 1, tv = card.synced[last].breadth;
+    const tx = xOf(last), ty = yOf(tv);
+    A.ring(tx, ty, 14, color);
+    // прошлые такие же эпизоды — одинаковые кружки, подпись «мес год» с одной стороны (над столбиком)
+    // свежие первыми; кружки не толпятся — не ближе 110 px друг к другу и 80 px к точке сигнала
+    const drawn: number[] = [];
+    for (const pk of [...((sig.peaks ?? []) as { i: number; label: string }[])].reverse()) {
+      const px = xOf(pk.i), py = yOf(card.synced[pk.i].breadth);
+      if (Math.abs(px - tx) < 80 || drawn.some((q) => Math.abs(q - px) < 110)) continue;
+      drawn.push(px);
+      A.ring(px, py, 12, color);
+      A.label(pk.label, px, py - 12 - 6 - 26, color, 18);   // все подписи над кружками — одна сторона («каша»)
+    }
+    A.headline(sig.headline, tx, ty, color, { gap: 20, above: 40, maxLen: 420 });
   } else if (KIND === 'season') {
     // поле сезонности — SVG с viewBox 0..1000 по X (доля года); период — от сегодня на 3 месяца вперёд
     const plot = big.find((p) => p.el.getAttribute('viewBox'));
