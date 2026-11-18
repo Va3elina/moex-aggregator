@@ -35,8 +35,8 @@ from collections import Counter  # noqa: E402
 from datetime import date  # noqa: E402
 
 from api.services import fund_flows as ff  # noqa: E402
-from signals import signal_marks  # noqa: E402
-from signals.framesignal import SITE, send  # noqa: E402
+from signals import funds_card, signal_marks  # noqa: E402
+from signals.framesignal import SITE, send, send_photo  # noqa: E402
 from signals.insights import fresh  # noqa: E402
 
 NAME = "funds_flow_streak"
@@ -202,7 +202,7 @@ def pending(cats: dict, raw: list, state: dict) -> tuple[list, dict]:
             if bars[i]["period_end"] > seen:
                 # цифры для повода завода (signals/funds_signal_leads.py): столбец события и сумма серии
                 run = bars[i - e["n"]:i] if e["kind"] == "break" else bars[i - e["n"] + 1:i + 1]
-                new.append({**s, **e, "tf": tf, "flow": bars[i]["flow"], "start": bars[i].get("period_start"),
+                new.append({**s, **e, "tf": tf, "flow": bars[i]["flow"], "start": bars[i].get("period_start"), "_bars": bars,
                             "run_sum": round(sum(b["flow"] for b in run), 4)})
     return new, upd
 
@@ -214,13 +214,17 @@ def run_once(dry_run: bool = False) -> dict:
     out.sort(key=lambda x: (x["day"], x["cat"], x["sub"] or "", x["side"]))
     summary = {"events": len(new), "new": len(out), "sent": 0, "failed": 0, "seeded": len(set(upd) - set(state))}
     ok, delivered = True, []
-    for x in out:
+    for k, x in enumerate(out):
         msg = message(x)
+        # картинка — график сайта с рамкой вокруг серии (signals/funds_card); не собралась — уходит текст
+        png = funds_card.picture("flow_streak", x, x["_bars"])
         if dry_run:
-            print(msg + "\n")
+            print(msg)
+            funds_card.dry(png, f"{NAME}_{k}")
+            print()
             delivered.append(x)
             continue
-        if send(msg, NAME, bot="signal"):
+        if send_photo(png, msg, NAME, bot="signal") if png else send(msg, NAME, bot="signal"):
             summary["sent"] += 1
             delivered.append(x)
         else:
@@ -231,6 +235,8 @@ def run_once(dry_run: bool = False) -> dict:
     # двигаем — следующий прогон пришлёт снова
     if not dry_run and ok:
         _save_state({**state, **upd})
+    for x in new:
+        x.pop("_bars", None)              # столбики нужны только картинке
     # повод заводу — только когда состояние сдвинулось, иначе следующий прогон пришлёт и повод заново
     if dry_run or ok:
         from signals.funds_flow_notify import to_factory

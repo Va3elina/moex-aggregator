@@ -35,8 +35,8 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from api.services import fund_flows as ff  # noqa: E402
-from signals import signal_marks  # noqa: E402
-from signals.framesignal import SITE, send  # noqa: E402
+from signals import funds_card, signal_marks  # noqa: E402
+from signals.framesignal import SITE, send, send_photo  # noqa: E402
 from signals.insights import fresh  # noqa: E402
 from signals.record_notify import COOLDOWN_DAYS, RANK, due, window  # noqa: E402
 
@@ -137,7 +137,7 @@ def records(cats: dict, raw: list) -> tuple[date | None, list]:
                 sgn = 1 if side == "in" else -1
                 v = bars[-1]["flow"]
                 prev = next((b for b in reversed(bars[:-1]) if sgn * b["flow"] >= sgn * v), None)
-                out.append({**s, "tf": tf, "side": side, "window": w, "day": end, "flow": v,
+                out.append({**s, "tf": tf, "side": side, "window": w, "day": end, "flow": v, "_bars": bars,
                             "start": bars[-1].get("period_start"),
                             "prev_day": prev and prev["period_end"], "prev_start": prev and prev.get("period_start"),
                             "prev_flow": prev and prev["flow"]})
@@ -201,13 +201,19 @@ def run_once(dry_run: bool = False) -> dict:
     new.sort(key=lambda x: (RANK[x["window"]], x["cat"], x["sub"] or "", list(HORIZONS).index(x["tf"]), x["side"]))
     summary["new"] = len(new)
     delivered = []
-    for x in new:
+    for n, x in enumerate(new):
         msg = message(x)
+        # картинка — график сайта со столбиком рекорда (signals/funds_card); не собралась — уходит текст
+        png = funds_card.picture("flow_record", x, x["_bars"])
         if dry_run:
-            print(msg + "\n")
+            print(msg)
+            funds_card.dry(png, f"{NAME}_{n}")
+            print()
             delivered.append(x)
             continue
-        if send(msg, NAME, bot="signal", silent=signal_marks.silent(x["window"])):
+        quiet = signal_marks.silent(x["window"])
+        if (send_photo(png, msg, NAME, bot="signal", silent=quiet) if png
+                else send(msg, NAME, bot="signal", silent=quiet)):
             summary["sent"] += 1
             delivered.append(x)
             for y in [x] + x.get("folded", []):
@@ -217,6 +223,8 @@ def run_once(dry_run: bool = False) -> dict:
         time.sleep(1.1)                   # лимит Telegram — около сообщения в секунду на чат
     if not dry_run and new:
         _save_sent(sent, (day - timedelta(days=COOLDOWN_DAYS + 7)).isoformat())
+    for x in recs:
+        x.pop("_bars", None)              # столбики нужны только картинке — в повод заводу не едут
     summary["leads"] = to_factory(delivered, "record", dry_run)
     return summary
 

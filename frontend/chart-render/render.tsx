@@ -10,6 +10,8 @@ import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import { Resvg } from '@resvg/resvg-js';
+import { Layout } from './layout';
+import { Annotator } from './annotate';
 
 const [, , cardPath, outPath] = process.argv;
 const card = JSON.parse(fs.readFileSync(cardPath, 'utf8'));
@@ -54,6 +56,21 @@ win.getComputedStyle = gcs as never; g.getComputedStyle = gcs;
 const origCreate = win.document.createElement.bind(win.document);
 win.document.createElement = ((tag: string, o?: ElementCreationOptions) => (tag === 'canvas' ? createCanvas(10, 10) : origCreate(tag, o))) as never;
 
+// замеры текста и рамок SVG (у jsdom их нет): ширина — по шрифту Inter на серверном canvas, кегль и вес — из атрибутов
+const textCtx = createCanvas(10, 10).getContext('2d');
+const svgFont = (el: Element) => {
+  const size = parseFloat(el.getAttribute('font-size') ?? (el as HTMLElement).style?.fontSize ?? '') || 12;
+  const weight = el.getAttribute('font-weight') ?? (el as HTMLElement).style?.fontWeight ?? '400';
+  return { size, font: `${weight} ${size}px Inter` };
+};
+const SVGEl = (win as unknown as { SVGElement: { prototype: Record<string, unknown> } }).SVGElement.prototype;
+SVGEl.getComputedTextLength = function (this: Element) { textCtx.font = svgFont(this).font; return textCtx.measureText(this.textContent ?? '').width; };
+SVGEl.getBBox = function (this: Element) {
+  const { size, font } = svgFont(this); textCtx.font = font;
+  const x = parseFloat(this.getAttribute('x') ?? '0') || 0, y = parseFloat(this.getAttribute('y') ?? '0') || 0;
+  return { x, y: y - size, width: textCtx.measureText(this.textContent ?? '').width, height: size * 1.2 };
+};
+
 // ── рендер компонента сайта ─────────────────────────────────────────────────
 const React = await import('react');
 const { createRoot } = await import('react-dom/client');
@@ -68,17 +85,35 @@ setLang('ru');
 
 const root = createRoot(win.document.getElementById('root')!);
 // в боевой сборке React нет act(): рендерим и ждём, пока отработают эффекты графика (ширина, раскрытие)
-root.render(React.createElement(ThemeProvider, null, React.createElement(NoChartAnimCtx.Provider, { value: true },
-    React.createElement(SimpleChart, {
-      data: card.price, secondaryData: card.line, showPrimary: true, showSecondary: true,
-      primaryColor: 'var(--chart-line-1)', secondaryColor: card.lineColor ?? 'var(--oi-cyan)', height: H,
-      formatValue: formatPrice, niceTicks: true, niceTicksSecondary: true, gridAxis: 'secondary',
-      primaryLabel: card.asset, secondaryLabel: card.lineLabel, showValueHeader: false, legendPosition: 'top',
-      showDownloadButton: false, showNavigator: false, chartPadding: { left: 120, right: 120 },
-      annotations: [], showWatermark: false,   // без меток экспираций и водяного знака (Вадим 18.11)
-    }))));
+// вид графика — как на соответствующей странице сайта: /oi — SimpleChart, «Деньги в фондах» — FlowsHistogram,
+// «Сезонность» (годовая) — YearlySeasonalityChart
+const KIND = card.kind ?? 'oi';
+let chartEl;
+if (KIND === 'flows') {
+  const { default: FlowsHistogram } = await import('/src/components/funds/FlowsHistogram');
+  chartEl = React.createElement(FlowsHistogram, {
+    flowsData: card.flows, loading: false, flowTitle: card.flowTitle, indexData: card.index ?? undefined,
+    indexLabel: card.indexLabel, showIndex: !!card.index, height: H,
+  });
+} else if (KIND === 'season') {
+  const { default: YearlySeasonalityChart } = await import('/src/components/seasonality/YearlySeasonalityChart');
+  chartEl = React.createElement(YearlySeasonalityChart, {
+    yearlyData: card.yearly, tooltip: null, setTooltip: () => {}, chartHeight: H, showCurrentYear: true,
+  });
+} else {
+  chartEl = React.createElement(SimpleChart, {
+    data: card.price, secondaryData: card.line, showPrimary: true, showSecondary: true,
+    primaryColor: 'var(--chart-line-1)', secondaryColor: card.lineColor ?? 'var(--oi-cyan)', height: H,
+    formatValue: formatPrice, niceTicks: true, niceTicksSecondary: true, gridAxis: 'secondary',
+    primaryLabel: card.asset, secondaryLabel: card.lineLabel, showValueHeader: false, legendPosition: 'top',
+    showDownloadButton: false, showNavigator: false, chartPadding: { left: 120, right: 120 },
+    annotations: [], showWatermark: false,   // без меток экспираций и водяного знака (Вадим 18.11)
+  });
+}
+root.render(React.createElement(ThemeProvider, null, React.createElement(NoChartAnimCtx.Provider, { value: true }, chartEl)));
 await new Promise((r) => setTimeout(r, 700));
 const host = win.document.getElementById('root')!;
+if (process.env.CARD_DUMP) fs.writeFileSync(process.env.CARD_DUMP, host.innerHTML);
 
 // ── SVG → PNG ───────────────────────────────────────────────────────────────
 const resolveVars = (s: string): string => {
@@ -90,6 +125,21 @@ const resolveVars = (s: string): string => {
   return s;
 };
 const ser = new win.XMLSerializer();
+if (KIND !== 'oi') {
+  // графики из SVG + HTML-обвязки: раскладываем обвязку сами (layout.ts), получаем один SVG
+  const L = new Layout(THEME, (t, size, weight) => { textCtx.font = `${weight} ${size}px Inter`; return textCtx.measureText(t).width; }, ser);
+  const PADK = 0;
+  const top = host.firstElementChild!;
+  const h = L.place(top, PADK, PADK, W, { x: 0, y: 0, w: W, h: H });
+  const bw = parseFloat(THEME['--card-border-width']), r = parseFloat(THEME['--card-radius']);
+  const BW = W, BH = h;
+  const marks = card.signal ? annotateKind(L, BW, BH) : '';
+  const svgText = resolveVars(`<svg xmlns="http://www.w3.org/2000/svg" width="${BW}" height="${BH}" viewBox="0 0 ${BW} ${BH}" font-family="Inter" color="${THEME['--text-primary']}">`
+    + `<rect x="${bw / 2}" y="${bw / 2}" width="${BW - bw}" height="${BH - bw}" rx="${r}" fill="${THEME['--bg-primary']}" stroke="${THEME['--card-border-color']}" stroke-width="${bw}"/>`
+    + L.out.join('') + marks + '</svg>');
+  if (process.env.CARD_SVG) fs.writeFileSync(process.env.CARD_SVG, svgText);
+  await finish(svgText);
+}
 const svgs = [...host.querySelectorAll('svg')];
 const chartSvg = svgs.find((s) => Number(s.getAttribute('width')) >= W - 2)!;
 const legendSvgs = svgs.filter((s) => s !== chartSvg && s.closest('.flex.justify-center'));
@@ -268,16 +318,113 @@ const box = `<svg xmlns="http://www.w3.org/2000/svg" width="${BOX_W}" height="${
   + `<rect x="${bw / 2}" y="${bw / 2}" width="${BOX_W - bw}" height="${BOX_H - bw}" rx="${r}" fill="${THEME['--bg-primary']}" stroke="${THEME['--card-border-color']}" stroke-width="${bw}"/>`
   + legend + chart + '</svg>';
 const svgText = resolveVars(box).replace(/visibility:\s*hidden;?/g, '');
-const png = new Resvg(svgText, { fitTo: { mode: 'zoom', value: S }, font: { loadSystemFonts: false, fontFiles: FONTS, defaultFontFamily: 'Inter' } }).render().asPng();
+await finish(svgText);
 
-// ── рамка экспорта сайта (шапка, подвал) ────────────────────────────────────
-const raw = await loadImage(png);
-const rawCanvas = createCanvas(raw.width, raw.height); rawCanvas.getContext('2d').drawImage(raw, 0, 0);
-const framed = composeFramedCanvas(rawCanvas as unknown as HTMLCanvasElement, {
-  background: THEME['--bg-primary'], textColor: THEME['--text-primary'], textSecondaryColor: THEME['--text-secondary'],
-  accentColor: THEME['--accent'], dpr: S, metadata: card.meta,
-}) as unknown as ReturnType<typeof createCanvas>;
-fs.writeFileSync(outPath, framed.toBuffer('image/png'));
-root.unmount();
-console.log('ok', outPath);
-process.exit(0);
+// ── PNG и рамка экспорта сайта (шапка, подвал) — общий финал всех видов графиков ─────────────────────────────────
+async function finish(svgText: string) {
+  const png = new Resvg(svgText, { fitTo: { mode: 'zoom', value: 2 }, font: { loadSystemFonts: false, fontFiles: FONTS, defaultFontFamily: 'Inter' } }).render().asPng();
+  const raw = await loadImage(png);
+  const rawCanvas = createCanvas(raw.width, raw.height); rawCanvas.getContext('2d').drawImage(raw, 0, 0);
+  const framed = composeFramedCanvas(rawCanvas as unknown as HTMLCanvasElement, {
+    background: THEME['--bg-primary'], textColor: THEME['--text-primary'], textSecondaryColor: THEME['--text-secondary'],
+    accentColor: THEME['--accent'], dpr: 2, metadata: card.meta,
+  }) as unknown as ReturnType<typeof createCanvas>;
+  fs.writeFileSync(outPath, framed.toBuffer('image/png'));
+  root.unmount();
+  console.log('ok', outPath);
+  process.exit(0);
+}
+
+// ── разметка сигнала для графиков с раскладкой (фонды, сезонность) ───────────────────────────────────────────────
+function nums(s: string | null) { return (s ?? '').match(/-?\d*\.?\d+(?:e-?\d+)?/g)?.map(Number) ?? []; }
+/** Точки ломаной из d="M x y L x y …" в координатах итогового SVG. */
+function pathPts(d: string, ox: number, oy: number, sx = 1, sy = 1) {
+  const v = nums(d); const out: { x: number; y: number }[] = [];
+  for (let i = 0; i + 1 < v.length; i += 2) out.push({ x: ox + v[i] * sx, y: oy + v[i + 1] * sy });
+  return out;
+}
+function annotateKind(L: Layout, BW: number, BH: number): string {
+  const sig = card.signal;
+  const measure = (t: string, size: number, weight: number) => { textCtx.font = `${weight} ${size}px Inter`; return textCtx.measureText(t).width; };
+  const big = L.placed.filter((p) => p.w > 300 && p.h > 80);
+  if (!big.length) return '';
+  const bounds = big.reduce((a, p) => ({ x: Math.min(a.x, p.x), y: Math.min(a.y, p.y), w: Math.max(a.x + a.w, p.x + p.w) - Math.min(a.x, p.x), h: Math.max(a.y + a.h, p.y + p.h) - Math.min(a.y, p.y) }),
+    { x: big[0].x, y: big[0].y, w: big[0].w, h: big[0].h });
+  const A = new Annotator(bounds, THEME['--bg-primary'], measure, { w: BW, h: BH });
+  const color = THEME[sig.colorVar ?? '--accent'] ?? THEME['--accent'];
+  // занятость: подписи осей и заголовки, легенды, линии и столбики всех графиков
+  for (const t of L.texts) A.block({ x: t.x - 4, y: t.y - 2, w: t.w + 8, h: t.h + 4 });
+  for (const p of L.placed) if (!(p.w > 300 && p.h > 80)) A.block({ x: p.x, y: p.y, w: p.w, h: p.h });
+  for (const p of big) {
+    const vb = nums(p.el.getAttribute('viewBox'));
+    const sx = vb.length === 4 ? p.w / vb[2] : 1, sy = vb.length === 4 ? p.h / vb[3] : 1;
+    for (const path of Array.from(p.el.querySelectorAll('path'))) {
+      const st = path.getAttribute('stroke') ?? '';
+      if (!st || st === 'none') continue;
+      const pts = pathPts(path.getAttribute('d') ?? '', p.x, p.y, sx, sy);
+      // линии сетки и нуля (прямые по горизонтали или вертикали) — не занятость: подпись поверх них читается
+      if (pts.every((q) => Math.abs(q.y - pts[0].y) < 1) || pts.every((q) => Math.abs(q.x - pts[0].x) < 1)) continue;
+      A.trace(pts, 6);
+    }
+    for (const rc of Array.from(p.el.querySelectorAll('rect'))) {
+      const f = rc.getAttribute('fill') ?? '';
+      if (!f.includes('funds-flow')) continue;
+      const [x, y, w, h] = ['x', 'y', 'width', 'height'].map((k) => Number(rc.getAttribute(k)) || 0);
+      A.block({ x: p.x + x * sx, y: p.y + y * sy, w: Math.max(w * sx, 2), h: h * sy }, 20);
+    }
+  }
+  if (KIND === 'flows') {
+    // гистограмма — SVG со столбиками притоков/оттоков; слоты баров — равные доли ширины (ось X «Денег в фондах»)
+    const hist = big.find((p) => p.el.querySelector('rect[fill*="funds-flow"]'));
+    if (!hist) return '';
+    const n = card.flows.flows.length, slot = hist.w / n;
+    // у гистограммы свой viewBox — столбики переводим в пиксели итогового SVG
+    const vbh = nums(hist.el.getAttribute('viewBox'));
+    const hx = vbh.length === 4 ? hist.w / vbh[2] : 1, hy = vbh.length === 4 ? hist.h / vbh[3] : 1;
+    const rects = Array.from(hist.el.querySelectorAll('rect[fill*="funds-flow"]')).map((rc) => ({
+      x: hist.x + (Number(rc.getAttribute('x')) || 0) * hx, y: hist.y + (Number(rc.getAttribute('y')) || 0) * hy,
+      w: (Number(rc.getAttribute('width')) || 0) * hx, h: (Number(rc.getAttribute('height')) || 0) * hy }));
+    if (!rects.length) return '';
+    const barOf = (i: number) => {
+      const cx = hist.x + (i + 0.5) * slot;
+      return rects.reduce((b, r) => (Math.abs(r.x + r.w / 2 - cx) < Math.abs(b.x + b.w / 2 - cx) ? r : b), rects[0]);
+    };
+    const [i0, i1] = sig.hl;
+    const bs = Array.from({ length: i1 - i0 + 1 }, (_, k) => barOf(i0 + k));
+    const fx0 = hist.x + i0 * slot - 4, fx1 = hist.x + (i1 + 1) * slot + 4;
+    const fy0 = Math.min(...bs.map((b) => b.y)) - 6, fy1 = Math.max(...bs.map((b) => b.y + b.h)) + 6;
+    // один узкий столбик — кружок на его конце, несколько — рамка вокруг (как на канале)
+    const single = i0 === i1 && fx1 - fx0 < 24;
+    const endY = sig.dir === 'low' ? bs[0].y + bs[0].h : bs[0].y;
+    if (single) A.ring(bs[0].x + bs[0].w / 2, endY, 16, color);
+    else A.frame({ x: fx0, y: fy0, w: fx1 - fx0, h: fy1 - fy0 }, color);
+    // прежний рекорд — кружок на его столбике, подпись снаружи (у оттока — под, у притока — над)
+    if (sig.prev != null) {
+      const b = barOf(sig.prev), out = sig.dir === 'low';
+      const cy = out ? b.y + b.h : b.y;
+      A.ring(b.x + b.w / 2, cy, 14, color);
+      if (sig.prevLabel) A.tag(sig.prevLabel, b.x + b.w / 2, cy, 14, color, 18, out ? 'below' : 'above');
+    }
+    // сумма — с пустой стороны от нуля: у оттока над рамкой, у притока под ней
+    const tx = single ? bs[0].x + bs[0].w / 2 : fx0 - 4, ty = single ? endY : (fy0 + fy1) / 2;
+    A.headline(sig.headline, tx, ty, color, single ? { gap: 24, above: 40, maxLen: 420 }
+      : { gap: 8, above: 40, maxLen: 480, rect: { x: fx0, y: fy0, w: fx1 - fx0, h: fy1 - fy0 } });
+    // сумма — после стрелки, со свободной стороны
+    if (sig.amount) {
+      if (single) A.tag(sig.amount, tx, endY, 16, color, 20, sig.dir === 'low' ? 'below' : 'above', tx + 18);
+      // у правого края рамки: середину края оставляем стрелке
+      else A.tag(sig.amount, 0, sig.dir === 'low' ? fy0 : fy1, 6, color, 20, sig.dir === 'low' ? 'above' : 'below', fx1);
+    }
+  } else if (KIND === 'season') {
+    // поле сезонности — SVG с viewBox 0..1000 по X (доля года); период — от сегодня на 3 месяца вперёд
+    const plot = big.find((p) => p.el.getAttribute('viewBox'));
+    if (!plot) return '';
+    const x0 = plot.x + sig.from * plot.w, x1 = plot.x + Math.min(sig.to, 1) * plot.w;
+    A.frame({ x: x0, y: plot.y + 4, w: Math.max(x1 - x0, 20), h: plot.h - 8 }, color);
+    const R = { x: x0, y: plot.y + 4, w: Math.max(x1 - x0, 20), h: plot.h - 8 };
+    // окно переходит через Новый год — его начало года тоже в рамке (без подписи)
+    if (sig.to > 1) A.frame({ x: plot.x, y: R.y, w: Math.max((sig.to - 1) * plot.w, 20), h: R.h }, color);
+    A.headline(sig.headline, x0 - 4, plot.y + plot.h * 0.35, color, { gap: 8, above: 40, maxLen: 420, rect: R });
+  }
+  return A.out.join('');
+}

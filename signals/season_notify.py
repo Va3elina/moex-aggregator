@@ -30,8 +30,8 @@ from datetime import date, datetime, timedelta, timezone  # noqa: E402
 
 import pandas as pd  # noqa: E402
 
-from signals import signal_marks  # noqa: E402
-from signals.framesignal import SITE, send  # noqa: E402
+from signals import funds_card, signal_marks  # noqa: E402
+from signals.framesignal import SITE, send, send_photo  # noqa: E402
 from signals.insights import fresh, season  # noqa: E402
 
 NAME = "season_notify"
@@ -115,12 +115,16 @@ def run_once(dry_run: bool = False, today: date | None = None) -> dict:
     sent = _load_sent()
     new = [(p, st) for p, st in due(today) if _key(p, st) not in sent]
     summary = {"today": str(today), "new": len(new), "sent": 0, "failed": 0}
-    for p, st in new:
+    for k, (p, st) in enumerate(new):
         msg = message(p, st, today)
+        # картинка — годовая сезонность сайта с рамкой на период сигнала (signals/funds_card)
+        png = funds_card.picture("season", p, st)
         if dry_run:
-            print(msg + "\n")
+            print(msg)
+            funds_card.dry(png, f"{NAME}_{k}")
+            print()
             continue
-        if send(msg, NAME, bot="signal"):
+        if send_photo(png, msg, NAME, bot="signal") if png else send(msg, NAME, bot="signal"):
             summary["sent"] += 1
             sent.add(_key(p, st))
         else:
