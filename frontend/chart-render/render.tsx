@@ -88,6 +88,13 @@ const root = createRoot(win.document.getElementById('root')!);
 // вид графика — как на соответствующей странице сайта: /oi — SimpleChart, «Деньги в фондах» — FlowsHistogram,
 // «Сезонность» (годовая) — YearlySeasonalityChart
 const KIND = card.kind ?? 'oi';
+// карточки рубрик канала (обложка, списки, плитки) — свой модуль на canvas, без графика сайта
+if (KIND === 'cover' || KIND === 'list' || KIND === 'tiles') {
+  const { renderCard } = await import('./cards');
+  await renderCard(card, outPath);
+  console.log('ok', outPath);
+  process.exit(0);
+}
 // форматы подписей по имени (в JSON карточки функций нет): как их задают страницы сайта
 const FMT = (f: Record<string, string>) => {
   const fn: Record<string, (v: number) => string> = {
