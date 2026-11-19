@@ -3,8 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { GROUP } from './lib';
 import { Logo } from './ui';
 
-export interface SymRow { st: string; name: string; stock?: boolean }
-const groupOf = (r: SymRow) => r.stock ? 'Акции TQBR' : GROUP[r.st] ?? 'Другое';
+export interface SymRow { st: string; name: string; stock?: boolean; crypto?: boolean }
+const groupOf = (r: SymRow) => r.crypto ? 'Крипта Bybit' : r.stock ? 'Акции TQBR' : GROUP[r.st] ?? 'Другое';
 
 export default function SymbolSearch({ rows, current, recent, onPick, onClose }: { rows: SymRow[]; current: string; recent: string[]; onPick: (st: string) => void; onClose: () => void }) {
   const [q, setQ] = useState(''); const [grp, setGrp] = useState('Все'); const [idx, setIdx] = useState(0);
@@ -31,7 +31,7 @@ export default function SymbolSearch({ rows, current, recent, onPick, onClose }:
         <div className="bt-symlist">
           {list.map((r, i) => (
             <button key={r.st} className={`bt-symrow ${i === idx ? 'hover' : ''} ${r.st === current ? 'on' : ''}`} onMouseEnter={() => setIdx(i)} onClick={() => onPick(r.st)}>
-              <Logo st={r.st} size={26} /><b>{r.st}</b><span>{r.name}<small>{r.stock ? 'акция · TQBR' : `фьючерс · ${GROUP[r.st] ?? ''} · MOEX`}</small></span>
+              <Logo st={r.st} size={26} /><b>{r.st}</b><span>{r.name}<small>{r.crypto ? 'бессрочный контракт · Bybit · сделки ботов Kamaz' : r.stock ? 'акция · TQBR' : `фьючерс · ${GROUP[r.st] ?? ''} · MOEX`}</small></span>
             </button>
           ))}
           {!list.length && <div className="bt-nodata">Ничего не найдено</div>}

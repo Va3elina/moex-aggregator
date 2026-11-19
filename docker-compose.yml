@@ -171,6 +171,9 @@ services:
       - /opt/hybrid-bot/state_five1:/data/robots/five:ro
       - /opt/hybrid-bot/state_fx:/data/robots/fx:ro
       - /opt/vb-bot/state:/data/robots/vb:ro
+      - /opt/kamaz-bot/bot/state_soft3/journal:/data/robots/kamaz_soft3/journal:ro
+      - /opt/kamaz-bot/bot/state/journal:/data/robots/kamaz_a/journal:ro
+      - /opt/kamaz-bot/bot/state_hold/journal:/data/robots/kamaz_hold/journal:ro
     # TODO security hardening: запуск под non-root + read_only rootfs.
     # Первая попытка (commit 231411a) сломала prod — api/logger.py создаёт
     # /app/logs при импорте, COPY → root owner → uid=1000 PermissionError.

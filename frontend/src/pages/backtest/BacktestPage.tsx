@@ -5,14 +5,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { btApi, type BtEquity, type BtLiveTrade, type BtMeta, type BtRun, type BtTrade } from './api';
+import { btApi, type BtEquity, type BtLiveTrade, type BtMeta, type BtRun, type BtTrade, type BtFills } from './api';
 import ChartCell, { hoverStore, type Focus } from './ChartCell';
 import { AddIndicatorMenu, useIndicators } from '../embed/EmbedIndicators';
 import Editor from './Editor';
 import SymbolSearch, { type SymRow } from './SymbolSearch';
 import Tester, { tradeKey } from './Tester';
 import { paramLabel, setPath } from './Sweep';
-import { TFS, cls, num, pct, pretty, tfLabel } from './lib';
+import { TFS, cls, num, pct, pretty, tfLabel, px, setRunCur } from './lib';
 import { usePrefs, type Layout, type Prefs } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
 import './bt.css';
@@ -24,7 +24,7 @@ const SHOW: [keyof Prefs['show'], string][] = [['markers', 'Стрелки сд�
 function Ohlc() {
   const h = useSyncExternalStore(hoverStore.subscribe, hoverStore.get);
   if (!h) return null; const c = h.candle; const k = cls(c.close - c.open) || 'bt-up'; const ch = c.open ? c.close / c.open - 1 : 0;
-  return <span className="bt-ohlc"><span className="bt-dim">{c.secid}</span> О<i className={k}>{num(c.open, 2)}</i> В<i className={k}>{num(c.high, 2)}</i> Н<i className={k}>{num(c.low, 2)}</i> З<i className={k}>{num(c.close, 2)}</i> <i className={k}>{pct(ch)}</i> <span className="bt-dim">объём</span><i>{num(c.volume)}</i>{h.inds.map(x => <span key={x.label} className="ind"><b style={{ background: x.color }} />{x.label}<i>{x.text}</i></span>)}</span>;
+  return <span className="bt-ohlc"><span className="bt-dim">{c.secid}</span> О<i className={k}>{px(c.open)}</i> В<i className={k}>{px(c.high)}</i> Н<i className={k}>{px(c.low)}</i> З<i className={k}>{px(c.close)}</i> <i className={k}>{pct(ch)}</i> <span className="bt-dim">объём</span><i>{num(c.volume)}</i>{h.inds.map(x => <span key={x.label} className="ind"><b style={{ background: x.color }} />{x.label}<i>{x.text}</i></span>)}</span>;
 }
 
 export default function BacktestPage() {
@@ -39,6 +39,7 @@ export default function BacktestPage() {
   const [meta, setMeta] = useState<BtMeta | null>(null);
   const [runs, setRuns] = useState<BtRun[]>([]);
   const [run, setRun] = useState<BtRun | null>(null);
+  const [fills, setFills] = useState<Map<string, BtFills>>(new Map());
   const [trades, setTrades] = useState<BtTrade[]>([]);
   const [equity, setEquity] = useState<BtEquity[]>([]);
   const [compare, setCompare] = useState<{ run: BtRun; equity: BtEquity[] } | null>(null);
@@ -93,14 +94,25 @@ export default function BacktestPage() {
     return () => { dead = true; };
   }, [prefs.compareRunId]);
 
-  const names = useMemo(() => new Map([...(meta?.stocks ?? []), ...(meta?.instruments ?? [])].map(i => [i.st, i.name])), [meta]);
+  const names = useMemo(() => new Map([...(meta?.stocks ?? []), ...(meta?.crypto ?? []), ...(meta?.instruments ?? [])].map(i => [i.st, i.name])), [meta]);
   // акция: дневные свечи и 5-минутные (в БД у большинства с 12.2025, у SBER и VTBR с 11.2021)
   const futures = useMemo(() => new Set(meta?.instruments.map(i => i.st) ?? []), [meta]);
   const tfOf = useCallback((c: Prefs['cells'][number]) => c.tf, []);
   const tradesBySt = useMemo(() => { const m = new Map<string, BtTrade[]>(); for (const t of trades) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [trades]);
+  setRunCur(run?.result?.currency === 'USD' ? 'USD' : 'RUB');
+  const imported = run?.result?.kind === 'imported' ? run.id : null;
+  const cellSts = prefs.cells.map(c => c.st).join(',');
+  useEffect(() => {                                   // импортированный прогон (крипта Kamaz): каждая докупка кампании — с сервера по бумаге
+    if (imported == null) { setFills(new Map()); return; }
+    let dead = false; const sts = Array.from(new Set(cellSts.split(',')));
+    Promise.all(sts.map(st => btApi.fills(imported, st).then(f => [st, f] as const).catch(() => [st, {}] as const)))
+      .then(xs => { if (!dead) setFills(new Map(xs)); });
+    return () => { dead = true; };
+  }, [imported, cellSts]);
   const liveBySt = useMemo(() => { const m = new Map<string, BtLiveTrade[]>(); for (const t of live) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [live]);
   const symRows: SymRow[] = useMemo(() => [...(meta?.instruments ?? []).map(i => ({ st: i.st, name: i.name })),
-    ...(meta?.stocks ?? []).filter(i => !futures.has(i.st)).map(i => ({ st: i.st, name: i.name, stock: true }))], [meta, futures]);
+    ...(meta?.stocks ?? []).filter(i => !futures.has(i.st)).map(i => ({ st: i.st, name: i.name, stock: true })),
+    ...(meta?.crypto ?? []).map(i => ({ st: i.st, name: i.name, crypto: true }))], [meta, futures]);
 
   const pickSymbol = (st: string) => { setCell(active, { st }); set(p => ({ recent: [st, ...p.recent.filter(x => x !== st)].slice(0, 8) })); setSearch(false); setSelKey(null); };
   const pickTrade = (t: BtTrade) => { setSelKey(tradeKey(t)); if (t.st !== cell.st) setCell(active, { st: t.st }); setFocus({ d: t.d, dOut: t.d_out, nonce: Date.now() }); if (prefs.panel === 'max') set({ panel: 'open' }); };
@@ -122,7 +134,7 @@ export default function BacktestPage() {
   useEffect(() => {
     if (!prefs.autoRun || busy || !run || run.id !== prefs.runId || run.status !== 'done' || run.kind === 'sweep') return;
     const uni: string[] = run.spec_full?.universe ?? []; const fresh = followRun.current !== run.id; followRun.current = run.id;
-    if (uni.length !== 1 || uni[0] === cell.st) return;
+    if (uni.length !== 1 || uni[0] === cell.st || /USDT$/.test(cell.st)) return;   // монета: стратегий Стенда на крипте пока нет — только сделки ботов
     if (fresh) { setCell(active, { st: uni[0] }); return; }      // прогон выбрали из списка — график идёт за прогоном, а не наоборот
     const t = setTimeout(() => {
       const want = sameSpecKey(run.spec); const today = new Date().toDateString();
@@ -181,7 +193,7 @@ export default function BacktestPage() {
             <div className={`bt-grid l${prefs.layout}`}>
               {prefs.cells.slice(0, nCells).map((c, i) => (
                 <ChartCell key={i} st={c.st} tf={tfOf(c)} active={i === active} multi={nCells > 1} rule={rule}
-                  trades={tradesBySt.get(c.st) ?? EMPTY_T} live={liveBySt.get(c.st) ?? EMPTY_L} show={prefs.show} inds={inds}
+                  trades={tradesBySt.get(c.st) ?? EMPTY_T} live={liveBySt.get(c.st) ?? EMPTY_L} fills={fills.get(c.st)} show={prefs.show} inds={inds}
                   focus={i === active ? focus : null} onActivate={() => { if (i !== active) set({ active: i }); }} />
               ))}
             </div>

@@ -10,8 +10,8 @@ import {
 import LwChartPanes, { type LwPane, type LwSeriesBuiltCtx } from '../../components/LwChartPanes';
 import type { LwSeries } from '../../components/chart/lwTypes';
 import { IndicatorList, PaneIndicatorList, useIndicatorSeries, useVolumeProfileSpec, type IndicatorsApi } from '../embed/EmbedIndicators';
-import { btApi, type BtCandle, type BtLiveTrade, type BtTrade } from './api';
-import { chunkEnd, chunkOf, chunkStep, hm, num, pct, today, ts, tsToIso, tfLabel } from './lib';
+import { btApi, type BtCandle, type BtLiveTrade, type BtTrade, type BtFills } from './api';
+import { chunkEnd, chunkOf, chunkStep, hm, money, num, pct, px, pxDigits, today, ts, tsToIso, tfLabel } from './lib';
 import { TradesPrimitive, type TradeShape } from './TradesPrimitive';
 import type { Prefs } from './usePrefs';
 
@@ -66,8 +66,8 @@ export const hoverStore = {
 const toSec = (t: string) => Number(t);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export default function ChartCell({ st, tf, active, multi, rule, trades, live, show, inds, focus, onActivate }: {
-  st: string; tf: number; active: boolean; multi: boolean; rule: any; trades: BtTrade[]; live: BtLiveTrade[];
+export default function ChartCell({ st, tf, active, multi, rule, trades, live, fills, show, inds, focus, onActivate }: {
+  st: string; tf: number; active: boolean; multi: boolean; rule: any; trades: BtTrade[]; live: BtLiveTrade[]; fills?: BtFills;
   show: Prefs['show']; inds: IndicatorsApi; focus: Focus | null; onActivate: () => void;
 }) {
   const ctxRef = useRef<LwSeriesBuiltCtx | null>(null);
@@ -136,7 +136,9 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
   const paneMap = useMemo(() => [...new Set(inds.list.filter(i => i.pane > 0).map(i => i.pane))].sort((a, b) => a - b), [inds.list]);
   const panes = useMemo<LwPane[]>(() => {
     candlesRef.current = candles; byTime.current = new Map(candles.map(c => [c.time, c]));
+    const last = candles.length ? candles[candles.length - 1].close : 0, dg = Math.abs(last) < 10 ? pxDigits(last) : 0;
     const price: LwSeries = { id: 'price', type: 'candlestick', scale: 'right', color: '#26a69a', label: 'Цена', lastValueVisible: true,
+      ...(dg > 2 ? { axisFmt: (v: number) => v.toFixed(dg), minMove: Math.pow(10, -dg) } : {}),
       data: candles.map(c => ({ time: c.time, value: c.close, open: c.open, high: c.high, low: c.low, close: c.close })) };
     const extra = paneMap.map(p => ({ series: indSeries[p] ?? [], flex: 1 }));
     return [{ series: [price, ...(indSeries[0] ?? [])], flex: extra.length ? 2.8 : 1 }, ...extra];
@@ -149,7 +151,14 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
     const bucket = (d: string, m: number) => tf === 1440 ? ts(d) : ts(d, Math.floor(m / tf) * tf);
     const ms: SeriesMarker<Time>[] = []; const shapes: TradeShape[] = [];
     for (const t of trades) {
-      if (tf !== 1440 && t.m_in == null && !rule?.signal) continue;   // сделка по дневным закрытиям (скринер VB): времени внутри дня у неё нет
+      if (tf !== 1440 && t.m_in == null && !rule?.signal) continue;
+      for (const [ft, fp, fq, fw] of (show.markers && fills?.[String(t.n)]) || []) {   // кампания Kamaz из истории: докупки и мягкая фаза
+        if (fw === 'вход' || fq < 0) continue;
+        const tt = bucket(ft.slice(0, 10), hm(ft.slice(11, 16))); if (!have.has(tt)) continue;
+        ms.push(fw === 'мягкая фаза'
+          ? { time: tt as UTCTimestamp, position: 'aboveBar', shape: 'circle', color: '#e0a030', text: show.labels ? `12 ч — цель в безубыток ${px(fp)}` : undefined }
+          : { time: tt as UTCTimestamp, position: 'belowBar', shape: 'square', color: C.up, text: show.labels ? `${fw} ${px(fp)}` : undefined });
+      }   // сделка по дневным закрытиям (скринер VB): времени внутри дня у неё нет
       const muted = !!t.account_skip, long = t.side > 0, tIn = bucket(t.d, t.m_in ?? times.tin), tOut = bucket(t.d_out, t.m_out ?? times.tout);
       const why = t.exit_reason && t.exit_reason !== 'время' ? t.exit_reason[0].toUpperCase() + t.exit_reason.slice(1) : 'Выход';
       shapes.push({ tIn, pIn: t.px_in, tOut, pOut: t.px_out, side: t.side, good: t.net > 0, muted,
@@ -157,22 +166,37 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
       if (!show.markers) continue;
       const thr = t.thr != null ? ` · порог ${pct(long ? t.thr : -t.thr)}` : ''; const mv = t.move != null ? ` · ход ${pct(t.move)}` : '';
       if (have.has(tIn)) ms.push({ time: tIn as UTCTimestamp, position: long ? 'belowBar' : 'aboveBar', shape: long ? 'arrowUp' : 'arrowDown',
-        color: muted ? '#5d6675' : long ? C.up : C.down, text: show.labels ? `${long ? 'Лонг' : 'Шорт'} ${num(t.px_in, 2)}${mv}${tf <= 15 ? thr : ''}` : undefined });
+        color: muted ? '#5d6675' : long ? C.up : C.down, text: show.labels ? `${long ? 'Лонг' : 'Шорт'} ${px(t.px_in)}${mv}${tf <= 15 ? thr : ''}` : undefined });
       if (have.has(tOut)) ms.push({ time: tOut as UTCTimestamp, position: long ? 'aboveBar' : 'belowBar', shape: 'circle',
-        color: muted ? '#5d6675' : t.net > 0 ? C.up : C.down, text: show.labels ? `${why} ${num(t.px_out, 2)} · ${pct(t.net)}` : undefined });
+        color: muted ? '#5d6675' : t.net > 0 ? C.up : C.down, text: show.labels ? `${why} ${px(t.px_out)} · ${pct(t.net)}` : undefined });
     }
     if (show.robot) for (const r of live) {
       if (r.px_in == null) continue;
       const tIn = bucket(r.d, r.t_in ? hm(r.t_in) : times.tin), tOut = r.d_out ? bucket(r.d_out, r.t_out ? hm(r.t_out) : times.tout) : null;
+      const usd = r.cur === 'USD', who = r.robot;
+      if (r.fills?.length) {               // бот Kamaz: каждая заявка — своя метка (вход, ступени лесенки, выход), линия — от средней
+        shapes.push({ tIn, pIn: r.avg ?? r.px_in, tOut, pOut: r.px_out, side: r.side, good: (r.pnl_rub ?? 0) > 0, muted: false, winFrom: null, winTo: null, robot: true });
+        const lastExit = r.fills.reduce((a, f, i) => f.qty < 0 ? i : a, -1);
+        for (const [i, f] of r.fills.entries()) {
+          const tt = bucket(f.d, hm(f.t)); if (!have.has(tt)) continue;
+          const buy = f.qty > 0;
+          ms.push({ time: tt as UTCTimestamp, position: buy ? 'belowBar' : 'aboveBar', shape: buy ? (f.what === 'вход' ? 'arrowUp' : 'square') : 'circle',
+            color: buy ? '#4c8dff' : (r.pnl_rub ?? 0) > 0 ? C.up : C.down,
+            text: show.labels ? (buy ? `${who}: ${f.what} ${px(f.px)}` : `${who}: выход ${f.what === 'таймер' ? 'по таймеру' : 'по цели'} ${px(f.px)}${i === lastExit && r.pnl_rub != null ? ' · итог ' + money(r.pnl_rub, 'USD') : ''}`) : undefined });
+        }
+        if (r.soft) { const tt = bucket(r.soft.d, hm(r.soft.t)); if (have.has(tt)) ms.push({ time: tt as UTCTimestamp, position: 'aboveBar', shape: 'circle', color: '#e0a030',
+          text: show.labels ? `${who}: 12 ч прошло — цель в безубыток ${px(r.soft.be)}` : undefined }); }
+        continue;
+      }
       shapes.push({ tIn, pIn: r.px_in, tOut, pOut: r.px_out, side: r.side, good: (r.pnl_rub ?? 0) > 0, muted: false, winFrom: null, winTo: null, robot: true });
       if (have.has(tIn)) ms.push({ time: tIn as UTCTimestamp, position: r.side > 0 ? 'belowBar' : 'aboveBar', shape: 'square', color: '#4c8dff',
-        text: show.labels ? `${r.robot}: ${r.side > 0 ? 'купил' : 'продал'} ${num(r.qty)} по ${num(r.px_in, 2)}` : undefined });
+        text: show.labels ? `${who}: ${r.side > 0 ? 'купил' : 'продал'} ${num(r.qty)} по ${px(r.px_in)}` : undefined });
       if (tOut != null && have.has(tOut)) ms.push({ time: tOut as UTCTimestamp, position: r.side > 0 ? 'aboveBar' : 'belowBar', shape: 'square', color: '#4c8dff',
-        text: show.labels ? `${r.robot}: закрыл по ${num(r.px_out, 2)} · ${num(r.pnl_rub)} ₽` : undefined });
+        text: show.labels ? `${who}: закрыл по ${px(r.px_out)} · ${money(r.pnl_rub, usd ? 'USD' : 'RUB')}` : undefined });
     }
     marks.current.setMarkers(ms.sort((a, b) => (a.time as number) - (b.time as number)));
     layer.current.set({ trades: shapes, lines: show.lines, window: show.window });
-  }, [trades, live, tf, times, rule, show.markers, show.lines, show.window, show.robot, show.labels]);
+  }, [trades, live, fills, tf, times, rule, show.markers, show.lines, show.window, show.robot, show.labels]);
   const paintRef = useRef(paint); paintRef.current = paint;
   useEffect(() => { paint(); }, [paint]);
 

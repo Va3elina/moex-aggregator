@@ -1,7 +1,7 @@
 // Стенд: «Робот против бэктеста» — настоящие сделки песочницы рядом с теми же сделками в выбранном прогоне.
 import { useState } from 'react';
 import type { BtLiveTrade, BtTrade } from './api';
-import { cls, fmtDate, money, num, pct } from './lib';
+import { cls, fmtDate, money, num, pct, px } from './lib';
 import { Logo } from './ui';
 
 export default function RobotReport({ live: all, trades, names, onPick, prefer }: { live: BtLiveTrade[]; trades: BtTrade[]; names: Map<string, string>; onPick: (t: BtTrade) => void; prefer?: string }) {
@@ -9,6 +9,7 @@ export default function RobotReport({ live: all, trades, names, onPick, prefer }
   const [pick, setPick] = useState<string | null>(null);
   const robot = pick && robots.includes(pick) ? pick : prefer && robots.includes(prefer) ? prefer : robots[0];
   const live = all.filter(r => r.robot === robot);
+  const cur = live[0]?.cur === 'USD' ? 'USD' : 'RUB';
   if (!live.length) return <div className="bt-nodata big">Сделок роботов пока нет (журналы демо-счетов пусты или недоступны).</div>;
   const tabs = robots.length > 1 && <div className="bt-listbar"><div className="bt-chips">{robots.map(n => <button key={n} type="button" className={n === robot ? 'on' : ''} onClick={() => setPick(n)}>{n} <span className="bt-dim">{all.filter(r => r.robot === n).length}</span></button>)}</div></div>;
   const key = (st: string, d: string) => `${st}|${d}`;
@@ -18,7 +19,7 @@ export default function RobotReport({ live: all, trades, names, onPick, prefer }
   const missed = trades.filter(t => t.d >= first && !liveKeys.has(key(t.st, t.d)));
   const rows = live.slice().sort((a, b) => a.d < b.d ? 1 : -1).map(r => {
     const t = bt.get(key(r.st, r.d)) ?? null;
-    const retLive = r.px_in && r.px_out ? r.side * (r.px_out / r.px_in - 1) : null;
+    const base = r.avg ?? r.px_in; const retLive = base && r.px_out ? r.side * (r.px_out / base - 1) : null;
     const retBt = t ? t.side * (t.px_out / t.px_in - 1) : null;
     return { r, t, retLive, retBt, slipIn: t && r.px_in ? r.side * (t.px_in / r.px_in - 1) * -1 : null };
   });
@@ -32,18 +33,18 @@ export default function RobotReport({ live: all, trades, names, onPick, prefer }
         <div className="bt-metric"><small>Результат робота, цена</small><b className={cls(avg(closed.map(x => x.retLive!)))}>{pct(avg(closed.map(x => x.retLive!)))}</b><span className="bt-dim">в среднем на сделку</span></div>
         <div className="bt-metric"><small>Те же сделки в бэктесте</small><b className={cls(avg(closed.map(x => x.retBt!)))}>{pct(avg(closed.map(x => x.retBt!)))}</b><span className="bt-dim">до издержек</span></div>
         <div className="bt-metric"><small>Расхождение</small><b className={cls(avg(closed.map(x => x.retLive! - x.retBt!)))}>{pct(avg(closed.map(x => x.retLive! - x.retBt!)))}</b><span className="bt-dim">робот минус бэктест: опоздания и цена исполнения</span></div>
-        <div className="bt-metric"><small>Итог робота</small><b className={cls(live.reduce((a, r) => a + (r.pnl_rub ?? 0), 0))}>{money(live.reduce((a, r) => a + (r.pnl_rub ?? 0), 0))}</b><span className="bt-dim">{robot === 'Скринер VB' ? 'в рублях, без комиссии' : 'в рублях, с комиссией песочницы'}</span></div>
+        <div className="bt-metric"><small>Итог робота</small><b className={cls(live.reduce((a, r) => a + (r.pnl_rub ?? 0), 0))}>{money(live.reduce((a, r) => a + (r.pnl_rub ?? 0), 0), cur)}</b><span className="bt-dim">{cur === 'USD' ? 'в долларах, закрытые кампании, по журналу бота' : robot === 'Скринер VB' ? 'в рублях, без комиссии' : 'в рублях, с комиссией песочницы'}</span></div>
       </div>
-      <table className="bt-table tv"><thead><tr><th className="l">Бумага</th><th className="l">Тип</th><th className="l">Вход → выход</th><th>Вход: робот / бэктест</th><th>Выход: робот / бэктест</th><th>Цена, %: робот / бэктест</th><th>Расхождение</th><th>Контр.</th><th>Итог, ₽</th><th className="l">Примечание</th></tr></thead>
+      <table className="bt-table tv"><thead><tr><th className="l">Бумага</th><th className="l">Тип</th><th className="l">Вход → выход</th><th>Вход: робот / бэктест</th><th>Выход: робот / бэктест</th><th>Цена, %: робот / бэктест</th><th>Расхождение</th><th>Контр.</th><th>{cur === 'USD' ? 'Итог, $' : 'Итог, ₽'}</th><th className="l">Примечание</th></tr></thead>
         <tbody>{rows.map(({ r, t, retLive, retBt }, i) => (
           <tr key={`${r.st}|${r.d}|${r.t_in}|${i}`} onClick={() => t && onPick(t)}>
             <td className="l"><span className="bt-inline"><Logo st={r.st} size={18} /><b>{r.st}</b> <span className="bt-dim">{names.get(r.st)} · {r.secid}</span></span></td>
             <td className={`l ${r.side > 0 ? 'bt-long' : 'bt-down'}`}>{r.side > 0 ? 'Длинная' : 'Короткая'}</td>
             <td className="l">{fmtDate(r.d)} {r.t_in?.slice(0, 5)} → {r.d_out ? `${fmtDate(r.d_out)} ${r.t_out?.slice(0, 5) ?? ''}` : 'открыта'}</td>
-            <td>{num(r.px_in, 2)} / {t ? num(t.px_in, 2) : '—'}</td><td>{num(r.px_out, 2)} / {t ? num(t.px_out, 2) : '—'}</td>
+            <td>{px(r.avg ?? r.px_in)} / {t ? px(t.px_in) : '—'}</td><td>{px(r.px_out)} / {t ? px(t.px_out) : '—'}</td>
             <td><span className={cls(retLive)}>{pct(retLive)}</span> / <span className={cls(retBt)}>{pct(retBt)}</span></td>
             <td className={cls(retLive != null && retBt != null ? retLive - retBt : null)}>{retLive != null && retBt != null ? pct(retLive - retBt) : '—'}</td>
-            <td>{num(r.qty)}</td><td className={cls(r.pnl_rub)}>{money(r.pnl_rub)}</td>
+            <td>{cur === 'USD' && r.qty != null ? num(r.qty, r.qty < 1 ? 4 : r.qty < 10 ? 3 : 0) : num(r.qty)}</td><td className={cls(r.pnl_rub)}>{money(r.pnl_rub, cur)}</td>
             <td className="l bt-dim" style={{ whiteSpace: 'normal', maxWidth: 360 }}>{!t ? 'в этом прогоне такой сделки нет' : ''}{r.note ?? ''}</td>
           </tr>))}</tbody></table>
       {!!missed.length && <><div className="bt-listbar"><b>Сигналы бэктеста, которых нет у робота</b><span className="bt-dim">{missed.length}</span></div>
