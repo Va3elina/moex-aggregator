@@ -255,7 +255,7 @@ def _candles_stock_intraday(db, st, tf, a, b):
     rows = db.execute(text(f"""SELECT extract(epoch from {bucket})::bigint AS time,
                (array_agg(open ORDER BY begin_time))[1] AS open, max(high) AS high, min(low) AS low,
                (array_agg(close ORDER BY begin_time DESC))[1] AS close, sum(volume) AS volume
-        FROM candles WHERE sec_id = :st AND secid = :st AND interval = 5 AND type = 'stock' AND begin_time >= :a AND begin_time < :b
+        FROM candles WHERE sec_id = :st AND secid = :st AND interval = 5 AND begin_time >= :a AND begin_time < :b   -- без type: только покрывающий индекс, см. store._sql_stock
         GROUP BY 1 ORDER BY 1"""), {'st': st, 'a': a, 'b': b + timedelta(days=1)}).fetchall()
     return {'st': st, 'tf': tf, 'from': a.isoformat(), 'to': b.isoformat(), 't': [r.time for r in rows],
             'o': [float(r.open) for r in rows], 'h': [float(r.high) for r in rows], 'l': [float(r.low) for r in rows],
