@@ -5,14 +5,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { btApi, type BtEquity, type BtLiveTrade, type BtMeta, type BtRun, type BtTrade } from './api';
+import { btApi, type BtEquity, type BtLiveTrade, type BtMeta, type BtRun, type BtTrade, type BtFills } from './api';
 import ChartCell, { hoverStore, type Focus } from './ChartCell';
 import { AddIndicatorMenu, useIndicators } from '../embed/EmbedIndicators';
 import Editor from './Editor';
 import SymbolSearch, { type SymRow } from './SymbolSearch';
 import Tester, { tradeKey } from './Tester';
 import { paramLabel, setPath } from './Sweep';
-import { TFS, cls, num, pct, pretty, tfLabel, px } from './lib';
+import { TFS, cls, num, pct, pretty, tfLabel, px, setRunCur } from './lib';
 import { usePrefs, type Layout, type Prefs } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
 import './bt.css';
@@ -39,6 +39,7 @@ export default function BacktestPage() {
   const [meta, setMeta] = useState<BtMeta | null>(null);
   const [runs, setRuns] = useState<BtRun[]>([]);
   const [run, setRun] = useState<BtRun | null>(null);
+  const [fills, setFills] = useState<Map<string, BtFills>>(new Map());
   const [trades, setTrades] = useState<BtTrade[]>([]);
   const [equity, setEquity] = useState<BtEquity[]>([]);
   const [compare, setCompare] = useState<{ run: BtRun; equity: BtEquity[] } | null>(null);
@@ -98,6 +99,16 @@ export default function BacktestPage() {
   const futures = useMemo(() => new Set(meta?.instruments.map(i => i.st) ?? []), [meta]);
   const tfOf = useCallback((c: Prefs['cells'][number]) => c.tf, []);
   const tradesBySt = useMemo(() => { const m = new Map<string, BtTrade[]>(); for (const t of trades) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [trades]);
+  setRunCur(run?.result?.currency === 'USD' ? 'USD' : 'RUB');
+  const imported = run?.result?.kind === 'imported' ? run.id : null;
+  const cellSts = prefs.cells.map(c => c.st).join(',');
+  useEffect(() => {                                   // импортированный прогон (крипта Kamaz): каждая докупка кампании — с сервера по бумаге
+    if (imported == null) { setFills(new Map()); return; }
+    let dead = false; const sts = Array.from(new Set(cellSts.split(',')));
+    Promise.all(sts.map(st => btApi.fills(imported, st).then(f => [st, f] as const).catch(() => [st, {}] as const)))
+      .then(xs => { if (!dead) setFills(new Map(xs)); });
+    return () => { dead = true; };
+  }, [imported, cellSts]);
   const liveBySt = useMemo(() => { const m = new Map<string, BtLiveTrade[]>(); for (const t of live) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [live]);
   const symRows: SymRow[] = useMemo(() => [...(meta?.instruments ?? []).map(i => ({ st: i.st, name: i.name })),
     ...(meta?.stocks ?? []).filter(i => !futures.has(i.st)).map(i => ({ st: i.st, name: i.name, stock: true })),
@@ -182,7 +193,7 @@ export default function BacktestPage() {
             <div className={`bt-grid l${prefs.layout}`}>
               {prefs.cells.slice(0, nCells).map((c, i) => (
                 <ChartCell key={i} st={c.st} tf={tfOf(c)} active={i === active} multi={nCells > 1} rule={rule}
-                  trades={tradesBySt.get(c.st) ?? EMPTY_T} live={liveBySt.get(c.st) ?? EMPTY_L} show={prefs.show} inds={inds}
+                  trades={tradesBySt.get(c.st) ?? EMPTY_T} live={liveBySt.get(c.st) ?? EMPTY_L} fills={fills.get(c.st)} show={prefs.show} inds={inds}
                   focus={i === active ? focus : null} onActivate={() => { if (i !== active) set({ active: i }); }} />
               ))}
             </div>

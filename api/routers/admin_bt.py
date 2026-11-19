@@ -5,7 +5,7 @@ API ничего не считает: кладёт прогон в очеред�
 человек мышкой, агент делает вызовом (или `python -m backtest.cli` на сервере).
 Все ручки — обычные def (не async): SQLAlchemy синхронный, см. async_endpoints_blocking.
 """
-import csv, glob, json, os, re, urllib.request
+import calendar, csv, glob, json, os, re, urllib.error, urllib.request
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
@@ -29,7 +29,7 @@ NAMES = {'AF': 'Аэрофлот', 'AK': 'АФК Система', 'BR': 'Brent',
          'USDRUBF': 'Доллар вечный', 'EURRUBF': 'Евро вечный', 'GLDRUBF': 'Золото вечное', 'IMOEXF': 'Индекс МосБиржи вечный',
          'SBERF': 'Сбербанк вечный', 'GAZPF': 'Газпром вечный'}
 STRATEGIES = {'screener_vb': 'Скринер VB: объёмный пробой лонг + шорт (акции TQBR, дневные свечи)'}
-CRYPTO_RE = re.compile(r'^[A-Z0-9]{2,20}USDT$')        # монета Bybit (бессрочный контракт USDT): свечи — с публичного API Bybit
+CRYPTO_RE = re.compile(r'[A-Z0-9]{2,20}USDT')        # монета Bybit (бессрочный контракт USDT): свечи — с публичного API Bybit
 STOCK_RE = re.compile(r'^[A-Z][A-Z0-9]{0,11}$')         # тикер акции TQBR: график по дневным свечам candles (type='stock')
 TF = {5, 15, 60, 1440}
 MAX_DAYS = {5: 200, 15: 600, 60: 2500, 1440: 5000}     # потолок диапазона на запрос, чтобы не отдать 300 тыс. свечей
@@ -70,7 +70,8 @@ def _run_row(r, full=False):
            'finished_at': r.finished_at, 'error': r.error, 'spec': _json(r.spec)}
     res = _json(r.result)
     if full:
-        out['result'] = res; out['spec_full'] = _json(r.spec_full)
+        out['result'] = {k: v for k, v in res.items() if k != 'fills'} if isinstance(res, dict) else res   # заявки кампаний — /runs/{id}/fills
+        out['spec_full'] = _json(r.spec_full)
     elif res:
         out['summary'] = {'сделок': res.get('per_trade', {}).get('сделок'),
                           'чистыми_%': res.get('per_trade', {}).get('чистыми_%'),
@@ -119,19 +120,25 @@ def python_inspect(body: CodeIn, _admin: User = Depends(require_admin)):
 
 
 def _crypto_list():
-    """Монеты, которые торговали боты Kamaz на демо-счетах (по журналам), — в поиске бумаг Стенда."""
-    seen = set()
-    for _, d, fmt, _ in ROBOTS:
-        if fmt != 'kamaz': continue
-        for fn in glob.glob(os.path.join(ROBOTS_DIR, d, 'journal', '*.jsonl')):
-            try:
-                with open(fn, encoding='utf-8') as f:
-                    for line in f:
-                        if '"исполнение"' in line and '"вход"' in line:
-                            try: seen.add(json.loads(line)['sym'])
-                            except (KeyError, ValueError): pass
-            except OSError: pass
-    return [{'st': x, 'name': x.replace('USDT', '').replace('1000', '') + ' · Bybit'} for x in sorted(seen)]
+    """Монеты, по которым боты Kamaz совершали реальные сделки на демо-счетах (по журналам), — в поиске бумаг Стенда.
+    Журналы растут каждый день — список кэшируется на 5 минут."""
+    def build():
+        seen = set()
+        for _, d, fmt, _ in ROBOTS:
+            if fmt != 'kamaz': continue
+            for fn in glob.glob(os.path.join(ROBOTS_DIR, d, 'journal', '*.jsonl')):
+                try:
+                    with open(fn, encoding='utf-8', errors='replace') as f:
+                        for line in f:
+                            if '"реал"' in line and '"исполнение"' in line:
+                                try: seen.add(json.loads(line)['sym'])
+                                except (KeyError, ValueError): pass
+                except OSError: pass
+        return [{'st': x, 'name': x.replace('USDT', '').replace('1000', '') + ' · Bybit'} for x in sorted(seen)]
+    try:
+        return cache.get_or_compute('bt:crypto_list:v1', build, 300)
+    except Exception:
+        return []
 
 
 @router.get("/meta")
@@ -220,6 +227,16 @@ def run_trades(run_id: int, st: Optional[str] = None, db: Session = Depends(get_
         FROM bt_trades WHERE run_id=:r {'AND st=:st' if st else ''} ORDER BY d, m_in, st""", {'r': run_id, 'st': st})
 
 
+@router.get("/runs/{run_id}/fills")
+def run_fills(run_id: int, st: str, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Заявки кампаний импортированного прогона (крипта Kamaz): {n: [[время МСК, цена, количество, что], ...]} по бумаге."""
+    ns = [str(x[0]) for x in db.execute(text("SELECT n FROM bt_trades WHERE run_id=:r AND st=:st"), {'r': run_id, 'st': st}).fetchall()]
+    if not ns: return {}
+    f = db.execute(text("SELECT result->'fills' FROM bt_runs WHERE id=:r"), {'r': run_id}).scalar()
+    f = _json(f) or {}
+    return {n: f[n] for n in ns if n in f}
+
+
 @router.get("/runs/{run_id}/signals")
 def run_signals(run_id: int, st: str, date_from: Optional[date] = Query(None, alias='from'),
                 date_to: Optional[date] = Query(None, alias='to'), db: Session = Depends(get_db),
@@ -274,13 +291,16 @@ def _candles_crypto(st, tf, a, b):
     первыми — листаем назад. Внутри дня время сдвинуто в МСК «как будто UTC» (как свечи МосБиржи в Стенде);
     дневная свеча Bybit начинается в 00:00 UTC — ставим её на её дату."""
     iv = {5: '5', 15: '15', 60: '60', 1440: 'D'}[tf]
-    start = int((datetime(a.year, a.month, a.day).timestamp() - MSK) * 1000)
-    end = int((datetime(b.year, b.month, b.day).timestamp() + 86400 - MSK) * 1000) - 1
+    start = (calendar.timegm(a.timetuple()) - MSK) * 1000                     # полночь МСК в мс UTC, без пояса процесса
+    end = (calendar.timegm(b.timetuple()) + 86400 - MSK) * 1000 - 1
     rows, cur = {}, end
-    for _ in range(60):
+    for _ in range(80):
         url = f'{BYBIT}?category=linear&symbol={st}&interval={iv}&start={start}&end={cur}&limit=1000'
-        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'frame-bt'}), timeout=20) as r:
-            j = json.load(r)
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'frame-bt'}), timeout=20) as r:
+                j = json.load(r)
+        except (urllib.error.URLError, TimeoutError, ValueError) as ex:
+            raise HTTPException(502, f'Bybit не ответил: {ex}')
         if j.get('retCode'): raise HTTPException(422, f"Bybit: {j.get('retMsg')}")
         lst = j['result']['list']
         for x in lst: rows[int(x[0])] = x
@@ -327,10 +347,10 @@ def candles(st: str, tf: int = 5, date_from: Optional[date] = Query(None, alias=
     time — секунды «как будто МСК = UTC»: график показывает московское время без пересчёта поясов.
     Страница просит куски по календарным границам (месяц / квартал / год) — поэтому ответ кэшируется в Redis:
     прошлое — на сутки, кусок с сегодняшним днём — на 2 минуты."""
-    if tf not in TF or (st not in bt_store.UNIVERSE_ALL and not STOCK_RE.match(st) and not CRYPTO_RE.match(st)):
+    if tf not in TF or (st not in bt_store.UNIVERSE_ALL and not STOCK_RE.match(st) and not CRYPTO_RE.fullmatch(st)):
         raise HTTPException(422, 'tf: 5 | 15 | 60 | 1440; st — тип фьючерса из /meta, тикер акции или монета Bybit (…USDT)')
     b = date_to or date.today()
-    if CRYPTO_RE.match(st):                                # монета: Bybit, время — МСК, как у остальных графиков Стенда
+    if CRYPTO_RE.fullmatch(st):                            # монета: Bybit, время — МСК, как у остальных графиков Стенда
         a = max(date_from or (b - timedelta(days=MAX_DAYS[1440] if tf == 1440 else 90)), b - timedelta(days=MAX_DAYS[tf]))
         ttl = 120 if b >= date.today() else 86400
         return cache.get_or_compute(f'bt:candles:crypto:v1:{st}:{tf}:{a}:{b}', lambda: _candles_crypto(st, tf, a, b), ttl)
@@ -487,7 +507,7 @@ def _live_kamaz(dirpath, robot):
     Итог — в долларах, как его записал бот (поле result события «кампания закрыта»)."""
     camps, out = {}, []
     for fn in sorted(glob.glob(os.path.join(dirpath, 'journal', '*.jsonl'))):
-        with open(fn, encoding='utf-8') as f:
+        with open(fn, encoding='utf-8', errors='replace') as f:
             for line in f:
                 try:
                     e = json.loads(line)
@@ -501,10 +521,15 @@ def _kamaz_event(camps, out, e, robot):
     sym, kind, what = e['sym'], e.get('kind'), e.get('what') or ''
     d, t = _msk(e['t'])
     c = camps.get(sym)
-    if kind == 'исполнение' and what == 'вход':
+    if kind == 'исполнение' and what == 'вход' and c is not None and not c['_out']:
+        c['fills'].append({'d': d, 't': t, 'px': float(e['price']), 'qty': float(e['qty']), 'what': 'вход'})   # вход исполнился кусками
+        c['qty'] += float(e['qty'])
+    elif kind == 'исполнение' and (what == 'вход' or (c is None and what.startswith('ступень'))):
+        # ступень без входа — кампания, подхваченная ботом после перезапуска: начинаем её с этой заявки
         camps[sym] = {'robot': robot, 'st': sym, 'secid': sym, 'side': 1, 'd': d, 't_in': t, 'px_in': float(e['price']),
                       'qty': float(e['qty']), 'd_out': None, 't_out': None, 'px_out': None, 'pnl_rub': None, 'move': None,
-                      'note': None, 'cur': 'USD', 'fills': [{'d': d, 't': t, 'px': float(e['price']), 'qty': float(e['qty']), 'what': 'вход'}],
+                      'note': None if what == 'вход' else 'подхвачена после перезапуска бота', 'cur': 'USD',
+                      'fills': [{'d': d, 't': t, 'px': float(e['price']), 'qty': float(e['qty']), 'what': what}],
                       'targets': [], 'soft': None, 'avg': float(e['price']), '_out': []}
     elif c is None:
         return
@@ -522,9 +547,10 @@ def _kamaz_event(camps, out, e, robot):
         q = sum(x[1] for x in c['_out'])
         c['d_out'], c['t_out'] = d, t
         c['px_out'] = sum(p * x for p, x in c['_out']) / q if q else (c['targets'][-1]['px'] if c['targets'] else None)
-        c['pnl_rub'] = round(float(e['result']), 2)
+        c['pnl_rub'] = round(float(e['result']), 2) if e.get('result') is not None else None
         n = int(e.get('adds') or 0)
-        c['note'] = f"{'по цели' if e.get('how') == 'цель' else 'по таймеру'} · докупок {n}" + (' · после мягкой фазы' if e.get('мягко') else '')
+        how = {'цель': 'по цели', 'таймер': 'по таймеру', 'стоп': 'по стопу', 'нет позиции': 'позиция закрыта вне бота'}.get(e.get('how'), e.get('how') or '')
+        c['note'] = f"{how} · докупок {n}" + (' · после мягкой фазы' if e.get('мягко') else '') + (f" · {c['note']}" if c.get('note') else '')
         out.append(c); del camps[sym]
     for x in (c,) if c is not None else ():
         if x.get('fills'):

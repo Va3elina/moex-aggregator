@@ -57,6 +57,8 @@ def main():
         p.add_argument('--go-limit', type=float, default=1.0); p.add_argument('--name')
         p.add_argument('--leverage', type=float, default=1.0); p.add_argument('--guard', type=float, default=None)
         if c == 'submit': p.add_argument('--no-wait', action='store_true')
+    p = sp.add_parser('import'); p.add_argument('file', help='JSON готового прогона ({spec, result, trades, equity}) или «-» (stdin)')
+    p.add_argument('--keep', action='store_true', help='не удалять прежние импорты той же стратегии')
     p = sp.add_parser('show'); p.add_argument('id', type=int); p.add_argument('--trades'); p.add_argument('--last', type=int, default=15)
     a = ap.parse_args()
 
@@ -101,6 +103,26 @@ def main():
                 r = con.execute(text("SELECT status, result, error FROM bt_runs WHERE id=:r"), {'r': rid}).fetchone()
             if r.status in ('done', 'error'):
                 print(r.status, json.dumps(r.result, ensure_ascii=False, indent=1, default=str) if r.result else r.error); break
+    elif a.cmd == 'import':
+        # Прогон, посчитанный вне Стенда (крипта Kamaz: research/reverse_factory/experiments/stand_soft3.py — данные
+        # Bybit лежат у разработчика). Кладётся сразу готовым: те же таблицы, что пишет воркер.
+        from sqlalchemy import text
+        from .worker import _rows, _insert
+        P = json.load(sys.stdin if a.file == '-' else open(a.file, encoding='utf-8'))
+        T, E = pd.DataFrame(P['trades']), pd.DataFrame(P['equity'])
+        for df, cols in ((T, ('d', 'd_out')), (E, ('d',))):     # даты — Timestamp: _rows отдаст их в БД как date, а не строкой
+            for c in cols: df[c] = pd.to_datetime(df[c])
+        strat = P['spec'].get('strategy')
+        with _db().begin() as con:
+            if strat and not a.keep:
+                con.execute(text("DELETE FROM bt_runs WHERE spec->>'strategy' = :s AND result->>'kind' = 'imported'"), {'s': strat})
+            rid = con.execute(text("""INSERT INTO bt_runs (name, spec, spec_full, result, status, started_at, finished_at)
+                VALUES (:n, CAST(:s AS JSONB), CAST(:s AS JSONB), CAST(:r AS JSONB), 'done', now(), now()) RETURNING id"""),
+                {'n': P['spec'].get('name'), 's': json.dumps(P['spec'], ensure_ascii=False), 'r': json.dumps(P['result'], ensure_ascii=False, default=str)}).scalar()
+            T['run_id'] = rid; E['run_id'] = rid
+            _insert(con, 'bt_trades', _rows(T, ['run_id'] + [c for c in T.columns if c != 'run_id']))
+            _insert(con, 'bt_equity', _rows(E, ['run_id'] + [c for c in E.columns if c != 'run_id']))
+        print('прогон', rid, 'загружен:', len(T), 'сделок,', len(E), 'дней')
     elif a.cmd == 'runs':
         from sqlalchemy import text
         with _db().connect() as con:

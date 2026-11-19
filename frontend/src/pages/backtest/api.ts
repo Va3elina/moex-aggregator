@@ -36,6 +36,8 @@ export interface BtSignal {
   st: string; d: string; secid: string; pa: number; pb: number; move: number; thr_up: number | null; thr_dn: number | null;
   straight: number | null; side: number; tradable: boolean; skip: string;
 }
+/** Заявки кампаний импортированного прогона: n сделки → [время МСК, цена, количество (минус — продажа), что]. */
+export type BtFills = Record<string, [string, number, number, string][]>;
 export interface BtLiveFill { d: string; t: string; px: number; qty: number; what: string }
 export interface BtLiveTrade {
   cur?: 'RUB' | 'USD'; fills?: BtLiveFill[]; targets?: { d: string; t: string; px: number }[]; soft?: { d: string; t: string; be: number } | null; avg?: number | null;
@@ -67,6 +69,7 @@ export const btApi = {
   equity: (id: number) => j<BtEquity[]>(`/runs/${id}/equity`),
   signals: (id: number, st: string) => j<BtSignal[]>(`/runs/${id}/signals?st=${st}`),
   live: () => j<BtLiveTrade[]>('/live/trades'),
+  fills: (id: number, st: string) => j<BtFills>(`/runs/${id}/fills?st=${encodeURIComponent(st)}`),
   inspect: (code: string) => j<{ error: string | null; params: Record<string, any>; has_on_bar: boolean; mode?: 'orders' | 'signals' }>('/python/inspect', json('POST', { code })),
   realism: (st: string) => j<BtRealism>(`/realism?st=${st}`),
   workspace: (name: string) => j<{ name: string; data: any }>(`/workspaces/${encodeURIComponent(name)}`),
