@@ -39,8 +39,10 @@ def is_stock(st):
 
 
 def _sql_stock(st, since):
+    # без type='stock': иначе планировщик берёт индекс дневок и читает таблицу (8 с на месяц); так — только покрывающий
+    # индекс 5/60-минуток (sec_id, interval, begin_time), 20–30 мс. sec_id = secid = тикер бывает только у акции.
     return f"""SELECT secid, '2100-01-01', begin_time, open, high, low, close, volume FROM candles
-      WHERE sec_id='{st}' AND secid='{st}' AND interval=5 AND type='stock' AND begin_time>='{since}' ORDER BY begin_time"""
+      WHERE sec_id='{st}' AND secid='{st}' AND interval=5 AND begin_time>='{since}' ORDER BY begin_time"""
 
 
 STOCK_TTL = 3600         # свечи акции перечитываются из БД не чаще раза в час (вечером — свежий день для сигнала)
