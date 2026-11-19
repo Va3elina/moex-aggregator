@@ -286,6 +286,26 @@ BYBIT = 'https://api.bybit.com/v5/market/kline'
 MSK = 3 * 3600
 
 
+def _bybit_get(url):
+    """Один запрос к Bybit. Лимит запросов у Bybit — на IP, а с этого сервера работают боты Kamaz: страницы идут с
+    паузой, на «Too many visits» (10006 / HTTP 403/429) — до 4 повторов с растущей паузой, потом 503."""
+    import time
+    for k in range(5):
+        time.sleep(0.25 if k == 0 else 1.5 * k)
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'frame-bt'}), timeout=20) as r:
+                j = json.load(r)
+        except urllib.error.HTTPError as ex:
+            if ex.code in (403, 429): continue
+            raise HTTPException(502, f'Bybit не ответил: {ex}')
+        except (urllib.error.URLError, TimeoutError, ValueError) as ex:
+            raise HTTPException(502, f'Bybit не ответил: {ex}')
+        if j.get('retCode') == 10006: continue
+        if j.get('retCode'): raise HTTPException(422, f"Bybit: {j.get('retMsg')}")
+        return j
+    raise HTTPException(503, 'Bybit просит реже: лимит запросов, попробуйте через минуту')
+
+
 def _candles_crypto(st, tf, a, b):
     """Свечи бессрочного контракта Bybit (публичный API, без ключей). Bybit отдаёт до 1000 свечей за запрос, новые
     первыми — листаем назад. Внутри дня время сдвинуто в МСК «как будто UTC» (как свечи МосБиржи в Стенде);
@@ -296,12 +316,7 @@ def _candles_crypto(st, tf, a, b):
     rows, cur = {}, end
     for _ in range(80):
         url = f'{BYBIT}?category=linear&symbol={st}&interval={iv}&start={start}&end={cur}&limit=1000'
-        try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'frame-bt'}), timeout=20) as r:
-                j = json.load(r)
-        except (urllib.error.URLError, TimeoutError, ValueError) as ex:
-            raise HTTPException(502, f'Bybit не ответил: {ex}')
-        if j.get('retCode'): raise HTTPException(422, f"Bybit: {j.get('retMsg')}")
+        j = _bybit_get(url)
         lst = j['result']['list']
         for x in lst: rows[int(x[0])] = x
         if len(lst) < 1000: break
