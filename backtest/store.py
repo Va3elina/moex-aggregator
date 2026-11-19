@@ -32,14 +32,15 @@ def _sql(st, since):
 
 
 def is_stock(st):
-    """Акция TQBR (тикер), а не тип фьючерса: у акции один «контракт» без экспирации."""
+    """Акция TQBR (тикер), а не тип фьючерса: у акции один «контракт» без экспирации. Цены сырые (дивидендные гэпы
+    и сплиты не поправлены), объём — в штуках без округления до лота: для стратегий «на ночь» на 1 млн это мелочи."""
     import re
-    return st not in UNIVERSE_ALL and bool(re.match(r'^[A-Z][A-Z0-9]{0,11}$', st or ''))
+    return isinstance(st, str) and st not in UNIVERSE_ALL and bool(re.fullmatch(r'[A-Z][A-Z0-9]{0,11}', st))
 
 
 def _sql_stock(st, since):
     return f"""SELECT secid, '2100-01-01', begin_time, open, high, low, close, volume FROM candles
-      WHERE interval=5 AND type='stock' AND secid='{st}' AND begin_time>='{since}' ORDER BY begin_time"""
+      WHERE sec_id='{st}' AND secid='{st}' AND interval=5 AND type='stock' AND begin_time>='{since}' ORDER BY begin_time"""
 
 
 STOCK_TTL = 3600         # свечи акции перечитываются из БД не чаще раза в час (вечером — свежий день для сигнала)
@@ -51,7 +52,11 @@ def _stock_file(st):
     f = BARS / f'stock_{st}.pkl'
     if not f.exists() or time.time() - f.stat().st_mtime > STOCK_TTL:
         BARS.mkdir(parents=True, exist_ok=True)
-        df = _typed(_fetch(st, '2019-01-01', sql=_sql_stock))
+        try:
+            df = _typed(_fetch(st, '2019-01-01', sql=_sql_stock))
+        except Exception:
+            if f.exists(): return f                     # БД на минуту недоступна — считаем по свечам, что уже на диске
+            raise
         if not len(df): raise ValueError(f'у {st} нет 5-минутных свечей в базе')
         df['secid'] = df.secid.astype('category'); df.to_pickle(f)
         _BARS.pop(st, None); [_CACHE.pop(k) for k in [k for k in _CACHE if isinstance(k, tuple) and st in k]]

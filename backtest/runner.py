@@ -23,7 +23,9 @@ def normalize(spec):
         rule = R.load(s['rule'])
         if EXEC[s['exec']]: rule = R.with_exec(rule, EXEC[s['exec']])
         s['rule'] = rule
-    s['universe'] = [u for u in (s['universe'] or rule['universe']) if u in store.UNIVERSE_ALL or store.is_stock(u)]
+    ok = (lambda u: u in store.UNIVERSE_ALL) if spec.get('code') else (lambda u: u in store.UNIVERSE_ALL or store.is_stock(u))
+    s['universe'] = [u for u in (s['universe'] or rule['universe']) if ok(u)]
+    if not s['universe'] and spec.get('code'): raise ValueError('стратегии на Python пока считаются только на фьючерсах')
     if not s['universe']: raise ValueError('пустой список бумаг')
     if s['tariff'] not in costs.TARIFFS: raise ValueError(f"тариф {s['tariff']}")
     return s

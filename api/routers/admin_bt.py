@@ -28,7 +28,7 @@ NAMES = {'AF': 'Аэрофлот', 'AK': 'АФК Система', 'BR': 'Brent',
          'SZ': 'Сегежа', 'Si': 'Доллар', 'TT': 'Татнефть', 'VB': 'ВТБ', 'CNYRUBF': 'Юань вечный',
          'USDRUBF': 'Доллар вечный', 'EURRUBF': 'Евро вечный', 'GLDRUBF': 'Золото вечное', 'IMOEXF': 'Индекс МосБиржи вечный',
          'SBERF': 'Сбербанк вечный', 'GAZPF': 'Газпром вечный'}
-STRATEGIES = {'screener_vb': 'Скринер VB: объёмный пробой лонг + шорт (акции TQBR, дневки)'}
+STRATEGIES = {'screener_vb': 'Скринер VB: объёмный пробой лонг + шорт (акции TQBR, дневные свечи)'}
 STOCK_RE = re.compile(r'^[A-Z][A-Z0-9]{0,11}$')         # тикер акции TQBR: график по дневным свечам candles (type='stock')
 TF = {5, 15, 60, 1440}
 MAX_DAYS = {5: 200, 15: 600, 60: 2500, 1440: 5000}     # потолок диапазона на запрос, чтобы не отдать 300 тыс. свечей
@@ -255,7 +255,7 @@ def _candles_stock_intraday(db, st, tf, a, b):
     rows = db.execute(text(f"""SELECT extract(epoch from {bucket})::bigint AS time,
                (array_agg(open ORDER BY begin_time))[1] AS open, max(high) AS high, min(low) AS low,
                (array_agg(close ORDER BY begin_time DESC))[1] AS close, sum(volume) AS volume
-        FROM candles WHERE secid = :st AND interval = 5 AND type = 'stock' AND begin_time >= :a AND begin_time < :b
+        FROM candles WHERE sec_id = :st AND secid = :st AND interval = 5 AND type = 'stock' AND begin_time >= :a AND begin_time < :b
         GROUP BY 1 ORDER BY 1"""), {'st': st, 'a': a, 'b': b + timedelta(days=1)}).fetchall()
     return {'st': st, 'tf': tf, 'from': a.isoformat(), 'to': b.isoformat(), 't': [r.time for r in rows],
             'o': [float(r.open) for r in rows], 'h': [float(r.high) for r in rows], 'l': [float(r.low) for r in rows],
