@@ -54,6 +54,7 @@ def step_costs():
 
 
 def rub_per_point(st, d=None):
+    if store.is_stock(st): return 1.0                   # акция: объём в штуках, пункт = рубль
     s = specs()[st]; const = s['step_cost_rub'] / s['price_step'] * s['lot']
     r = step_costs().get(st)
     if r is None or d is None: return const
@@ -81,7 +82,7 @@ def broker_coef(st):
 
 def go_per_contract(st, d, price, side, mode, step_d='same'):
     if mode == 'none': return 0.0
-    if mode == 'tv100': return contract_value(st, price, d)      # как TradingView v6 по умолчанию: маржа 100 %
+    if mode == 'tv100' or store.is_stock(st): return contract_value(st, price, d)   # TradingView v6 / акция без плеча: 100 %
     if mode == 'snapshot':
         s = specs()[st]; return s['go_buy'] if side > 0 else s['go_sell']
     rr = risk_rates(); a = ASSET[st]

@@ -137,6 +137,9 @@ def signals(rule, universe=None, since=None, until=None):
             lg = (mv > qu) if su else (mv >= qu)
             sh = (-mv > qd) if sd else (-mv >= qd)
         side = np.where(lg, 1., np.where(sh, -1., 0.))
+        dow = pd.DatetimeIndex(p.d).dayofweek.values
+        for sd_, sv in ((r.get('long'), 1.), (r.get('short'), -1.)):
+            if sd_ and sd_.get('skip_dow'): side = np.where((side == sv) & np.isin(dow, sd_['skip_dow']), 0., side)
         straight = np.full(len(p), np.nan)
         for f in r['filters']:
             if f['type'] != 'straightness': raise ValueError(f['type'])
@@ -171,6 +174,8 @@ def signals(rule, universe=None, since=None, until=None):
         _excursions(st, df, t_in + 5)
         df['ret'] = df.px_out / df.px_in - 1
         out.append(df)
+    if not out:
+        raise ValueError(f'мало истории: правилу нужно ≥ {MIN_ROWS} торговых дней 5-минутных свечей ({", ".join(universe or r["universe"])})')
     S = pd.concat(out, ignore_index=True)
     if since: S = S[S.d >= since]
     if until: S = S[S.d <= until]

@@ -149,6 +149,7 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
     const bucket = (d: string, m: number) => tf === 1440 ? ts(d) : ts(d, Math.floor(m / tf) * tf);
     const ms: SeriesMarker<Time>[] = []; const shapes: TradeShape[] = [];
     for (const t of trades) {
+      if (tf !== 1440 && t.m_in == null && !rule?.signal) continue;   // сделка по дневным закрытиям (скринер VB): времени внутри дня у неё нет
       const muted = !!t.account_skip, long = t.side > 0, tIn = bucket(t.d, t.m_in ?? times.tin), tOut = bucket(t.d_out, t.m_out ?? times.tout);
       const why = t.exit_reason && t.exit_reason !== 'время' ? t.exit_reason[0].toUpperCase() + t.exit_reason.slice(1) : 'Выход';
       shapes.push({ tIn, pIn: t.px_in, tOut, pOut: t.px_out, side: t.side, good: t.net > 0, muted,
@@ -223,6 +224,7 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
         <IndicatorList api={inds} native={EMPTY_ROWS} visible />
         {multi && <span className="bt-celltag">{st} · {tfLabel(tf)}</span>}
         {loading && <div className="bt-loadbar" />}
+        {!loading && candles.length === 0 && <div className="bt-nodata">{tf === 1440 ? 'Нет свечей за этот период' : 'Нет внутридневных свечей за этот период — смените таймфрейм на «Д»'}</div>}
         {error && <div className="bt-charterr">{error}</div>}
       </div>
     </div>
