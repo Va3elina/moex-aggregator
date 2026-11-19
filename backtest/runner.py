@@ -23,7 +23,7 @@ def normalize(spec):
         rule = R.load(s['rule'])
         if EXEC[s['exec']]: rule = R.with_exec(rule, EXEC[s['exec']])
         s['rule'] = rule
-    s['universe'] = [u for u in (s['universe'] or rule['universe']) if u in store.UNIVERSE_ALL]
+    s['universe'] = [u for u in (s['universe'] or rule['universe']) if u in store.UNIVERSE_ALL or store.is_stock(u)]
     if not s['universe']: raise ValueError('пустой список бумаг')
     if s['tariff'] not in costs.TARIFFS: raise ValueError(f"тариф {s['tariff']}")
     return s

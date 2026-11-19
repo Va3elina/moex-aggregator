@@ -85,13 +85,8 @@ def _py_template() -> str:
 
 
 def _py_examples() -> list[dict]:
-    from backtest import pyengine, orders
-    return [{'name': 'Пример: пересечение двух EMA', 'code': pyengine.TEMPLATE},
-            {'name': 'Пример: DCA-мартингейл (заявки, как в Pine)', 'code': orders.DCA_TEMPLATE},
-            {'name': 'Пример: DCA-сетка под волатильность бумаги', 'code': orders.DCA_VOL_TEMPLATE},
-            {'name': 'Пример: DCA-сетка по режиму рынка (EMA 200)', 'code': orders.DCA_REGIME_TEMPLATE},
-            {'name': 'Пример: позиция по режиму рынка без сетки (EMA 200)', 'code': orders.TREND_TEMPLATE},
-            {'name': 'Кандидат: тренд по EMA 50/100/200, объём под волатильность (портфель)', 'code': orders.TREND_VOL_TEMPLATE}]
+    from backtest import pyengine
+    return [{'name': 'Пример: пересечение двух EMA', 'code': pyengine.TEMPLATE}]
 
 
 def _inspect(code: str) -> dict:
@@ -128,7 +123,7 @@ def meta(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
     stocks = cache.get_or_compute('bt:stocks:v1', lambda: _rows(db, """SELECT sec_id AS st, name FROM instruments
         WHERE type = 'stock' AND name IS NOT NULL ORDER BY sec_id""", {}), 3600)
     return {'strategies': [{'id': k, 'name': v} for k, v in STRATEGIES.items()], 'stocks': stocks, 'rules': [{'id': k, 'name': r['name'], 'frozen': bool(r.get('frozen')), 'universe': r['universe'],
-                       'rule': r} for k, r in bt_rules.PRESETS.items()],
+                       'rule': r} for k, r in bt_rules.PRESETS.items() if k in bt_rules.SHOWN],
             'instruments': [{'st': s, 'name': NAMES.get(s, s)} for s in bt_store.UNIVERSE_ALL],
             'tariffs': {k: v[-1][1] for k, v in bt_costs.TARIFFS.items()}, 'tariff_labels': bt_costs.TARIFF_LABELS,
             'spread_daily': bool(bt_costs.spread_daily()),
@@ -253,6 +248,20 @@ def _candles(db, st, tf, a, b):
             'v': [float(r.volume or 0) for r in rows], 'secid': secids}
 
 
+def _candles_stock_intraday(db, st, tf, a, b):
+    """Акция: 5-минутные свечи TQBR (в БД — у большинства бумаг с 12.2025, у SBER и VTBR с 11.2021), свёрнутые в tf."""
+    bucket = (f"date_trunc('day', begin_time) + floor((extract(hour from begin_time)*60 + "
+              f"extract(minute from begin_time)) / {tf}) * interval '{tf} minutes'")
+    rows = db.execute(text(f"""SELECT extract(epoch from {bucket})::bigint AS time,
+               (array_agg(open ORDER BY begin_time))[1] AS open, max(high) AS high, min(low) AS low,
+               (array_agg(close ORDER BY begin_time DESC))[1] AS close, sum(volume) AS volume
+        FROM candles WHERE secid = :st AND interval = 5 AND type = 'stock' AND begin_time >= :a AND begin_time < :b
+        GROUP BY 1 ORDER BY 1"""), {'st': st, 'a': a, 'b': b + timedelta(days=1)}).fetchall()
+    return {'st': st, 'tf': tf, 'from': a.isoformat(), 'to': b.isoformat(), 't': [r.time for r in rows],
+            'o': [float(r.open) for r in rows], 'h': [float(r.high) for r in rows], 'l': [float(r.low) for r in rows],
+            'c': [float(r.close) for r in rows], 'v': [float(r.volume or 0) for r in rows], 'secid': [[0, st]] if rows else []}
+
+
 def _candles_stock(db, st, a, b):
     """Акция: дневные свечи TQBR как есть (с выходными сессиями) — бумаги стратегий на акциях (screener_vb)."""
     rows = db.execute(text("""SELECT extract(epoch from date_trunc('day', begin_time))::bigint AS time, open, high, low, close, volume
@@ -274,9 +283,11 @@ def candles(st: str, tf: int = 5, date_from: Optional[date] = Query(None, alias=
     if tf not in TF or (st not in bt_store.UNIVERSE_ALL and not STOCK_RE.match(st)):
         raise HTTPException(422, 'tf: 5 | 15 | 60 | 1440; st — тип фьючерса из /meta или тикер акции')
     b = date_to or date.today()
-    if st not in bt_store.UNIVERSE_ALL:                    # акция: только дневные свечи, любой запрошенный кусок
-        a = max(date_from or (b - timedelta(days=MAX_DAYS[1440])), b - timedelta(days=MAX_DAYS[1440]))
+    if st not in bt_store.UNIVERSE_ALL:                    # акция: дневные свечи или 5-минутные, свёрнутые в tf
+        a = max(date_from or (b - timedelta(days=MAX_DAYS[1440] if tf == 1440 else 90)), b - timedelta(days=MAX_DAYS[tf]))
         ttl = 120 if b >= date.today() else 86400
+        if tf != 1440:
+            return cache.get_or_compute(f'bt:candles:stock:v2:{st}:{tf}:{a}:{b}', lambda: _candles_stock_intraday(db, st, tf, a, b), ttl)
         return cache.get_or_compute(f'bt:candles:stock:v1:{st}:{a}:{b}', lambda: _candles_stock(db, st, a, b), ttl)
     a = max(date_from or (b - timedelta(days=90 if tf == 5 else MAX_DAYS[tf])), b - timedelta(days=MAX_DAYS[tf]))
     ttl = 120 if b >= date.today() else 86400

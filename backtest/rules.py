@@ -13,6 +13,7 @@
 }
 Стоп/тейк/трейлинг проверяются по закрытию каждой 5-минутной свечи между входом и плановым выходом (вечерняя и
 утренняя сессии, будни), выход — по открытию следующей свечи. Трейлинг — откат от лучшего закрытия в нашу сторону.
+Сторона: "skip_dow": [4] — в эти дни недели (0 = понедельник) сторона молчит (у «Валют»: шорт не в пятницу).
 Сторона: {"type":"fixed","value":v,"strict":bool} — ход > v (strict) или ≥ v; value — число или {тип фьючерса: число}.
 null — сторона выключена. Пороги квантиля считаются ТОЛЬКО по прошлым дням ряда.
 price: close — закрытие свечи T (как в замороженных спецификациях); next_open — открытие первой свечи ≥ T+5 мин
@@ -27,6 +28,18 @@ _V2_MOVE = {'Si': 0.00902, 'CR': 0.00862, 'BR': 0.01319, 'PT': 0.01272, 'CC': 0.
 _V2_STRAIGHT = {'Si': 0.627, 'CR': 0.625, 'BR': 0.556, 'PT': 0.558, 'CC': 0.599, 'SS': 0.578, 'SZ': 0.586}
 
 PRESETS = {
+    'five': {   # /opt/hybrid-bot/spec_five1.json — робот «Пятёрка» на демо-счёте песочницы с 21.09.2026
+        "id": "five", "name": "Пятёрка: ход 10:30→17:00, лонг верхняя треть ростов, шорт верхние 10 % падений",
+        "frozen": True, "universe": ['BR', 'CC', 'VB', 'AK', 'MX'],
+        "signal": {"from": "10:30", "to": "17:00"},
+        "long": {**Q_HYBRID, "q": 0.67}, "short": {**Q_HYBRID, "q": 0.90}, "filters": [],
+        "entry": {"price": "close", "delay_min": 0}, "exit": {"at": "11:00", "price": "close", "delay_min": 0}},
+    'fx': {     # /opt/hybrid-bot/spec_fx.json — робот «Валюты» на демо-счёте песочницы с 21.09.2026
+        "id": "fx", "name": "Валюты: ход 10:05→13:30, лонг от +0,4 %, шорт от −0,2 % (не в пятницу), выход 10:20",
+        "frozen": True, "universe": ['CR', 'Si'],
+        "signal": {"from": "10:05", "to": "13:30"},
+        "long": {"type": "fixed", "value": 0.004}, "short": {"type": "fixed", "value": 0.002, "skip_dow": [4]},
+        "filters": [], "entry": {"price": "close", "delay_min": 0}, "exit": {"at": "10:20", "price": "close", "delay_min": 0}},
     'hybrid7c': {
         "id": "hybrid7c", "name": "Гибрид (spec7c, заморожен 08.09.2026)", "frozen": True,
         "universe": UNIVERSE_21,
@@ -49,6 +62,7 @@ PRESETS = {
                      "points": ["10:00", "11:30", "13:00", "14:30", "16:00", "17:15", "18:30"]}],
         "entry": {"price": "close", "delay_min": 0}, "exit": {"at": "10:00", "price": "close", "delay_min": 0}},
 }
+SHOWN = ['five', 'fx']   # что видно в Стенде; остальные пресеты — для CLI и сверок замороженных спецификаций
 # как исполняют рыночную заявку OsEngine и TradingView: открытие следующей свечи
 EXEC_NEXT_OPEN = {"entry": {"price": "next_open", "delay_min": 0}, "exit": {"price": "next_open", "delay_min": 0}}
 # как исполняет робот на сервере: крон :00/:05 после 17:12 и 11:06 → ~17:15 и ~11:10
@@ -75,6 +89,8 @@ def load(x):
             s.setdefault('strict', False)
         else:
             raise ValueError(f"{side}.type = {s['type']}")
+        if not all(isinstance(x, int) and 0 <= x <= 6 for x in s.get('skip_dow') or []):
+            raise ValueError(f'{side}.skip_dow: дни недели 0–6 (0 = понедельник), в которые сторона молчит')
     for k in ('stop', 'take', 'trail'):
         v = r['exit'].get(k)
         if v is not None and not (0 < float(v) < 1): raise ValueError(f'exit.{k}: доля от цены входа, например 0.02 (= 2 %)')

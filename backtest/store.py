@@ -31,7 +31,37 @@ def _sql(st, since):
       ORDER BY c.secid, c.begin_time"""
 
 
-def _fetch(st, since):
+def is_stock(st):
+    """Акция TQBR (тикер), а не тип фьючерса: у акции один «контракт» без экспирации."""
+    import re
+    return st not in UNIVERSE_ALL and bool(re.match(r'^[A-Z][A-Z0-9]{0,11}$', st or ''))
+
+
+def _sql_stock(st, since):
+    return f"""SELECT secid, '2100-01-01', begin_time, open, high, low, close, volume FROM candles
+      WHERE interval=5 AND type='stock' AND secid='{st}' AND begin_time>='{since}' ORDER BY begin_time"""
+
+
+STOCK_TTL = 3600         # свечи акции перечитываются из БД не чаще раза в час (вечером — свежий день для сигнала)
+
+
+def _stock_file(st):
+    """5-минутные свечи акции: лениво, при первом обращении (и раз в час), целиком — это ~60–230 тыс. строк."""
+    import time
+    f = BARS / f'stock_{st}.pkl'
+    if not f.exists() or time.time() - f.stat().st_mtime > STOCK_TTL:
+        BARS.mkdir(parents=True, exist_ok=True)
+        df = _typed(_fetch(st, '2019-01-01', sql=_sql_stock))
+        if not len(df): raise ValueError(f'у {st} нет 5-минутных свечей в базе')
+        df['secid'] = df.secid.astype('category'); df.to_pickle(f)
+        _BARS.pop(st, None); [_CACHE.pop(k) for k in [k for k in _CACHE if isinstance(k, tuple) and st in k]]
+        stt = status(); stt[st] = [int(len(df)), str(df.d.min().date()), str(df.t.max())]
+        (DATA / 'bars_status.json').write_text(json.dumps(stt, ensure_ascii=False, indent=1))
+    return f
+
+
+def _fetch(st, since, sql=None):
+    sql = sql or _sql
     if os.environ.get('DB_URL'):
         from sqlalchemy import create_engine
         if 'engine' not in _CACHE:
@@ -41,13 +71,13 @@ def _fetch(st, since):
         raw = _CACHE['engine'].raw_connection()
         try:
             buf = io.BytesIO(); cur = raw.cursor()
-            cur.execute('COPY (' + ' '.join(_sql(st, since).split()) + ') TO STDOUT WITH CSV', stream=buf)
+            cur.execute('COPY (' + ' '.join(sql(st, since).split()) + ') TO STDOUT WITH CSV', stream=buf)
             raw.commit()
         finally:
             raw.close()
         buf.seek(0)
         return pd.read_csv(buf, header=None, names=COLS)
-    inner = f"docker exec frame-db-1 psql -U postgres -d moex_db -c {json.dumps('COPY (' + ' '.join(_sql(st, since).split()) + ') TO STDOUT WITH CSV')}"
+    inner = f"docker exec frame-db-1 psql -U postgres -d moex_db -c {json.dumps('COPY (' + ' '.join(sql(st, since).split()) + ') TO STDOUT WITH CSV')}"
     cmd = ["bash", "-c", inner] if pathlib.Path('/opt/frame').exists() else SSH + [inner]
     r = subprocess.run(cmd, capture_output=True, timeout=1800, stdin=subprocess.DEVNULL)
     if r.returncode:
@@ -95,11 +125,13 @@ def _CACHE_clear():
 
 
 def bars(st):
-    """Все свечи типа. В памяти — не больше BARS_LRU типов: движок идёт по бумагам по очереди, а 22 типа разом = 1 ГБ."""
+    """Все свечи типа. В памяти — не больше BARS_LRU типов: движок идёт по бумагам по очереди, а 22 типа разом = 1 ГБ.
+    Акция — свечи из БД, перечитываются раз в час."""
+    if is_stock(st): _stock_file(st)
     if st in _BARS:
         _BARS[st] = _BARS.pop(st)
     else:
-        df = pd.read_pickle(BARS / f'{st}.pkl'); df['secid'] = df.secid.astype(str)
+        df = pd.read_pickle(_stock_file(st) if is_stock(st) else BARS / f'{st}.pkl'); df['secid'] = df.secid.astype(str)
         _BARS[st] = df
         while len(_BARS) > BARS_LRU: _BARS.pop(next(iter(_BARS)))
     return _BARS[st]

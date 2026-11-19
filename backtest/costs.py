@@ -36,12 +36,14 @@ def commission_side(tariff, d, st=None, contract_rub=None):
 
 
 _S = {}
+STOCK_SPREAD = 0.001     # акция TQBR без замеров стакана: 0.1 % за круг — допущение (у голубых фишек меньше, у третьего эшелона больше)
 
 
 def spread_round(st, mode='c3'):
     """Доля (не %) за круг — одно число на бумагу (медиана 09.2025–09.2026)."""
     if mode == 'none': return 0.0
     if 'const' not in _S: _S['const'] = json.loads((store.REF / 'costs.json').read_text())
+    if st not in _S['const']: return STOCK_SPREAD                # акция: замеров стакана нет — допущение
     return _S['const'][st]['c5' if mode == 'c5' else 'c3'] / 100
 
 

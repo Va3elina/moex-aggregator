@@ -96,7 +96,7 @@ export default function BacktestPage() {
   const names = useMemo(() => new Map([...(meta?.stocks ?? []), ...(meta?.instruments ?? [])].map(i => [i.st, i.name])), [meta]);
   // акция (стратегии на акциях): у неё только дневные свечи — график всегда «Д», выбор таймфрейма не действует
   const futures = useMemo(() => new Set(meta?.instruments.map(i => i.st) ?? []), [meta]);
-  const tfOf = useCallback((c: Prefs['cells'][number]) => meta && !futures.has(c.st) ? 1440 : c.tf, [meta, futures]);
+  const tfOf = useCallback((c: Prefs['cells'][number]) => c.tf, []);
   const tradesBySt = useMemo(() => { const m = new Map<string, BtTrade[]>(); for (const t of trades) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [trades]);
   const liveBySt = useMemo(() => { const m = new Map<string, BtLiveTrade[]>(); for (const t of live) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [live]);
   const symRows: SymRow[] = useMemo(() => [...(meta?.instruments ?? []).map(i => ({ st: i.st, name: i.name })),
