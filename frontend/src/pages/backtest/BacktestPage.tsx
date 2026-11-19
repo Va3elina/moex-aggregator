@@ -12,7 +12,7 @@ import Editor from './Editor';
 import SymbolSearch, { type SymRow } from './SymbolSearch';
 import Tester, { tradeKey } from './Tester';
 import { paramLabel, setPath } from './Sweep';
-import { TFS, cls, num, pct, pretty, tfLabel } from './lib';
+import { TFS, cls, num, pct, pretty, tfLabel, px } from './lib';
 import { usePrefs, type Layout, type Prefs } from './usePrefs';
 import { Logo, Menu, MenuItem } from './ui';
 import './bt.css';
@@ -24,7 +24,7 @@ const SHOW: [keyof Prefs['show'], string][] = [['markers', 'Стрелки сд�
 function Ohlc() {
   const h = useSyncExternalStore(hoverStore.subscribe, hoverStore.get);
   if (!h) return null; const c = h.candle; const k = cls(c.close - c.open) || 'bt-up'; const ch = c.open ? c.close / c.open - 1 : 0;
-  return <span className="bt-ohlc"><span className="bt-dim">{c.secid}</span> О<i className={k}>{num(c.open, 2)}</i> В<i className={k}>{num(c.high, 2)}</i> Н<i className={k}>{num(c.low, 2)}</i> З<i className={k}>{num(c.close, 2)}</i> <i className={k}>{pct(ch)}</i> <span className="bt-dim">объём</span><i>{num(c.volume)}</i>{h.inds.map(x => <span key={x.label} className="ind"><b style={{ background: x.color }} />{x.label}<i>{x.text}</i></span>)}</span>;
+  return <span className="bt-ohlc"><span className="bt-dim">{c.secid}</span> О<i className={k}>{px(c.open)}</i> В<i className={k}>{px(c.high)}</i> Н<i className={k}>{px(c.low)}</i> З<i className={k}>{px(c.close)}</i> <i className={k}>{pct(ch)}</i> <span className="bt-dim">объём</span><i>{num(c.volume)}</i>{h.inds.map(x => <span key={x.label} className="ind"><b style={{ background: x.color }} />{x.label}<i>{x.text}</i></span>)}</span>;
 }
 
 export default function BacktestPage() {

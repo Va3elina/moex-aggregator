@@ -169,12 +169,13 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
       const usd = r.cur === 'USD', who = r.robot;
       if (r.fills?.length) {               // бот Kamaz: каждая заявка — своя метка (вход, ступени лесенки, выход), линия — от средней
         shapes.push({ tIn, pIn: r.avg ?? r.px_in, tOut, pOut: r.px_out, side: r.side, good: (r.pnl_rub ?? 0) > 0, muted: false, winFrom: null, winTo: null, robot: true });
-        for (const f of r.fills) {
+        const lastExit = r.fills.reduce((a, f, i) => f.qty < 0 ? i : a, -1);
+        for (const [i, f] of r.fills.entries()) {
           const tt = bucket(f.d, hm(f.t)); if (!have.has(tt)) continue;
           const buy = f.qty > 0;
           ms.push({ time: tt as UTCTimestamp, position: buy ? 'belowBar' : 'aboveBar', shape: buy ? (f.what === 'вход' ? 'arrowUp' : 'square') : 'circle',
             color: buy ? '#4c8dff' : (r.pnl_rub ?? 0) > 0 ? C.up : C.down,
-            text: show.labels ? (buy ? `${who}: ${f.what} ${px(f.px)}` : `${who}: выход ${f.what === 'таймер' ? 'по таймеру' : 'по цели'} ${px(f.px)}${r.pnl_rub != null ? ' · ' + money(r.pnl_rub, 'USD') : ''}`) : undefined });
+            text: show.labels ? (buy ? `${who}: ${f.what} ${px(f.px)}` : `${who}: выход ${f.what === 'таймер' ? 'по таймеру' : 'по цели'} ${px(f.px)}${i === lastExit && r.pnl_rub != null ? ' · итог ' + money(r.pnl_rub, 'USD') : ''}`) : undefined });
         }
         if (r.soft) { const tt = bucket(r.soft.d, hm(r.soft.t)); if (have.has(tt)) ms.push({ time: tt as UTCTimestamp, position: 'aboveBar', shape: 'circle', color: '#e0a030',
           text: show.labels ? `${who}: 12 ч прошло — цель в безубыток ${px(r.soft.be)}` : undefined }); }
