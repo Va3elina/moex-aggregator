@@ -36,7 +36,7 @@ export interface BtSignal {
   straight: number | null; side: number; tradable: boolean; skip: string;
 }
 export interface BtLiveTrade {
-  st: string; secid: string; side: number; d: string; t_in: string | null; px_in: number | null; qty: number | null;
+  robot: string; st: string; secid: string; side: number; d: string; t_in: string | null; px_in: number | null; qty: number | null;
   d_out: string | null; t_out: string | null; px_out: number | null; pnl_rub: number | null; move: number | null; note: string | null;
 }
 export interface BtCandle { time: number; open: number; high: number; low: number; close: number; volume: number; secid: string }

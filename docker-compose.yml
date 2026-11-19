@@ -167,8 +167,10 @@ services:
       # через Telethon в этот же каталог, api-контейнер только читает (уведомление
       # коллеге через _notify_hype_colleague, api/routers/content_news.py).
       - ./data/content_media:/data/content_media:ro
-      # Стенд (/admin/backtest): журнал робота гибрида — живые сделки поверх бэктеста. Только чтение.
-      - /opt/hybrid-bot/state:/data/hybrid_state:ro
+      # Стенд (/admin/backtest): журналы роботов на демо-счетах — живые сделки поверх бэктеста. Только чтение.
+      - /opt/hybrid-bot/state_five1:/data/robots/five:ro
+      - /opt/hybrid-bot/state_fx:/data/robots/fx:ro
+      - /opt/vb-bot/state:/data/robots/vb:ro
     # TODO security hardening: запуск под non-root + read_only rootfs.
     # Первая попытка (commit 231411a) сломала prod — api/logger.py создаёт
     # /app/logs при импорте, COPY → root owner → uid=1000 PermissionError.

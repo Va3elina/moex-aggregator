@@ -165,9 +165,9 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
       const tIn = bucket(r.d, r.t_in ? hm(r.t_in) : times.tin), tOut = r.d_out ? bucket(r.d_out, r.t_out ? hm(r.t_out) : times.tout) : null;
       shapes.push({ tIn, pIn: r.px_in, tOut, pOut: r.px_out, side: r.side, good: (r.pnl_rub ?? 0) > 0, muted: false, winFrom: null, winTo: null, robot: true });
       if (have.has(tIn)) ms.push({ time: tIn as UTCTimestamp, position: r.side > 0 ? 'belowBar' : 'aboveBar', shape: 'square', color: '#4c8dff',
-        text: show.labels ? `Робот ${r.side > 0 ? 'купил' : 'продал'} ${num(r.qty)} по ${num(r.px_in, 2)}` : undefined });
+        text: show.labels ? `${r.robot}: ${r.side > 0 ? 'купил' : 'продал'} ${num(r.qty)} по ${num(r.px_in, 2)}` : undefined });
       if (tOut != null && have.has(tOut)) ms.push({ time: tOut as UTCTimestamp, position: r.side > 0 ? 'aboveBar' : 'belowBar', shape: 'square', color: '#4c8dff',
-        text: show.labels ? `Робот закрыл по ${num(r.px_out, 2)} · ${num(r.pnl_rub)} ₽` : undefined });
+        text: show.labels ? `${r.robot}: закрыл по ${num(r.px_out, 2)} · ${num(r.pnl_rub)} ₽` : undefined });
     }
     marks.current.setMarkers(ms.sort((a, b) => (a.time as number) - (b.time as number)));
     layer.current.set({ trades: shapes, lines: show.lines, window: show.window });
