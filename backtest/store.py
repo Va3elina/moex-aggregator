@@ -35,7 +35,7 @@ def is_stock(st):
     """Акция TQBR (тикер), а не тип фьючерса: у акции один «контракт» без экспирации. Цены сырые (дивидендные гэпы
     и сплиты не поправлены), объём — в штуках без округления до лота: для стратегий «на ночь» на 1 млн это мелочи."""
     import re
-    return isinstance(st, str) and st not in UNIVERSE_ALL and bool(re.fullmatch(r'[A-Z][A-Z0-9]{0,11}', st))
+    return isinstance(st, str) and st not in UNIVERSE_ALL and not st.endswith('USDT') and bool(re.fullmatch(r'[A-Z][A-Z0-9]{0,11}', st))
 
 
 def _sql_stock(st, since):

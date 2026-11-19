@@ -93,14 +93,15 @@ export default function BacktestPage() {
     return () => { dead = true; };
   }, [prefs.compareRunId]);
 
-  const names = useMemo(() => new Map([...(meta?.stocks ?? []), ...(meta?.instruments ?? [])].map(i => [i.st, i.name])), [meta]);
+  const names = useMemo(() => new Map([...(meta?.stocks ?? []), ...(meta?.crypto ?? []), ...(meta?.instruments ?? [])].map(i => [i.st, i.name])), [meta]);
   // акция: дневные свечи и 5-минутные (в БД у большинства с 12.2025, у SBER и VTBR с 11.2021)
   const futures = useMemo(() => new Set(meta?.instruments.map(i => i.st) ?? []), [meta]);
   const tfOf = useCallback((c: Prefs['cells'][number]) => c.tf, []);
   const tradesBySt = useMemo(() => { const m = new Map<string, BtTrade[]>(); for (const t of trades) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [trades]);
   const liveBySt = useMemo(() => { const m = new Map<string, BtLiveTrade[]>(); for (const t of live) { const a = m.get(t.st); if (a) a.push(t); else m.set(t.st, [t]); } return m; }, [live]);
   const symRows: SymRow[] = useMemo(() => [...(meta?.instruments ?? []).map(i => ({ st: i.st, name: i.name })),
-    ...(meta?.stocks ?? []).filter(i => !futures.has(i.st)).map(i => ({ st: i.st, name: i.name, stock: true }))], [meta, futures]);
+    ...(meta?.stocks ?? []).filter(i => !futures.has(i.st)).map(i => ({ st: i.st, name: i.name, stock: true })),
+    ...(meta?.crypto ?? []).map(i => ({ st: i.st, name: i.name, crypto: true }))], [meta, futures]);
 
   const pickSymbol = (st: string) => { setCell(active, { st }); set(p => ({ recent: [st, ...p.recent.filter(x => x !== st)].slice(0, 8) })); setSearch(false); setSelKey(null); };
   const pickTrade = (t: BtTrade) => { setSelKey(tradeKey(t)); if (t.st !== cell.st) setCell(active, { st: t.st }); setFocus({ d: t.d, dOut: t.d_out, nonce: Date.now() }); if (prefs.panel === 'max') set({ panel: 'open' }); };
@@ -122,7 +123,7 @@ export default function BacktestPage() {
   useEffect(() => {
     if (!prefs.autoRun || busy || !run || run.id !== prefs.runId || run.status !== 'done' || run.kind === 'sweep') return;
     const uni: string[] = run.spec_full?.universe ?? []; const fresh = followRun.current !== run.id; followRun.current = run.id;
-    if (uni.length !== 1 || uni[0] === cell.st) return;
+    if (uni.length !== 1 || uni[0] === cell.st || /USDT$/.test(cell.st)) return;   // монета: стратегий Стенда на крипте пока нет — только сделки ботов
     if (fresh) { setCell(active, { st: uni[0] }); return; }      // прогон выбрали из списка — график идёт за прогоном, а не наоборот
     const t = setTimeout(() => {
       const want = sameSpecKey(run.spec); const today = new Date().toDateString();

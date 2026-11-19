@@ -34,7 +34,11 @@ export const num = (v: number | null | undefined, digits = 0) =>
 export const signed = (v: number | null | undefined, digits = 0) => v == null || !isFinite(v) ? '—' : (v > 0 ? '+' : '') + num(v, digits);
 export const pct = (v: number | null | undefined, digits = 2) => v == null || !isFinite(v) ? '—' : (v > 0 ? '+' : '') + num(100 * v, digits) + '%';
 export const cls = (v: number | null | undefined) => v == null ? '' : v > 0 ? 'bt-up' : v < 0 ? 'bt-down' : '';
-export const money = (v: number | null | undefined) => v == null || !isFinite(v) ? '—' : signed(v) + ' ₽';
+export const money = (v: number | null | undefined, cur: 'RUB' | 'USD' = 'RUB') => v == null || !isFinite(v) ? '—' : cur === 'USD' ? (v > 0 ? '+' : v < 0 ? '−' : '') + '$' + num(Math.abs(v), 2) : signed(v) + ' ₽';
+/** Цена с нужным числом знаков: у монет вроде PEPE (0.0049) два знака показали бы ноль. */
+export const pxDigits = (v: number) => !isFinite(v) || v === 0 ? 2 : Math.max(2, Math.min(8, Math.ceil(-Math.log10(Math.abs(v))) + 3));
+export const px = (v: number | null | undefined) => v == null || !isFinite(v) ? '—' : num(v, Math.abs(v) >= 10 ? 2 : pxDigits(v));
+export const isCrypto = (st: string) => /USDT$/.test(st);
 
 /** Куски свечей по календарным границам — чтобы ответы сервера кэшировались: 5м — месяц, 15м — квартал, 1ч — год, Д — всё. */
 export function chunkOf(tf: number, d: string): string {

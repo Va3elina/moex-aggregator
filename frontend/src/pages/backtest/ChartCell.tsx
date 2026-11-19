@@ -11,7 +11,7 @@ import LwChartPanes, { type LwPane, type LwSeriesBuiltCtx } from '../../componen
 import type { LwSeries } from '../../components/chart/lwTypes';
 import { IndicatorList, PaneIndicatorList, useIndicatorSeries, useVolumeProfileSpec, type IndicatorsApi } from '../embed/EmbedIndicators';
 import { btApi, type BtCandle, type BtLiveTrade, type BtTrade } from './api';
-import { chunkEnd, chunkOf, chunkStep, hm, num, pct, today, ts, tsToIso, tfLabel } from './lib';
+import { chunkEnd, chunkOf, chunkStep, hm, money, num, pct, px, pxDigits, today, ts, tsToIso, tfLabel } from './lib';
 import { TradesPrimitive, type TradeShape } from './TradesPrimitive';
 import type { Prefs } from './usePrefs';
 
@@ -136,7 +136,9 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
   const paneMap = useMemo(() => [...new Set(inds.list.filter(i => i.pane > 0).map(i => i.pane))].sort((a, b) => a - b), [inds.list]);
   const panes = useMemo<LwPane[]>(() => {
     candlesRef.current = candles; byTime.current = new Map(candles.map(c => [c.time, c]));
+    const last = candles.length ? candles[candles.length - 1].close : 0, dg = Math.abs(last) < 10 ? pxDigits(last) : 0;
     const price: LwSeries = { id: 'price', type: 'candlestick', scale: 'right', color: '#26a69a', label: 'Цена', lastValueVisible: true,
+      ...(dg > 2 ? { axisFmt: (v: number) => v.toFixed(dg), minMove: Math.pow(10, -dg) } : {}),
       data: candles.map(c => ({ time: c.time, value: c.close, open: c.open, high: c.high, low: c.low, close: c.close })) };
     const extra = paneMap.map(p => ({ series: indSeries[p] ?? [], flex: 1 }));
     return [{ series: [price, ...(indSeries[0] ?? [])], flex: extra.length ? 2.8 : 1 }, ...extra];
@@ -164,11 +166,25 @@ export default function ChartCell({ st, tf, active, multi, rule, trades, live, s
     if (show.robot) for (const r of live) {
       if (r.px_in == null) continue;
       const tIn = bucket(r.d, r.t_in ? hm(r.t_in) : times.tin), tOut = r.d_out ? bucket(r.d_out, r.t_out ? hm(r.t_out) : times.tout) : null;
+      const usd = r.cur === 'USD', who = r.robot;
+      if (r.fills?.length) {               // бот Kamaz: каждая заявка — своя метка (вход, ступени лесенки, выход), линия — от средней
+        shapes.push({ tIn, pIn: r.avg ?? r.px_in, tOut, pOut: r.px_out, side: r.side, good: (r.pnl_rub ?? 0) > 0, muted: false, winFrom: null, winTo: null, robot: true });
+        for (const f of r.fills) {
+          const tt = bucket(f.d, hm(f.t)); if (!have.has(tt)) continue;
+          const buy = f.qty > 0;
+          ms.push({ time: tt as UTCTimestamp, position: buy ? 'belowBar' : 'aboveBar', shape: buy ? (f.what === 'вход' ? 'arrowUp' : 'square') : 'circle',
+            color: buy ? '#4c8dff' : (r.pnl_rub ?? 0) > 0 ? C.up : C.down,
+            text: show.labels ? (buy ? `${who}: ${f.what} ${px(f.px)}` : `${who}: выход ${f.what === 'таймер' ? 'по таймеру' : 'по цели'} ${px(f.px)}${r.pnl_rub != null ? ' · ' + money(r.pnl_rub, 'USD') : ''}`) : undefined });
+        }
+        if (r.soft) { const tt = bucket(r.soft.d, hm(r.soft.t)); if (have.has(tt)) ms.push({ time: tt as UTCTimestamp, position: 'aboveBar', shape: 'circle', color: '#e0a030',
+          text: show.labels ? `${who}: 12 ч прошло — цель в безубыток ${px(r.soft.be)}` : undefined }); }
+        continue;
+      }
       shapes.push({ tIn, pIn: r.px_in, tOut, pOut: r.px_out, side: r.side, good: (r.pnl_rub ?? 0) > 0, muted: false, winFrom: null, winTo: null, robot: true });
       if (have.has(tIn)) ms.push({ time: tIn as UTCTimestamp, position: r.side > 0 ? 'belowBar' : 'aboveBar', shape: 'square', color: '#4c8dff',
-        text: show.labels ? `${r.robot}: ${r.side > 0 ? 'купил' : 'продал'} ${num(r.qty)} по ${num(r.px_in, 2)}` : undefined });
+        text: show.labels ? `${who}: ${r.side > 0 ? 'купил' : 'продал'} ${num(r.qty)} по ${px(r.px_in)}` : undefined });
       if (tOut != null && have.has(tOut)) ms.push({ time: tOut as UTCTimestamp, position: r.side > 0 ? 'aboveBar' : 'belowBar', shape: 'square', color: '#4c8dff',
-        text: show.labels ? `${r.robot}: закрыл по ${num(r.px_out, 2)} · ${num(r.pnl_rub)} ₽` : undefined });
+        text: show.labels ? `${who}: закрыл по ${px(r.px_out)} · ${money(r.pnl_rub, usd ? 'USD' : 'RUB')}` : undefined });
     }
     marks.current.setMarkers(ms.sort((a, b) => (a.time as number) - (b.time as number)));
     layer.current.set({ trades: shapes, lines: show.lines, window: show.window });

@@ -11,6 +11,7 @@ export interface BtMeta {
   /** готовые стратегии Стенда (на акциях) и акции TQBR для поиска бумаги */
   strategies?: { id: string; name: string }[];
   stocks?: { st: string; name: string }[];
+  crypto?: { st: string; name: string }[];
   tariffs: Record<string, number>; tariff_labels?: Record<string, string>;
   spread_daily?: boolean;
   python_template?: string;
@@ -35,7 +36,9 @@ export interface BtSignal {
   st: string; d: string; secid: string; pa: number; pb: number; move: number; thr_up: number | null; thr_dn: number | null;
   straight: number | null; side: number; tradable: boolean; skip: string;
 }
+export interface BtLiveFill { d: string; t: string; px: number; qty: number; what: string }
 export interface BtLiveTrade {
+  cur?: 'RUB' | 'USD'; fills?: BtLiveFill[]; targets?: { d: string; t: string; px: number }[]; soft?: { d: string; t: string; be: number } | null; avg?: number | null;
   robot: string; st: string; secid: string; side: number; d: string; t_in: string | null; px_in: number | null; qty: number | null;
   d_out: string | null; t_out: string | null; px_out: number | null; pnl_rub: number | null; move: number | null; note: string | null;
 }
