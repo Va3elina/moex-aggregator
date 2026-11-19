@@ -82,7 +82,8 @@ def broker_coef(st):
 
 def go_per_contract(st, d, price, side, mode, step_d='same'):
     if mode == 'none': return 0.0
-    if mode == 'tv100' or store.is_stock(st): return contract_value(st, price, d)   # TradingView v6 / акция без плеча: 100 %
+    if store.is_stock(st): return 0.0                   # акция на свои деньги: ГО нет, объём и так ограничен капиталом / слотами
+    if mode == 'tv100': return contract_value(st, price, d)      # как TradingView v6 по умолчанию: маржа 100 %
     if mode == 'snapshot':
         s = specs()[st]; return s['go_buy'] if side > 0 else s['go_sell']
     rr = risk_rates(); a = ASSET[st]
