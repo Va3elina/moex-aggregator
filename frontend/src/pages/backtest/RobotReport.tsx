@@ -32,11 +32,11 @@ export default function RobotReport({ live: all, trades, names, onPick, prefer }
         <div className="bt-metric"><small>Результат робота, цена</small><b className={cls(avg(closed.map(x => x.retLive!)))}>{pct(avg(closed.map(x => x.retLive!)))}</b><span className="bt-dim">в среднем на сделку</span></div>
         <div className="bt-metric"><small>Те же сделки в бэктесте</small><b className={cls(avg(closed.map(x => x.retBt!)))}>{pct(avg(closed.map(x => x.retBt!)))}</b><span className="bt-dim">до издержек</span></div>
         <div className="bt-metric"><small>Расхождение</small><b className={cls(avg(closed.map(x => x.retLive! - x.retBt!)))}>{pct(avg(closed.map(x => x.retLive! - x.retBt!)))}</b><span className="bt-dim">робот минус бэктест: опоздания и цена исполнения</span></div>
-        <div className="bt-metric"><small>Итог робота</small><b className={cls(live.reduce((a, r) => a + (r.pnl_rub ?? 0), 0))}>{money(live.reduce((a, r) => a + (r.pnl_rub ?? 0), 0))}</b><span className="bt-dim">в рублях, с комиссией песочницы</span></div>
+        <div className="bt-metric"><small>Итог робота</small><b className={cls(live.reduce((a, r) => a + (r.pnl_rub ?? 0), 0))}>{money(live.reduce((a, r) => a + (r.pnl_rub ?? 0), 0))}</b><span className="bt-dim">{robot === 'Скринер VB' ? 'в рублях, без комиссии' : 'в рублях, с комиссией песочницы'}</span></div>
       </div>
       <table className="bt-table tv"><thead><tr><th className="l">Бумага</th><th className="l">Тип</th><th className="l">Вход → выход</th><th>Вход: робот / бэктест</th><th>Выход: робот / бэктест</th><th>Цена, %: робот / бэктест</th><th>Расхождение</th><th>Контр.</th><th>Итог, ₽</th><th className="l">Примечание</th></tr></thead>
-        <tbody>{rows.map(({ r, t, retLive, retBt }) => (
-          <tr key={r.st + r.d + r.t_in} onClick={() => t && onPick(t)}>
+        <tbody>{rows.map(({ r, t, retLive, retBt }, i) => (
+          <tr key={`${r.st}|${r.d}|${r.t_in}|${i}`} onClick={() => t && onPick(t)}>
             <td className="l"><span className="bt-inline"><Logo st={r.st} size={18} /><b>{r.st}</b> <span className="bt-dim">{names.get(r.st)} · {r.secid}</span></span></td>
             <td className={`l ${r.side > 0 ? 'bt-long' : 'bt-down'}`}>{r.side > 0 ? 'Длинная' : 'Короткая'}</td>
             <td className="l">{fmtDate(r.d)} {r.t_in?.slice(0, 5)} → {r.d_out ? `${fmtDate(r.d_out)} ${r.t_out?.slice(0, 5) ?? ''}` : 'открыта'}</td>

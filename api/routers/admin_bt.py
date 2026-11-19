@@ -365,34 +365,49 @@ def _live_hybrid(path, robot):
     with open(path, encoding='utf-8') as f:
         for r in csv.DictReader(f):
             if r.get('status_in') != 'EXECUTION_REPORT_STATUS_FILL': continue
-            k = 100.0 if r['st'] == 'MX' and (r.get('secid') or '').startswith('MM') else 1.0
-            pin, pout = _num(r.get('px_in')), _num(r.get('px_out'))
-            out.append({'robot': robot, 'st': r['st'], 'secid': r['secid'], 'side': int(float(r['side'])), 'd': r['d_in'],
-                        't_in': r.get('t_in') or None, 'px_in': round(pin * k, 6) if pin else None, 'qty': _num(r.get('qty')),
-                        'd_out': r.get('d_out') or None, 't_out': r.get('t_out') or None,
-                        'px_out': round(pout * k, 6) if pout and r.get('status_out') == 'EXECUTION_REPORT_STATUS_FILL' else None,
-                        'pnl_rub': _num(r.get('pnl_rub')), 'move': _num(r.get('move')), 'note': r.get('note') or None})
+            try: out.append(_hybrid_row(r, robot))
+            except (KeyError, TypeError, ValueError): continue   # недописанная строка — пропустить её, а не весь журнал
     return out
 
 
+def _hybrid_row(r, robot):
+    """px_in / px_out — цена исполнения; exec_in / exec_out — стоимость позиции в рублях (не цена!)."""
+    k = 100.0 if r['st'] == 'MX' and (r.get('secid') or '').startswith('MM') else 1.0
+    pin, pout = _num(r.get('px_in')), _num(r.get('px_out'))
+    filled_out = r.get('status_out') == 'EXECUTION_REPORT_STATUS_FILL'
+    return {'robot': robot, 'st': r['st'], 'secid': r['secid'], 'side': int(float(r['side'])), 'd': r['d_in'],
+            't_in': r.get('t_in') or None, 'px_in': round(pin * k, 6) if pin else None, 'qty': _num(r.get('qty')),
+            'd_out': r.get('d_out') or None, 't_out': r.get('t_out') or None,
+            'px_out': round(pout * k, 6) if pout and filled_out else None,
+            'pnl_rub': _num(r.get('pnl_rub')), 'move': _num(r.get('move')), 'note': r.get('note') or None}
+
+
 def _live_vb(path, robot):
-    """robots/vb_bot.py: строка = событие «вход» / «выход» по ноге (key); склеиваем в сделки."""
+    """robots/vb_bot.py: строка = событие «вход» / «выход» по ноге (key); склеиваем в сделки.
+    Итог в рублях — по ценам входа и выхода, БЕЗ комиссии (в журнале VB её нет)."""
     legs = {}
     with open(path, encoding='utf-8') as f:
         for r in csv.DictReader(f):
-            key, act = r.get('key'), r.get('action')
-            if not key: continue
-            d, t = (r.get('ts') or '')[:10], (r.get('ts') or '')[11:19]
-            if act == 'вход':
-                side = -1 if 'шорт' in (r.get('leg') or '') else 1
-                legs[key] = {'robot': robot, 'st': r['ticker'], 'secid': r['ticker'], 'side': side, 'd': d, 't_in': t,
-                             'px_in': _num(r.get('price')), 'qty': _num(r.get('qty')), 'd_out': None, 't_out': None,
-                             'px_out': None, 'pnl_rub': None, 'move': None, 'note': r.get('leg') or None}
-            elif act == 'выход' and key in legs:
-                x = legs[key]; x['d_out'], x['t_out'], x['px_out'] = d, t, _num(r.get('price'))
-                if x['px_in'] and x['px_out'] and x['qty']:
-                    x['pnl_rub'] = round(x['side'] * (x['px_out'] - x['px_in']) * x['qty'], 2)
+            try:
+                _vb_event(legs, r, robot)
+            except (KeyError, TypeError, ValueError):       # недописанная строка — пропустить её, а не весь журнал
+                continue
     return list(legs.values())
+
+
+def _vb_event(legs, r, robot):
+    key, act = r.get('key'), r.get('action')
+    if not key: return
+    d, t = (r.get('ts') or '')[:10], (r.get('ts') or '')[11:19]           # ISO с +03:00 — это уже МСК
+    if act == 'вход':
+        side = -1 if 'шорт' in (r.get('leg') or '') else 1
+        legs[key] = {'robot': robot, 'st': r['ticker'], 'secid': r['ticker'], 'side': side, 'd': d, 't_in': t,
+                     'px_in': _num(r.get('price')), 'qty': _num(r.get('qty')), 'd_out': None, 't_out': None,
+                     'px_out': None, 'pnl_rub': None, 'move': None, 'note': r.get('leg') or None}
+    elif act == 'выход' and key in legs:
+        x = legs[key]; x['d_out'], x['t_out'], x['px_out'] = d, t, _num(r.get('price'))
+        if x['px_in'] and x['px_out'] and x['qty']:
+            x['pnl_rub'] = round(x['side'] * (x['px_out'] - x['px_in']) * x['qty'], 2)
 
 
 @router.get("/live/robots")
