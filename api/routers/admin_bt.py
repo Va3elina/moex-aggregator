@@ -339,24 +339,90 @@ def delete_workspace(name: str, db: Session = Depends(get_db), _admin: User = De
     return {'ok': True}
 
 
-# ─── живые сделки робота ─────────────────────────────────────────────────────────────────────────
-ROBOT_JOURNAL = os.environ.get('BT_ROBOT_JOURNAL', '/data/hybrid_state/journal.csv')
+# ─── живые сделки роботов ────────────────────────────────────────────────────────────────────────
+# Журналы роботов на демо-счетах (смонтированы в api только для чтения, см. docker-compose.yml): чтобы рисовать настоящие
+# сделки поверх бэктеста. Нет каталога (локальная разработка, робот снят) — робот просто не попадает в ответ.
+ROBOTS_DIR = os.environ.get('BT_ROBOTS_DIR', '/data/robots')
+ROBOTS = [  # (имя, каталог, формат журнала, что торгует)
+    ('Пятёрка', 'five', 'hybrid', 'фьючерсы BR, CC, VB, AK, MX · песочница T-Invest'),
+    ('Валюты', 'fx', 'hybrid', 'фьючерсы юань и доллар · песочница T-Invest'),
+    ('Скринер VB', 'vb', 'vb', 'акции TQBR · песочница T-Invest'),
+]
+
+
+def _num(v):
+    try:
+        x = float(v)
+        return x if x == x else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _live_hybrid(path, robot):
+    """hybrid_bot.py: строка = сделка (вход и выход). Индекс MX робот торгует мини-контрактом MM (1/100 цены MX) —
+    цены приводим к шкале MX, иначе на графике MX сделка окажется в 100 раз ниже свечей."""
+    out = []
+    with open(path, encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            if r.get('status_in') != 'EXECUTION_REPORT_STATUS_FILL': continue
+            try: out.append(_hybrid_row(r, robot))
+            except (KeyError, TypeError, ValueError): continue   # недописанная строка — пропустить её, а не весь журнал
+    return out
+
+
+def _hybrid_row(r, robot):
+    """px_in / px_out — цена исполнения; exec_in / exec_out — стоимость позиции в рублях (не цена!)."""
+    k = 100.0 if r['st'] == 'MX' and (r.get('secid') or '').startswith('MM') else 1.0
+    pin, pout = _num(r.get('px_in')), _num(r.get('px_out'))
+    filled_out = r.get('status_out') == 'EXECUTION_REPORT_STATUS_FILL'
+    return {'robot': robot, 'st': r['st'], 'secid': r['secid'], 'side': int(float(r['side'])), 'd': r['d_in'],
+            't_in': r.get('t_in') or None, 'px_in': round(pin * k, 6) if pin else None, 'qty': _num(r.get('qty')),
+            'd_out': r.get('d_out') or None, 't_out': r.get('t_out') or None,
+            'px_out': round(pout * k, 6) if pout and filled_out else None,
+            'pnl_rub': _num(r.get('pnl_rub')), 'move': _num(r.get('move')), 'note': r.get('note') or None}
+
+
+def _live_vb(path, robot):
+    """robots/vb_bot.py: строка = событие «вход» / «выход» по ноге (key); склеиваем в сделки.
+    Итог в рублях — по ценам входа и выхода, БЕЗ комиссии (в журнале VB её нет)."""
+    legs = {}
+    with open(path, encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            try:
+                _vb_event(legs, r, robot)
+            except (KeyError, TypeError, ValueError):       # недописанная строка — пропустить её, а не весь журнал
+                continue
+    return list(legs.values())
+
+
+def _vb_event(legs, r, robot):
+    key, act = r.get('key'), r.get('action')
+    if not key: return
+    d, t = (r.get('ts') or '')[:10], (r.get('ts') or '')[11:19]           # ISO с +03:00 — это уже МСК
+    if act == 'вход':
+        side = -1 if 'шорт' in (r.get('leg') or '') else 1
+        legs[key] = {'robot': robot, 'st': r['ticker'], 'secid': r['ticker'], 'side': side, 'd': d, 't_in': t,
+                     'px_in': _num(r.get('price')), 'qty': _num(r.get('qty')), 'd_out': None, 't_out': None,
+                     'px_out': None, 'pnl_rub': None, 'move': None, 'note': r.get('leg') or None}
+    elif act == 'выход' and key in legs:
+        x = legs[key]; x['d_out'], x['t_out'], x['px_out'] = d, t, _num(r.get('price'))
+        if x['px_in'] and x['px_out'] and x['qty']:
+            x['pnl_rub'] = round(x['side'] * (x['px_out'] - x['px_in']) * x['qty'], 2)
+
+
+@router.get("/live/robots")
+def live_robots(_admin: User = Depends(require_admin)):
+    return [{'robot': n, 'about': a, 'on': os.path.isdir(os.path.join(ROBOTS_DIR, d))} for n, d, _, a in ROBOTS]
 
 
 @router.get("/live/trades")
 def live_trades(_admin: User = Depends(require_admin)):
-    """Журнал робота гибрида (песочница T-Invest, /opt/hybrid-bot/state/journal.csv, смонтирован только для чтения):
-    чтобы рисовать настоящие сделки поверх бэктеста. Файла нет (локальная разработка) — пустой список."""
-    if not os.path.exists(ROBOT_JOURNAL):
-        return []
     out = []
-    with open(ROBOT_JOURNAL, encoding='utf-8') as f:
-        for r in csv.DictReader(f):
-            if r.get('status_in') != 'EXECUTION_REPORT_STATUS_FILL': continue
-            num = lambda k: float(r[k]) if r.get(k) not in (None, '', 'nan') else None
-            out.append({'st': r['st'], 'secid': r['secid'], 'side': int(float(r['side'])), 'd': r['d_in'],
-                        't_in': r.get('t_in') or None, 'px_in': num('exec_in') or num('px_in'), 'qty': num('qty'),
-                        'd_out': r.get('d_out') or None, 't_out': r.get('t_out') or None,
-                        'px_out': num('exec_out') or num('px_out'), 'pnl_rub': num('pnl_rub'), 'move': num('move'),
-                        'note': r.get('note') or None})
+    for name, d, fmt, _ in ROBOTS:
+        path = os.path.join(ROBOTS_DIR, d, 'journal.csv')
+        if not os.path.exists(path): continue
+        try:
+            out += (_live_hybrid if fmt == 'hybrid' else _live_vb)(path, name)
+        except Exception:                                   # битый журнал одного робота не должен ронять остальных
+            continue
     return out

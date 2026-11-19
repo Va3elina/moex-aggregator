@@ -87,7 +87,7 @@ export default function Tester({ runs, run, trades, equity, st: chartSt, name: c
           : prefs.view === 'trades' ? <TradesList rows={scoped} money={money_} names={names} symbol={symbol} selKey={selKey} onPick={onPickTrade} onlyExec={prefs.tradesOnlyExecuted} setOnlyExec={x => set({ tradesOnlyExecuted: x })} />
           : prefs.view === 'signals' ? (run.result?.kind === 'screener' ? <div className="bt-nodata big">У готовой стратегии журнал решений не пишется: решения — это сами сделки, смотри «Список сделок» (причина выхода и нога — в колонке выхода).</div> : run.result?.python ? <div className="bt-nodata big">Журнал решений есть у стратегий-правил. У стратегии на Python решения — это сами сделки: смотри «Список сделок».</div> : <Signals runId={run.id} st={st} name={name} />)
           : prefs.view === 'checks' ? <Checks run={run} onRun={onRunChecks} busy={false} />
-          : prefs.view === 'robot' ? <RobotReport live={live} trades={trades} names={names} onPick={onPickTrade} />
+          : prefs.view === 'robot' ? <RobotReport live={live} trades={trades} names={names} onPick={onPickTrade} prefer={(run as any)?.spec?.strategy === 'screener_vb' ? 'Скринер VB' : undefined} />
           : <>
             {run.result?.python && <Lookahead info={run.result.python} />}
             <Block id="main" title="Основные данные" hidden={prefs.hidden} onHide={hide}>
