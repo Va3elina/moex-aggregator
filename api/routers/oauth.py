@@ -303,6 +303,9 @@ async def vk_auth_url():
         f"&code_challenge={code_challenge}"
         "&code_challenge_method=s256"
         f"&uuid={device_id}"
+        # email: если почта привязана к VK — получаем её сразу (доступ «Почта»
+        # должен быть включён в кабинете VK ID).
+        "&scope=vkid.personal_info%20email"
     )
     return OAuthURLResponse(
         url=url,

@@ -130,10 +130,10 @@ export default function AuthCallback() {
 
                 setStatus('success');
 
-                // Synthetic email (VK без email) → /add-email подтвердить почту; иначе на next/главную
-                const synthetic = (data.user?.email || '').endsWith('@oauth.local');
+                // VK без email НЕ ведём на /add-email: почту спрашиваем только
+                // перед оплатой (ConsentModal в PricingPage, нужна для чека 54-ФЗ).
                 const dest = popPostLoginNext();
-                setTimeout(() => navigate(synthetic ? '/add-email' : (dest || '/')), 1000);
+                setTimeout(() => navigate(dest || '/'), 1000);
             })
             .catch((err) => {
                 setStatus('error');
