@@ -851,17 +851,25 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
         # рассчитанную под годовую цену, на месяц НЕ переносим (discount=0).
         charge_plan_id = sub.plan_id
         charge_discount = sub.discount_pct or 0
+        # Сколько льготных продлений осталось, включая это. Старые записи
+        # (до миграции 117) имеют discount_periods_left=0 → одно продление.
+        periods_left = (sub.discount_periods_left or 1) if charge_discount else 0
         if sub.fallback_done:
             fb = monthly_fallback(sub.plan_id)
             if fb:
                 charge_plan_id = fb.plan_id
                 charge_discount = 0
+                periods_left = 0
 
         try:
-            # discount: retention-скидка истекающей подписки переносится на это
-            # (одно) продление; новая запись внутри charge_recurrent создаётся с
-            # discount_pct=0 → дальше полная цена.
-            result = charge_recurrent(db, user, charge_plan_id, pm, discount_pct=charge_discount)
+            # discount: retention-скидка истекающей подписки идёт в это
+            # продление; если льготных продлений больше одного, новая запись
+            # наследует скидку с периодом на 1 меньше (carry_periods).
+            result = charge_recurrent(
+                db, user, charge_plan_id, pm,
+                discount_pct=charge_discount,
+                carry_periods=max(periods_left - 1, 0),
+            )
             if result.get("ok"):
                 summary["renewed"] += 1
                 log.info(
@@ -1175,9 +1183,13 @@ def charge_recurrent(
     plan_id: str,
     payment_method: UserPaymentMethod,
     discount_pct: int = 0,
+    carry_periods: int = 0,
 ) -> dict:
     """
     Списать с сохранённой карты по plan_id — auto-renewal flow.
+
+    carry_periods > 0 — скидка discount_pct переходит на новую запись, чтобы
+    и следующее продление прошло со скидкой (retention на несколько месяцев).
 
     Шаги:
     1. Проверки: payment_method принадлежит user'у, не удалён, plan валиден
@@ -1239,6 +1251,9 @@ def charge_recurrent(
         currency="RUB",
         status="pending",
         payment_method_id=payment_method.id,
+        # Остаток retention-скидки на следующие продления (см. carry_periods).
+        discount_pct=discount_pct if (discount_pct and carry_periods > 0) else 0,
+        discount_periods_left=carry_periods if discount_pct else 0,
     )
     db.add(sub)
     db.flush()

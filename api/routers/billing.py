@@ -30,7 +30,7 @@ from api.billing.factory import (
     get_provider_for,
     get_yookassa_provider,
 )
-from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, tiers_grouped
+from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, retention_terms, tiers_grouped
 from api.billing.source import clean_source
 from api.billing.tiers import user_tier
 from api.database import get_db
@@ -80,7 +80,9 @@ class StatusResponse(BaseModel):
     started_at: str | None = None
     expires_at: str | None = None
     cancelled_at: str | None = None      # NULL → активна и продлится, NOT NULL → отменена, доступ до expires_at
-    retention_eligible: bool = False     # можно ли предложить retention-скидку 40% (active + автопродление + не использована)
+    retention_eligible: bool = False     # можно ли предложить retention-скидку (active + автопродление + не использована)
+    # Условия оффера для модалки отмены: {period, pct, periods, discount_rub} (plans.retention_terms)
+    retention_offer: dict | None = None
     # === Trial ===
     is_trial: bool = False               # текущая подписка — пробный период
     trial_ends_at: str | None = None     # когда кончится триал (= expires_at) и спишется next_charge
@@ -183,6 +185,9 @@ async def my_status(
         and sub.payment_method_id is not None
         and not getattr(user, "retention_used", False)
     )
+    retention_offer = retention_terms(sub.plan_id) if retention_eligible else None
+    if retention_offer is None:
+        retention_eligible = False
 
     # Trial-поля: если активная подписка — триал, отдаём дату окончания и сумму
     # будущего списания; если подписки нет — считаем eligibility под CTA «попробовать».
@@ -211,6 +216,7 @@ async def my_status(
         expires_at=sub.expires_at.isoformat() if sub and sub.expires_at else None,
         cancelled_at=sub.cancelled_at.isoformat() if sub and sub.cancelled_at else None,
         retention_eligible=retention_eligible,
+        retention_offer=retention_offer,
         is_trial=is_trial,
         trial_ends_at=next_at,
         trial_eligible=trial_eligible,
@@ -498,10 +504,10 @@ async def cancel(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  4b. POST /retention/accept — скидка 40% вместо отмены (1 раз на аккаунт)
+#  4b. POST /retention/accept — скидка вместо отмены (1 раз на аккаунт)
+#  Условия: plans.retention_terms (месячный 25% × 2 продления, годовой —
+#  та же сумма в рублях одним вычетом).
 # ═══════════════════════════════════════════════════════════════════════════════
-
-RETENTION_DISCOUNT_PCT = 40  # скидка на 1 следующее продление при отказе от отмены
 
 
 class RetentionRequest(BaseModel):
@@ -515,7 +521,7 @@ async def retention_accept(
     db: Session = Depends(get_db),
 ):
     """
-    Принять retention-предложение вместо отмены: скидка 40% на СЛЕДУЮЩЕЕ продление.
+    Принять retention-предложение вместо отмены: скидка на ближайшие продления.
     Подписка НЕ отменяется (cancelled_at не ставится) — остаётся активной и
     продлится со скидкой. Одноразово на аккаунт (user.retention_used). Скидка
     применяется в charge_recurrent при ближайшем рекуррентном списании.
@@ -533,12 +539,17 @@ async def retention_accept(
     if sub.payment_method_id is None:
         raise HTTPException(400, "Нет автопродления — скидку не к чему применить")
 
-    sub.discount_pct = RETENTION_DISCOUNT_PCT
+    terms = retention_terms(sub.plan_id)
+    if terms is None:
+        raise HTTPException(400, "Для этого тарифа скидка не предусмотрена")
+
+    sub.discount_pct = terms["pct"]
+    sub.discount_periods_left = terms["periods"]
     user.retention_used = True
     db.commit()
-    log.info("User #%s accepted retention: %d%% off next renewal of sub #%s",
-             user.id, RETENTION_DISCOUNT_PCT, sub.id)
-    return {"ok": True, "discount_pct": RETENTION_DISCOUNT_PCT, "subscription_id": sub.id}
+    log.info("User #%s accepted retention: %d%% off next %d renewal(s) of sub #%s (≈%s ₽)",
+             user.id, terms["pct"], terms["periods"], sub.id, terms["discount_rub"])
+    return {"ok": True, "subscription_id": sub.id, **terms}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
