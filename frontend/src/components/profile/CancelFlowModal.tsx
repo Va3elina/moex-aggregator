@@ -47,11 +47,11 @@ interface Props {
 }
 
 const REASONS: { id: CancelReason; label: string }[] = [
-  { id: 'expensive', label: 'Слишком дорого' },
+  { id: 'expensive', label: 'Дорого' },
   { id: 'rarely', label: 'Редко пользуюсь' },
-  { id: 'pause', label: 'Временно не торгую' },
-  { id: 'missing', label: 'Не хватает нужных функций или данных' },
-  { id: 'other_service', label: 'Перехожу на другой сервис' },
+  { id: 'pause', label: 'Сейчас не торгую' },
+  { id: 'missing', label: 'Не хватает функций' },
+  { id: 'other_service', label: 'Ухожу в другой сервис' },
   { id: 'other', label: 'Другое' },
 ];
 
@@ -59,31 +59,31 @@ const REASONS: { id: CancelReason; label: string }[] = [
 const OFFER_COPY: Record<CancelReason | 'none', { title: string; text: string }> = {
   expensive: {
     title: 'Сделаем дешевле',
-    text: 'Если дело в цене — следующий период обойдётся почти вдвое дешевле.',
+    text: 'Следующий период почти вдвое дешевле.',
   },
   rarely: {
-    title: 'Платите меньше, пока пользуетесь реже',
-    text: 'Оставьте доступ под рукой, но заплатите за следующий период меньше.',
+    title: 'Платите меньше',
+    text: 'Доступ останется, а следующий период обойдётся дешевле.',
   },
   pause: {
-    title: 'Пауза — не повод терять настройки',
-    text: 'Рынок вернётся, а вместе с ним и ваши сигналы. Следующий период — со скидкой.',
+    title: 'Не теряйте настройки',
+    text: 'Рынок вернётся, а сигналы останутся с вами. Следующий период со скидкой.',
   },
   missing: {
-    title: 'Дайте нам ещё один период',
-    text: 'Сервис постоянно развивается. Попробуйте ещё период со скидкой — и напишите, чего не хватает: мы читаем каждый ответ.',
+    title: 'Дайте нам ещё период',
+    text: 'Мы прочитаем ваш ответ. А следующий период дадим со скидкой.',
   },
   other_service: {
-    title: 'Сравните ещё раз',
-    text: 'Останьтесь на период со скидкой, чтобы спокойно сравнить сервисы, не теряя доступа к своим данным.',
+    title: 'Сравните спокойно',
+    text: 'Останьтесь ещё на период со скидкой и сравните.',
   },
   other: {
     title: 'Останьтесь со скидкой',
-    text: 'Следующее продление — со скидкой, дальше по обычной цене.',
+    text: 'Следующий период дешевле на 40%.',
   },
   none: {
     title: 'Останьтесь со скидкой',
-    text: 'Следующее продление — со скидкой, дальше по обычной цене.',
+    text: 'Следующий период дешевле на 40%.',
   },
 };
 
@@ -137,13 +137,13 @@ export default function CancelFlowModal({
   const acceptOffer = async () => {
     setError(null);
     if (await onAcceptOffer()) { setResult('discount'); setStep('done'); }
-    else setError(t('Не удалось применить скидку. Попробуйте ещё раз или напишите в поддержку.'));
+    else setError(t('Не получилось применить скидку. Попробуйте ещё раз.'));
   };
 
   const confirmCancel = async () => {
     setError(null);
     if (await onConfirmCancel(reason, comment.trim())) { setResult('cancelled'); setStep('done'); }
-    else setError(t('Не удалось отменить подписку. Попробуйте ещё раз или напишите в поддержку.'));
+    else setError(t('Не получилось отменить подписку. Попробуйте ещё раз.'));
   };
 
   const offerCopy = OFFER_COPY[reason ?? 'none'];
@@ -206,7 +206,7 @@ export default function CancelFlowModal({
             <h3 className="text-lg font-bold mb-2">{t('Что изменится после отмены')}</h3>
             <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               {t('До')} <b style={{ color: 'var(--text-primary)' }}>{expiresLabel}</b>{' '}
-              {t('всё работает как сейчас. Потом аккаунт перейдёт на бесплатный план, и тариф {{tier}} перестанет давать:', { tier: tierLabel })}
+              {t('всё работает. Потом тариф {{tier}} отключится, и пропадёт:', { tier: tierLabel })}
             </p>
             <div className="space-y-2 mb-6">
               {features.map((f, i) => (
@@ -240,7 +240,7 @@ export default function CancelFlowModal({
           <>
             <h3 className="text-lg font-bold mb-1">{t('Почему решили уйти?')}</h3>
             <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-              {t('Это необязательно, но очень поможет нам стать лучше.')}
+              {t('Необязательно, но нам это поможет.')}
             </p>
             <div className="space-y-2 mb-4">
               {REASONS.map(r => {
@@ -274,8 +274,8 @@ export default function CancelFlowModal({
                 onChange={e => setComment(e.target.value.slice(0, 500))}
                 rows={3}
                 placeholder={
-                  reason === 'missing' ? t('Чего именно не хватило?')
-                  : reason === 'other_service' ? t('Куда переходите? Что там лучше?')
+                  reason === 'missing' ? t('Чего не хватило?')
+                  : reason === 'other_service' ? t('Куда переходите?')
                   : t('Расскажите подробнее')
                 }
                 className="w-full mb-4 px-3 py-2 rounded-xl border outline-none text-sm resize-none"
@@ -299,7 +299,7 @@ export default function CancelFlowModal({
                 className="w-full px-4 py-2.5 rounded-full text-sm font-medium transition-opacity hover:opacity-80"
                 style={quietBtn}
               >
-                {reason ? t('Продолжить отмену') : t('Пропустить и продолжить отмену')}
+                {reason ? t('Продолжить отмену') : t('Пропустить')}
               </button>
             </div>
           </>
@@ -308,11 +308,11 @@ export default function CancelFlowModal({
         {/* ── 3. Персональное предложение ── */}
         {step === 'offer' && (
           <>
-            <h3 className="text-lg font-bold mb-1">{t(retentionEligible ? offerCopy.title : 'Может, подойдёт тариф попроще?')}</h3>
+            <h3 className="text-lg font-bold mb-1">{t(retentionEligible ? offerCopy.title : 'Может, хватит Basic?')}</h3>
             <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               {retentionEligible
                 ? t(offerCopy.text)
-                : t('Basic сохранит свежие данные и полные срезы в индикаторах, но стоит дешевле Pro.')}
+                : t('Basic дешевле Pro, а свежие данные остаются.')}
             </p>
 
             {retentionEligible && (
@@ -328,7 +328,7 @@ export default function CancelFlowModal({
                   <span className="text-3xl font-extrabold">−40%</span>
                 </div>
                 <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {t('на следующее продление. Подписка останется активной, дальше — по обычной цене. Предложение одноразовое.')}
+                  {t('на следующее продление. Дальше по обычной цене. Предложение разовое.')}
                 </div>
               </div>
             )}
@@ -344,7 +344,7 @@ export default function CancelFlowModal({
                 <span>
                   <b>{t('Перейти на Basic')}</b>
                   <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {t('Свежие данные и скринер останутся, платить — меньше')}
+                    {t('Свежие данные и скринер останутся')}
                   </span>
                 </span>
               </Link>
@@ -376,7 +376,7 @@ export default function CancelFlowModal({
                 className="w-full px-4 py-2.5 rounded-full text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-50"
                 style={quietBtn}
               >
-                {t('Нет, спасибо, продолжить отмену')}
+                {t('Нет, продолжить отмену')}
               </button>
             </div>
           </>
@@ -389,18 +389,18 @@ export default function CancelFlowModal({
             <div className="space-y-2.5 mb-6 text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.45 }}>
               <div className="flex items-start gap-2.5">
                 <Check size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />
-                <span>{t('Автопродление отключится — новых списаний не будет.')}</span>
+                <span>{t('Автопродление отключится, списаний больше не будет.')}</span>
               </div>
               <div className="flex items-start gap-2.5">
                 <Check size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />
                 <span>
                   {t('Тариф {{tier}} работает до', { tier: tierLabel })}{' '}
-                  <b style={{ color: 'var(--text-primary)' }}>{expiresLabel}</b>, {t('после — бесплатный план.')}
+                  <b style={{ color: 'var(--text-primary)' }}>{expiresLabel}</b>, {t('потом бесплатный план.')}
                 </span>
               </div>
               <div className="flex items-start gap-2.5">
                 <Check size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />
-                <span>{t('До этой даты подписку можно возобновить в профиле в один клик.')}</span>
+                <span>{t('До этой даты подписку можно вернуть в профиле.')}</span>
               </div>
             </div>
             <div className="flex flex-col gap-2.5">
@@ -432,15 +432,15 @@ export default function CancelFlowModal({
                 <div className="text-3xl font-extrabold mb-1" style={{ color: 'var(--accent)' }}>−40%</div>
                 <h3 className="text-lg font-bold mb-2">{t('Скидка применена')}</h3>
                 <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  {t('Следующее продление')} ({expiresLabel}) {t('пройдёт со скидкой 40%. Спасибо, что остаётесь!')}
+                  {t('Следующее продление')} ({expiresLabel}) {t('будет на 40% дешевле. Спасибо, что остаётесь!')}
                 </p>
               </>
             ) : (
               <>
                 <h3 className="text-lg font-bold mb-2">{t('Подписка отменена')}</h3>
                 <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  {t('Доступ к тарифу {{tier}} сохранится до', { tier: tierLabel })} <b style={{ color: 'var(--text-primary)' }}>{expiresLabel}</b>.{' '}
-                  {t('Передумаете — кнопка «Возобновить» будет в профиле.')}
+                  {t('Тариф {{tier}} работает до', { tier: tierLabel })} <b style={{ color: 'var(--text-primary)' }}>{expiresLabel}</b>.{' '}
+                  {t('Передумаете, нажмите «Возобновить» в профиле.')}
                 </p>
               </>
             )}
