@@ -311,7 +311,7 @@
   "Подписка отменена": "Subscription cancelled",
     "Передумаете, нажмите «Возобновить» в профиле.": "Changed your mind? Press “Resume” in your profile.",
   "Готово": "Done",
-  "к следующему годовому продлению. Предложение разовое.": "off your next yearly renewal. One-time offer.",
+  "Месяц в подарок: вычтем его цену из следующего годового продления. Предложение разовое.": "One month free: we take its price off your next yearly renewal. One-time offer.",
   "Получить скидку": "Get the discount",
   "Получить скидку {{pct}}%": "Get {{pct}}% off",
   "Следующее продление ({{date}}) будет дешевле на {{rub}} ₽. Спасибо, что остаётесь!": "Your next renewal ({{date}}) will be {{rub}} ₽ cheaper. Thanks for staying!"

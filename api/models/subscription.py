@@ -74,6 +74,9 @@ class Subscription(Base):
     # Сколько продлений подряд ещё идут со скидкой discount_pct (миграция 117).
     # 0 при discount_pct>0 — старые записи (до 117): трактуем как одно продление.
     discount_periods_left = Column(Integer, nullable=False, default=0, server_default="0")
+    # Retention-скидка в рублях (годовой «месяц в подарок», миграция 118).
+    # Если > 0, списание = цена − discount_rub, discount_pct только для журнала.
+    discount_rub = Column(Numeric(10, 2), nullable=False, default=0, server_default="0")
     currency = Column(String(3), default="RUB", nullable=False)
 
     # === Lifecycle ===

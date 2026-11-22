@@ -130,10 +130,11 @@ def monthly_fallback(plan_id: str) -> Plan | None:
 
 
 # === Retention-скидка (оффер в пути отмены подписки) ===
-# Месячный план: 25% на 2 следующих продления. Годовой: та же сумма в рублях,
-# что получил бы месячный подписчик (25% × месячная цена × 2), одним вычетом
-# из ближайшего годового продления. Иначе 25% от года стоили бы нам в разы
-# дороже, чем удержание месячного.
+# Месячный план: 25% на 2 следующих продления. Годовой: «месяц в подарок»,
+# из ближайшего годового продления вычитаем цену одного месяца того же тарифа
+# (≈10% года). 25% от года стоили бы в 2,4 раза дороже.
+# Годовая скидка хранится в рублях (subscriptions.discount_rub), pct у неё
+# приблизительный: нужен триггеру billing_events и уведомлению админу.
 RETENTION_PCT = 25
 RETENTION_MONTHS = 2
 
@@ -143,7 +144,7 @@ def retention_terms(plan_id: str | None) -> dict | None:
 
     pct — % к каждому льготному списанию (в subscriptions.discount_pct),
     periods — сколько продлений подряд идут со скидкой,
-    discount_rub — суммарная экономия, для текста в модалке.
+    discount_rub — суммарная экономия; у годового это точная сумма вычета.
     """
     p = PLANS.get(plan_id or "")
     if not p:
@@ -159,13 +160,11 @@ def retention_terms(plan_id: str | None) -> dict | None:
         monthly = monthly_fallback(plan_id or "")
         if not monthly:
             return None
-        value = monthly.amount * RETENTION_PCT / 100 * RETENTION_MONTHS
-        pct = max(1, round(value / p.amount * 100))
         return {
             "period": "yearly",
-            "pct": pct,
+            "pct": max(1, round(monthly.amount / p.amount * 100)),
             "periods": 1,
-            "discount_rub": round(p.amount * pct / 100),
+            "discount_rub": round(monthly.amount),
         }
     return None
 

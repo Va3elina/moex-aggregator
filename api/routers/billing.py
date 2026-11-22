@@ -545,6 +545,7 @@ async def retention_accept(
 
     sub.discount_pct = terms["pct"]
     sub.discount_periods_left = terms["periods"]
+    sub.discount_rub = terms["discount_rub"] if terms["period"] == "yearly" else 0
     user.retention_used = True
     db.commit()
     log.info("User #%s accepted retention: %d%% off next %d renewal(s) of sub #%s (≈%s ₽)",

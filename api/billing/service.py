@@ -851,6 +851,7 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
         # рассчитанную под годовую цену, на месяц НЕ переносим (discount=0).
         charge_plan_id = sub.plan_id
         charge_discount = sub.discount_pct or 0
+        charge_discount_rub = sub.discount_rub or 0
         # Сколько льготных продлений осталось, включая это. Старые записи
         # (до миграции 117) имеют discount_periods_left=0 → одно продление.
         periods_left = (sub.discount_periods_left or 1) if charge_discount else 0
@@ -859,6 +860,7 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
             if fb:
                 charge_plan_id = fb.plan_id
                 charge_discount = 0
+                charge_discount_rub = 0
                 periods_left = 0
 
         try:
@@ -868,6 +870,7 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
             result = charge_recurrent(
                 db, user, charge_plan_id, pm,
                 discount_pct=charge_discount,
+                discount_rub=charge_discount_rub,
                 carry_periods=max(periods_left - 1, 0),
             )
             if result.get("ok"):
@@ -1184,6 +1187,7 @@ def charge_recurrent(
     payment_method: UserPaymentMethod,
     discount_pct: int = 0,
     carry_periods: int = 0,
+    discount_rub: Decimal | float = 0,
 ) -> dict:
     """
     Списать с сохранённой карты по plan_id — auto-renewal flow.
@@ -1227,7 +1231,14 @@ def charge_recurrent(
     # списание 3₽, а следующее уже 2900₽ и тест рекуррента стоит как боевой.
     base_amount = test_price_for(user, plan.amount)
     effective_amount = base_amount
-    if discount_pct and 0 < discount_pct < 100:
+    rub_off = Decimal(str(discount_rub or 0))
+    if rub_off > 0:
+        # Годовой «месяц в подарок»: точная сумма в рублях. Если вычет съел бы
+        # всю цену (тест-цена 3 ₽), списываем без скидки, а не 0 или минус.
+        base = Decimal(str(base_amount))
+        if base > rub_off:
+            effective_amount = (base - rub_off).quantize(Decimal("0.01"))
+    elif discount_pct and 0 < discount_pct < 100:
         effective_amount = (
             Decimal(str(base_amount)) * (100 - discount_pct) / 100
         ).quantize(Decimal("0.01"))
@@ -1254,6 +1265,7 @@ def charge_recurrent(
         # Остаток retention-скидки на следующие продления (см. carry_periods).
         discount_pct=discount_pct if (discount_pct and carry_periods > 0) else 0,
         discount_periods_left=carry_periods if discount_pct else 0,
+        discount_rub=rub_off if (rub_off > 0 and carry_periods > 0) else 0,
     )
     db.add(sub)
     db.flush()
@@ -1267,7 +1279,7 @@ def charge_recurrent(
     charge_kwargs = dict(
         amount=effective_amount,
         currency="RUB",
-        description=f"{plan.title} — auto-renewal user #{user.id}" + (f" (скидка {discount_pct}%)" if discount_pct else ""),
+        description=f"{plan.title} — auto-renewal user #{user.id}" + (f" (скидка {rub_off} ₽)" if rub_off > 0 else f" (скидка {discount_pct}%)" if discount_pct else ""),
         customer_key=payment_method.customer_key or str(user.id),
         customer_email=user.email,
         metadata={
