@@ -62,6 +62,20 @@ YANDEX_CLIENT_SECRET = os.getenv("YANDEX_CLIENT_SECRET", "")
 YANDEX_REDIRECT_URI = os.getenv("YANDEX_REDIRECT_URI", "")
 
 
+def _oauth_http() -> httpx.AsyncClient:
+    """HTTP-клиент к провайдерам с повтором при сбое соединения.
+
+    id.vk.com с прода периодически отклоняет TCP-соединение (≈10–25 % попыток,
+    22.11.2026) → «All connection attempts failed» → 500 при входе. retries=3
+    повторяет только неудавшееся соединение (запрос ещё не ушёл), поэтому
+    одноразовый code не тратится.
+    """
+    return httpx.AsyncClient(
+        transport=httpx.AsyncHTTPTransport(verify=RU_TLS_VERIFY, retries=3),
+        timeout=15,
+    )
+
+
 # ============================================================================
 # СХЕМЫ
 # ============================================================================
@@ -366,7 +380,7 @@ async def vk_oauth_callback(
         if data.code_verifier:
             token_payload["code_verifier"] = data.code_verifier
 
-        async with httpx.AsyncClient(verify=RU_TLS_VERIFY) as client:
+        async with _oauth_http() as client:
             token_resp = await client.post(
                 "https://id.vk.com/oauth2/auth",
                 data=token_payload,
@@ -389,7 +403,7 @@ async def vk_oauth_callback(
             raise HTTPException(400, "VK: не получен access_token")
 
         # 2. Получаем профиль через VK ID user_info
-        async with httpx.AsyncClient(verify=RU_TLS_VERIFY) as client:
+        async with _oauth_http() as client:
             profile_resp = await client.post(
                 "https://id.vk.com/oauth2/user_info",
                 data={
@@ -442,7 +456,7 @@ async def yandex_oauth_callback(
 
     try:
         # 1. Обмениваем code на access_token
-        async with httpx.AsyncClient(verify=RU_TLS_VERIFY) as client:
+        async with _oauth_http() as client:
             token_resp = await client.post(
                 "https://oauth.yandex.ru/token",
                 data={
@@ -461,7 +475,7 @@ async def yandex_oauth_callback(
         access_token = token_data.get("access_token")
 
         # 2. Получаем профиль
-        async with httpx.AsyncClient(verify=RU_TLS_VERIFY) as client:
+        async with _oauth_http() as client:
             profile_resp = await client.get(
                 "https://login.yandex.ru/info",
                 headers={"Authorization": f"OAuth {access_token}"},
