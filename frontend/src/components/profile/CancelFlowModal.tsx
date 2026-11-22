@@ -1,12 +1,12 @@
 /**
  * Многошаговый путь отмены подписки.
  *
- * Раньше клик «Отменить подписку» сразу показывал оффер −40%. Теперь путь
+ * Раньше клик «Отменить подписку» сразу показывал оффер со скидкой. Теперь путь
  * длиннее, как у крупных подписочных сервисов:
  *
  *   1. loss    — что станет недоступно после окончания оплаченного периода
  *   2. reason  — почему уходите (опрос, ответ уходит в /cancel и в лог)
- *   3. offer   — персональное предложение под причину: −40% (если ещё не
+ *   3. offer   — персональное предложение под причину: скидка (если ещё не
  *                использовали) и/или переход Pro → Basic. Шаг пропускается,
  *                если предложить нечего.
  *   4. confirm — итог: что будет с автопродлением и доступом
@@ -37,13 +37,21 @@ interface Props {
   tier: string;
   expiresLabel: string;                 // уже отформатированная дата окончания
   features: string[];                   // что пропадёт (без «Всё из Basic»)
-  retentionEligible: boolean;
+  /** Условия скидки с бэкенда (plans.retention_terms) или null, если скидки нет. */
+  retentionOffer: RetentionOffer | null;
   loading: boolean;
   onClose: () => void;
   /** true — скидка применена. */
   onAcceptOffer: () => Promise<boolean>;
   /** true — подписка отменена. */
   onConfirmCancel: (reason: CancelReason | null, comment: string) => Promise<boolean>;
+}
+
+export interface RetentionOffer {
+  period: 'monthly' | 'yearly';
+  pct: number;           // % к каждому льготному списанию
+  periods: number;       // сколько продлений подряд со скидкой
+  discount_rub: number;  // суммарная экономия
 }
 
 const REASONS: { id: CancelReason; label: string }[] = [
@@ -59,7 +67,7 @@ const REASONS: { id: CancelReason; label: string }[] = [
 const OFFER_COPY: Record<CancelReason | 'none', { title: string; text: string }> = {
   expensive: {
     title: 'Сделаем дешевле',
-    text: 'Следующий период почти вдвое дешевле.',
+    text: 'Дадим скидку на продление.',
   },
   rarely: {
     title: 'Платите меньше',
@@ -79,11 +87,11 @@ const OFFER_COPY: Record<CancelReason | 'none', { title: string; text: string }>
   },
   other: {
     title: 'Останьтесь со скидкой',
-    text: 'Следующий период дешевле на 40%.',
+    text: 'Продление обойдётся дешевле.',
   },
   none: {
     title: 'Останьтесь со скидкой',
-    text: 'Следующий период дешевле на 40%.',
+    text: 'Продление обойдётся дешевле.',
   },
 };
 
@@ -104,7 +112,7 @@ const primaryBtn = {
 const quietBtn = { backgroundColor: 'transparent', color: 'var(--text-muted)' } as const;
 
 export default function CancelFlowModal({
-  tier, expiresLabel, features, retentionEligible, loading,
+  tier, expiresLabel, features, retentionOffer, loading,
   onClose, onAcceptOffer, onConfirmCancel,
 }: Props) {
   const { t } = useTranslation();
@@ -115,7 +123,14 @@ export default function CancelFlowModal({
   const [error, setError] = useState<string | null>(null);
 
   const canDowngrade = tier === 'pro';
+  const retentionEligible = !!retentionOffer;
   const hasOffer = retentionEligible || canDowngrade;
+  // Месячным: «−25%» на N месяцев; годовым: сумма в рублях одним вычетом.
+  const isYearlyOffer = retentionOffer?.period === 'yearly';
+  const rub = (retentionOffer?.discount_rub ?? 0).toLocaleString('ru-RU');
+  const offerBadge = retentionOffer
+    ? (isYearlyOffer ? `−${rub} ₽` : `−${retentionOffer.pct}%`)
+    : '';
 
   // Шаги, которые реально увидит человек (offer — только если есть что предложить).
   const flow = useMemo<Step[]>(
@@ -325,10 +340,12 @@ export default function CancelFlowModal({
               >
                 <div className="flex items-center justify-center gap-2 mb-1" style={{ color: 'var(--accent)' }}>
                   <Gift size={18} />
-                  <span className="text-3xl font-extrabold">−40%</span>
+                  <span className="text-3xl font-extrabold">{offerBadge}</span>
                 </div>
                 <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {t('на следующее продление. Дальше по обычной цене. Предложение разовое.')}
+                  {isYearlyOffer
+                    ? t('к следующему годовому продлению. Предложение разовое.')
+                    : t('на {{n}} следующих месяца. Дальше по обычной цене. Предложение разовое.', { n: retentionOffer?.periods })}
                 </div>
               </div>
             )}
@@ -359,7 +376,11 @@ export default function CancelFlowModal({
                   className="w-full px-4 py-3 rounded-full text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
                   style={primaryBtn}
                 >
-                  {loading ? t('Применяем…') : t('Получить скидку 40%')}
+                  {loading
+                    ? t('Применяем…')
+                    : isYearlyOffer
+                      ? t('Получить скидку')
+                      : t('Получить скидку {{pct}}%', { pct: retentionOffer?.pct })}
                 </button>
               ) : (
                 <button
@@ -429,10 +450,12 @@ export default function CancelFlowModal({
           <div className="text-center">
             {result === 'discount' ? (
               <>
-                <div className="text-3xl font-extrabold mb-1" style={{ color: 'var(--accent)' }}>−40%</div>
+                <div className="text-3xl font-extrabold mb-1" style={{ color: 'var(--accent)' }}>{offerBadge}</div>
                 <h3 className="text-lg font-bold mb-2">{t('Скидка применена')}</h3>
                 <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  {t('Следующее продление')} ({expiresLabel}) {t('будет на 40% дешевле. Спасибо, что остаётесь!')}
+                  {isYearlyOffer
+                    ? t('Следующее продление ({{date}}) будет дешевле на {{rub}} ₽. Спасибо, что остаётесь!', { date: expiresLabel, rub })
+                    : t('Следующие {{n}} продления будут на {{pct}}% дешевле. Спасибо, что остаётесь!', { n: retentionOffer?.periods, pct: retentionOffer?.pct })}
                 </p>
               </>
             ) : (

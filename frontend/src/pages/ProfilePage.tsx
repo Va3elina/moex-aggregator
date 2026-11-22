@@ -13,7 +13,7 @@ import AdminBillingInvites from '../components/AdminBillingInvites';
 import ApiKeysSection from '../components/profile/ApiKeysSection';
 import ExtensionTokenSection from '../components/profile/ExtensionTokenSection';
 import TelegramAlertsSection from '../components/profile/TelegramAlertsSection';
-import CancelFlowModal from '../components/profile/CancelFlowModal';
+import CancelFlowModal, { type RetentionOffer } from '../components/profile/CancelFlowModal';
 import { ALERTS_ENABLED } from '../config/alertsConfig';
 import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED, PAYMENT_METHODS_UI_ENABLED } from '../config/features';
 
@@ -25,7 +25,8 @@ interface BillingStatus {
   started_at: string | null;
   expires_at: string | null;
   cancelled_at: string | null;  // NULL → активна, NOT NULL → отменена (доступ до expires_at)
-  retention_eligible?: boolean; // можно предложить retention-скидку 40% вместо отмены
+  retention_eligible?: boolean; // можно предложить retention-скидку вместо отмены
+  retention_offer?: RetentionOffer | null; // условия скидки (бэк: plans.retention_terms)
 }
 
 interface HistoryItem {
@@ -514,7 +515,7 @@ export default function ProfilePage() {
                 tier={billing.tier}
                 expiresLabel={billing.expires_at ? formatDate(billing.expires_at) : '—'}
                 features={lostFeatures(billing.tier)}
-                retentionEligible={!!billing.retention_eligible}
+                retentionOffer={billing.retention_eligible ? (billing.retention_offer ?? null) : null}
                 loading={cancelLoading}
                 onClose={closeCancelFlow}
                 onAcceptOffer={() => postBilling('retention/accept', {})}
