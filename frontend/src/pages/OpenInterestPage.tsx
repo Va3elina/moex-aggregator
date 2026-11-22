@@ -796,12 +796,16 @@ export default function OpenInterestPage() {
       </div>
 
       {/* Нудж «данные с задержкой» — Free/гость видят ОИ по вчерашний день
-          (data_delay_hours=24 в features.py → get_effective_end_date). */}
-      <DelayedDataBadge
-        indicator="open_interest"
-        message={t('— вы видите позиции по вчерашний день, сегодняшний срез открыт по подписке.')}
-        cta={t('Открыть свежие данные →')}
-      />
+          (data_delay_hours=24 в features.py → get_effective_end_date). Только на
+          вкладке графика: у скринера своя плашка с текстом про сигналы
+          (OiScreenerTable), две подряд читались бы как дубль. */}
+      {activeTab === 'chart' && (
+        <DelayedDataBadge
+          indicator="open_interest"
+          message={t('— вы видите позиции по вчерашний день, сегодняшний срез открыт по подписке.')}
+          cta={t('Открыть свежие данные →')}
+        />
+      )}
 
       {/* Карточка с вкладками: обёртка несёт единую editorial-тень на
           [вкладки + панель] (как на «Деньгах в фондах»). */}

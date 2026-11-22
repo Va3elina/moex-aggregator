@@ -286,5 +286,9 @@
   "В движение входят новые покупатели — позиции открываются, а не закрываются.": "New buyers are joining the move: positions are being opened, not closed.",
   "Идёт набор коротких позиций — участники добавляют ставки на снижение.": "Short positions are being built: participants are adding bets on a decline.",
   "Физлица и юрлица расходятся": "Retail and institutions diverge",
-  "Когда две группы массово стоят в противоположных направлениях — иногда это совпадает со сменой направления. Гарантий это не даёт.": "When the two groups are massively positioned in opposite directions, this sometimes coincides with a change of direction. No guarantees."
+  "Когда две группы массово стоят в противоположных направлениях — иногда это совпадает со сменой направления. Гарантий это не даёт.": "When the two groups are massively positioned in opposite directions, this sometimes coincides with a change of direction. No guarantees.",
+  "— вы видите сигналы за вчерашний день. Сегодняшняя лента открыта по подписке.": "— you are seeing yesterday's signals. Today's feed is available with a subscription.",
+  "— это сигналы за вчерашний день.": "— these are yesterday's signals.",
+  "Открыть свежие сигналы →": "Get fresh signals →",
+  "Свежие сигналы →": "Fresh signals →"
 }

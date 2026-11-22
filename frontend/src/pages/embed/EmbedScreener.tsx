@@ -29,6 +29,11 @@ import { EmbedFrame, PillGroup, ToolbarButton } from './EmbedToolbar';
 import { useEmbedPersist } from './embedPersist';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { useToolbarCompact } from './useToolbarCompact';
+import { pricingUrlFrom } from '../../utils/purchaseSource';
+
+// Абсолютный адрес: виджет живёт в iframe расширения на чужих сайтах (терминалы),
+// относительная ссылка ушла бы на их домен. Как в EmbedSignals/EmbedPage.
+const SITE = 'https://framedata.ru';
 
 type Clgroup = 'FIZ' | 'YUR';
 type LoadStatus = 'loading' | 'ok' | 'error';
@@ -109,6 +114,9 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
   // Пейволл ленты (гость/free, 2026-08-09): бэкенд отдал маркер без строк.
   // Ровно тот же признак, что на сайте — заглушка одна на обе поверхности.
   const [locked, setLocked] = useState(false);
+  // Задержка ленты для гостя/free (2026-11-22): бэкенд отдал строки по
+  // вчерашний день и пометил ответ delayed. Честно подписываем сверху ленты.
+  const [delayed, setDelayed] = useState(false);
 
   useEffect(() => { wr('frame:embed:screener:clgroup', clgroup); }, [clgroup]);
   useEffect(() => { wr('frame:embed:screener:horizon', horizon); }, [horizon]);
@@ -130,6 +138,7 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
       .then((r) => {
         if (cancelled) return;
         setLocked(!!r.locked);
+        setDelayed(!!r.delayed);
         setRows(r.rows);
         setMinPart(r.min_part);
         setSignalDate(r.signal_date);
@@ -322,6 +331,26 @@ export default function EmbedScreener({ onPick }: { onPick?: (r: { sectype: stri
               всегда, и обычный empty-state врал бы про фильтры. */}
           {status === 'ok' && locked && (
             <div style={{ padding: 8 }}><OiScreenerLocked compact /></div>
+          )}
+          {status === 'ok' && !locked && delayed && (
+            <div
+              role="note"
+              style={{
+                display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 6px',
+                margin: 8, padding: '5px 10px', borderRadius: 8, fontSize: 11, lineHeight: 1.4,
+                background: 'color-mix(in oklab, var(--accent) 10%, transparent)',
+                border: '1px solid color-mix(in oklab, var(--accent) 28%, transparent)',
+              }}
+            >
+              <Clock size={12} strokeWidth={2.2} style={{ color: 'var(--accent)', flexShrink: 0 }} aria-hidden="true" />
+              <b>Данные с задержкой</b>
+              <span style={{ opacity: 0.72 }}>— сигналы за вчерашний день.</span>
+              {/* В iframe — новая вкладка, иначе тарифы открылись бы внутри виджета. */}
+              <a href={`${SITE}${pricingUrlFrom('delay_banner', 'oi_screener')}`} target="_blank" rel="noopener noreferrer"
+                style={{ fontWeight: 600, color: 'var(--accent)', textDecoration: 'underline' }}>
+                Свежие сигналы →
+              </a>
+            </div>
           )}
           {status === 'ok' && !locked && visible.length === 0 && (
             <EmbedMsg text={onlyFav ? 'Среди избранных активов пусто' : 'Нет активов по фильтру'} />
