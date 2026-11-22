@@ -60,7 +60,7 @@
   "Начать бесплатно — {{days}} дней": "Start free — {{days}} days",
   "Начать бесплатно": "Start free",
 
-  "Открытые позиции без задержки, юрлица и число трейдеров в ОИ, скринер сигналов, выбор фондов.": "Open interest without delay, institutions and trader counts in OI, signal screener, fund selection.",
+  "Открытые позиции и скринер сигналов без задержки, юрлица и число трейдеров в ОИ, выбор фондов.": "Open interest and the signal screener without delay, institutions and trader counts in OI, fund selection.",
   "Вид: админ": "View: admin",
   "Тестовые индикаторы": "Test indicators",
   "Вид: пользователь": "View: user",

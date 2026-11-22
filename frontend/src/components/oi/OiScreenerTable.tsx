@@ -39,6 +39,9 @@ import HelpTooltip from '../HelpTooltip';
 import Dropdown from '../Dropdown';
 import PositionComet from './PositionComet';
 import OiScreenerLocked from './OiScreenerLocked';
+import DelayedDataBadge from '../DelayedDataBadge';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { getOiScreener, type OiScreenerRow, type OiScreenerHorizon } from '../../services/api';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useSnapshotTracking } from '../../hooks/useSnapshotTracking';
@@ -172,7 +175,16 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [locked, setLocked] = useState(false);
   // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
   // же виде, что оставил юзер (группа, категория, избранные, направление).
-  const [clgroup, setClgroup] = usePersistedState<Clgroup>('frame:oi-screener:clgroup', 'FIZ');
+  const [rawClgroup, setClgroup] = usePersistedState<Clgroup>('frame:oi-screener:clgroup', 'FIZ');
+  // «Юрлица» — тот же замок, что на вкладке графика (open_interest.clgroup_yur,
+  // с Basic). Лок UI-шный, как там: backend отдаёт обе группы (их читает
+  // embed). Сохранённый выбор не трогаем — после апгрейда вернётся сам. Пока
+  // тариф грузится, считаем залоченным, чтобы не мигнуть чужим срезом.
+  const oiAccess = useTierAccess('open_interest');
+  const { showUpgrade } = useUpgradePrompt();
+  const canUseYur = !oiAccess.isLoading && oiAccess.canUseFlag('clgroup_yur');
+  const yurLocked = !oiAccess.isLoading && !oiAccess.canUseFlag('clgroup_yur');
+  const clgroup: Clgroup = canUseYur ? rawClgroup : 'FIZ';
   const [horizon, setHorizon] = usePersistedState<OiScreenerHorizon>('frame:oi-screener:horizon', 'short');
   const [group, setGroup] = usePersistedState<string>('frame:oi-screener:group', 'all');
   const [onlyFav, setOnlyFav] = usePersistedState<boolean>('frame:oi-screener:onlyfav', false);
@@ -550,6 +562,18 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
 
   return (
     <div>
+      {/* Нудж «данные с задержкой» — гость/free видят ленту по вчерашний день
+          (oi_screener.data_delay_hours=24 в features.py → бэкенд режет данные
+          тем же get_effective_end_date, что и график). Показ решает матрица:
+          снимут задержку — плашка пропадёт сама. */}
+      <DelayedDataBadge
+        indicator="oi_screener"
+        message={t('— вы видите сигналы за вчерашний день. Сегодняшняя лента открыта по подписке.')}
+        compactMessage={t('— это сигналы за вчерашний день.')}
+        cta={t('Открыть свежие сигналы →')}
+        compactCta={t('Свежие сигналы →')}
+      />
+
       {/* Баннер-предложение алерта после добавления в избранное (п.3) */}
       {alertPrompt && (
         <div
@@ -599,10 +623,15 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         <SegmentedControl<Clgroup>
           options={[
             { key: 'FIZ', label: t('Физлица') },
-            { key: 'YUR', label: t('Юрлица'), title: t('Сигналы юрлиц зеркальны физлицам по кратности, но проценты и ликвидность — свои') },
+            { key: 'YUR', label: t('Юрлица'), title: t('Сигналы юрлиц зеркальны физлицам по кратности, но проценты и ликвидность — свои'), locked: yurLocked },
           ]}
           value={clgroup}
           onChange={(g) => { lockHeight(); setClgroup(g); }}
+          onLockedClick={yurLocked ? () => showUpgrade({
+            tier: oiAccess.requiredTierFor({ flag: 'clgroup_yur' }) ?? 'basic',
+            featureName: t('данные по юрлицам'),
+            indicator: 'open_interest',
+          }) : undefined}
         />
         {/* Горизонт: дневная лента / недельная (14 дней). Стоит сразу за
             группой — это второй «срез» тех же данных, а не фильтр: он меняет

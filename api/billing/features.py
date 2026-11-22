@@ -135,10 +135,17 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # всему рынку разом), а не сырой ряд, — и он же ядро Telegram-алертов.
     # Гейт булевый (`open`), а не whitelist/задержка: половина ленты бессмысленна,
     # а лента вчерашним днём — это уже не сигнал.
+    #
+    # ⚠️ ПЕРЕСМОТР 2026-11-22 (владелец): скринер открыт для гостя и free, но с
+    # задержкой в один день — ровно как график ОИ (data_delay_hours=24 →
+    # get_effective_end_date). Видно всё, но по вчерашний день; сегодняшняя
+    # лента — по подписке. Сверху вкладки висит DelayedDataBadge (фронт читает
+    # этот же data_delay_hours). Лента аномалий (колокол) по-прежнему только для
+    # тиров без задержки — см. _oi_feed_allowed в routers/anomalies.py.
     "oi_screener": {
-        "free":  {"open": False},
-        "basic": {"open": True},
-        "pro":   {"open": True},
+        "free":  {"open": True, "data_delay_hours": 24},
+        "basic": {"open": True, "data_delay_hours": 0},
+        "pro":   {"open": True, "data_delay_hours": 0},
     },
 
     # ───────────────────────────────────────────────────────────────

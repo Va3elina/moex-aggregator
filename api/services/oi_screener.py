@@ -171,7 +171,8 @@ def _history_days(horizon: str) -> int:
     return _MED_HISTORY_DAYS if horizon == "medium" else _HISTORY_DAYS
 
 
-def _bulk_series(db, clgroup: str, history_days: int = _HISTORY_DAYS) -> Dict[str, List[tuple]]:
+def _bulk_series(db, clgroup: str, history_days: int = _HISTORY_DAYS,
+                 end_date: date | None = None) -> Dict[str, List[tuple]]:
     """Дневные ряды позиций группы (FIZ/YUR) по всем sectype одним запросом.
 
     Возвращает {sectype: [(tradedate, net, npart, oi), ...] по возрастанию даты}.
@@ -180,10 +181,14 @@ def _bulk_series(db, clgroup: str, history_days: int = _HISTORY_DAYS) -> Dict[st
 
     history_days — глубина выборки: дневному горизонту хватает ~44 дней, а
     среднесрочному нужна норма за 60 торговых дней ДО окна движения.
+
+    end_date — потолок свежести (задержка тира): точки строго после него не
+    берём, а глубину отсчитываем от него, чтобы окна не укорачивались.
     """
-    cutoff = date.today() - timedelta(days=history_days)
+    cutoff = (end_date or date.today()) - timedelta(days=history_days)
+    cap_sql = "AND tradedate <= :end_date" if end_date else ""
     rows = db.execute(text(
-        """
+        f"""
         SELECT sectype, tradedate,
                (pos_long + pos_short)         AS net,
                (pos_long_num + pos_short_num) AS npart,
@@ -197,12 +202,14 @@ def _bulk_series(db, clgroup: str, history_days: int = _HISTORY_DAYS) -> Dict[st
             WHERE clgroup = :clgroup
               AND interval = 24
               AND tradedate >= :cutoff
+              {cap_sql}
               AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
             ORDER BY sectype, tradedate, tradetime DESC
         ) t
         ORDER BY sectype, tradedate ASC
         """
-    ), {"cutoff": cutoff, "clgroup": clgroup}).fetchall()
+    ), {"cutoff": cutoff, "clgroup": clgroup,
+        **({"end_date": end_date} if end_date else {})}).fetchall()
 
     series: Dict[str, List[tuple]] = {}
     for r in rows:
@@ -240,7 +247,8 @@ def _intraday_assets(db) -> set:
     return {r[0] for r in rows}
 
 
-def _bulk_intraday_now(db, clgroup: str, sectypes: set) -> Dict[str, tuple]:
+def _bulk_intraday_now(db, clgroup: str, sectypes: set,
+                       end_date: date | None = None) -> Dict[str, tuple]:
     """Последний ВНУТРИДНЕВНОЙ бар (interval=5) по каждому интрадей-активу —
     «net сейчас» для раннего сигнала. Один tuple на актив в формате точки ряда
     (tradedate, net, npart, oi, pos_long, pos_short).
@@ -253,8 +261,12 @@ def _bulk_intraday_now(db, clgroup: str, sectypes: set) -> Dict[str, tuple]:
     напр. Транснефть физ +51k за 3.07 показывался как −48/normal)."""
     if not sectypes:
         return {}
+    # Потолок свежести (задержка тира): бар не новее end_date. Окно «5 дней»
+    # отсчитываем от него же — иначе на потолке «вчера» оно было бы на день уже.
+    base = end_date or date.today()
+    cap_sql = "AND tradedate <= :end_date" if end_date else ""
     rows = db.execute(text(
-        """
+        f"""
         SELECT DISTINCT ON (sectype)
             sectype, tradedate,
             (pos_long + pos_short) AS net,
@@ -263,11 +275,13 @@ def _bulk_intraday_now(db, clgroup: str, sectypes: set) -> Dict[str, tuple]:
         FROM open_interest
         WHERE clgroup = :clg AND interval = 5
           AND sectype = ANY(:secs)
-          AND tradedate >= CURRENT_DATE - INTERVAL '5 days'
+          AND tradedate >= :since
+          {cap_sql}
           AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
         ORDER BY sectype, tradedate DESC, tradetime DESC
         """
-    ), {"clg": clgroup, "secs": list(sectypes)}).fetchall()
+    ), {"clg": clgroup, "secs": list(sectypes), "since": base - timedelta(days=5),
+        **({"end_date": end_date} if end_date else {})}).fetchall()
     return {
         r[0]: (r[1], (r[2] or 0), (r[3] or 0), (r[4] or 0), (r[5] or 0), (r[6] or 0))
         for r in rows
@@ -386,13 +400,18 @@ def _record_windows() -> Dict[str, str]:
 _WINDOW_PERIODS = ("3m", "6m", "1y", "2y", "3y", "4y", "5y")
 
 
-def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
+def _prior_extremes(db, clgroup: str, end_date: date | None = None) -> Dict[str, Dict[str, Any]]:
     """Per-sectype ПРЕДЫДУЩИЕ экстремумы перекоса net_pct по окнам (для метки
     «новый рекорд»). Горизонты: 1/3/6 мес, 1..5 лет, всё время. Исключаем
     последний день каждого актива (tradedate < его последней даты) — сравниваем
     сегодняшний перекос с рекордом ДО сегодня. Один агрегатный проход; net_pct =
-    last-bar-of-day (pos_long+pos_short)/(pos_long−pos_short)×100."""
+    last-bar-of-day (pos_long+pos_short)/(pos_long−pos_short)×100.
+
+    end_date — потолок свежести (задержка тира): «последний день» актива и
+    история считаются не позже него, иначе рекорд вчерашнего дня сравнивался бы
+    с экстремумом, в который уже вошло само вчера (и никогда бы не горел)."""
     w = _record_windows()
+    cap_sql = "AND tradedate <= :end_date" if end_date else ""
     # Пара MAX/MIN на каждое окно — колонки генерим из _WINDOW_PERIODS, чтобы
     # список окон существовал в одном месте (бинд-имена фиксированы, не ввод).
     win_cols = ",\n          ".join(
@@ -409,6 +428,7 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
                    (pos_long + pos_short) AS net
             FROM open_interest
             WHERE clgroup = :clg AND interval = 24
+              {cap_sql}
               AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
             ORDER BY sectype, tradedate, tradetime DESC
         ),
@@ -423,7 +443,7 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
         WHERE d.net_pct IS NOT NULL
         GROUP BY d.sectype
         """
-    ), {"clg": clgroup, **w}).fetchall()
+    ), {"clg": clgroup, **w, **({"end_date": end_date} if end_date else {})}).fetchall()
     out: Dict[str, Dict[str, Any]] = {}
     n = len(_WINDOW_PERIODS)
     for r in rows:
@@ -479,7 +499,8 @@ def _net_record_for(net, ex: Dict[str, Any] | None) -> Dict[str, str] | None:
     return None
 
 
-def compute_screener(db, clgroup: str = "FIZ", horizon: str = "short") -> Dict[str, Any]:
+def compute_screener(db, clgroup: str = "FIZ", horizon: str = "short",
+                     end_date: date | None = None) -> Dict[str, Any]:
     """Полный ответ скринера: строки по всем фьючерсам с данными ОИ.
 
     clgroup FIZ/YUR: кратность ×N у групп зеркально идентична (net(FIZ) ≡
@@ -493,8 +514,12 @@ def compute_screener(db, clgroup: str = "FIZ", horizon: str = "short") -> Dict[s
     MED_WINDOW дней назад → сейчас, иначе комета показывала бы вчерашний хвост
     под двухнедельным сигналом. Рекорды перекоса/позиции от горизонта не
     зависят (они всегда против всей истории).
+
+    end_date — потолок свежести для тира с задержкой (гость/free, 2026-11-22):
+    вся лента — дневные ряды, интрадей-бар и рекорды — считается так, будто
+    данных новее end_date ещё нет. None — без задержки (платные тиры).
     """
-    series = _bulk_series(db, clgroup, _history_days(horizon))
+    series = _bulk_series(db, clgroup, _history_days(horizon), end_date)
     # Экстремумы перекоса (рекорды) — самый ДОРОГОЙ запрос: скан ВСЕЙ истории
     # позиций (с 2019) по всем фьючерсам. Но меняются раз в день (T+1), не каждые
     # 5 мин → кэшируем отдельно с длинным TTL (30 мин), чтобы 5-минутный пересчёт
@@ -508,13 +533,14 @@ def compute_screener(db, clgroup: str = "FIZ", horizon: str = "short") -> Dict[s
     # деплоя. v4 = «1m» → «3m» (квартал вместо месяца).
     try:
         from api.cache import get_or_compute
+        cap = f":to={end_date.isoformat()}" if end_date else ""
         extremes = get_or_compute(
-            f"oi_extremes:v4:{clgroup}", lambda: _prior_extremes(db, clgroup), ttl=1800
+            f"oi_extremes:v4:{clgroup}{cap}", lambda: _prior_extremes(db, clgroup, end_date), ttl=1800
         )
     except ImportError:
-        extremes = _prior_extremes(db, clgroup)
+        extremes = _prior_extremes(db, clgroup, end_date)
     intraday_set = _intraday_assets(db)
-    intraday_now = _bulk_intraday_now(db, clgroup, intraday_set)
+    intraday_now = _bulk_intraday_now(db, clgroup, intraday_set, end_date)
     min_part = _min_part(clgroup)             # порог ликвидности группы (физ 50 / юр 15)
     step = MED_WINDOW if horizon == "medium" else 1   # окно «было → стало» строки
     low_set = low_activity_set(db)            # малоактивные активы прячем из ленты (как в пикере)

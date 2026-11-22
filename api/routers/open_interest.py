@@ -23,8 +23,12 @@ router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
 oi_router = APIRouter(prefix="/api/oi", tags=["open_interest"])
 
 
-def build_oi_screener(db: Session, clgroup: str, horizon: str):
+def build_oi_screener(db: Session, clgroup: str, horizon: str, end_date: date | None = None):
     """Собирает (или достаёт из кеша) ленту скринера.
+
+    end_date — потолок свежести (задержка тира, см. get_effective_end_date):
+    лента считается так, будто сегодня = end_date (+ ночь). None — без задержки.
+    Ключ кеша раздельный: иначе free получил бы сегодняшнюю ленту платника.
 
     Вынесено из роута, чтобы прогрев кеша (_warmup_cache/_periodic_warm в
     main.py) наполнял его напрямую, минуя tier-проверку — ровно как
@@ -40,9 +44,10 @@ def build_oi_screener(db: Session, clgroup: str, horizon: str):
     # v11 = + net_record (истор. экстремум сырой чистой позиции). v10 = скрытие
     # малоактивных активов. v9 = групповой порог ликвидности + npart/min_part.
     # v8 = окна рекордов. v7 = интрадей только за торг. дни. v6 = + интрадей.
+    cap = f":to={end_date.isoformat()}" if end_date else ""
     return get_or_compute(
-        f"oi_screener:v13:{clgroup}:{horizon}",
-        lambda: compute_screener(db, clgroup, horizon),
+        f"oi_screener:v13:{clgroup}:{horizon}{cap}",
+        lambda: compute_screener(db, clgroup, horizon, end_date=end_date),
         ttl=300,
     )
 
@@ -78,6 +83,12 @@ def get_oi_screener(
     Locked-тиру отдаём МАРКЕР БЕЗ СТРОК (rows=[], locked=true) — как свежему
     срезу в /fund-trades. Блюр рисует фронт по фейковому скелетону; настоящих
     цифр под ним нет, снять их инспектором нечего.
+
+    ⚠️ ПЕРЕСМОТР 2026-11-22 (владелец): гость/free снова видят ленту, но С
+    ЗАДЕРЖКОЙ в день — как график ОИ (oi_screener.data_delay_hours=24). Потолок
+    даты считает бэкенд (get_effective_end_date), фронту не доверяем. В ответе
+    `delayed=true` + `data_end` — по ним фронт рисует плашку «данные с задержкой».
+    Locked-маркер ниже остаётся на случай, если `open` снова выключат.
     """
     limits = get_indicator_limits(user_tier(user), "oi_screener")
     if not limits.get("open", True):
@@ -94,7 +105,11 @@ def get_oi_screener(
             "rows": [],
         }
 
-    return build_oi_screener(db, clgroup, horizon)
+    effective_end = get_effective_end_date(user, "oi_screener")  # None = без задержки
+    data = build_oi_screener(db, clgroup, horizon, end_date=effective_end)
+    if effective_end is None:
+        return data
+    return {**data, "delayed": True, "data_end": effective_end.isoformat()}
 
 
 @oi_router.get("/intraday-assets")

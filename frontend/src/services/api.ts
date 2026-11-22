@@ -389,6 +389,11 @@ export interface OiScreenerResponse {
   // «снять инспектором», потому что данные не покидали сервер.
   locked?: boolean;
   required_tier?: string;
+  // Задержка ленты для гостя/free (2026-11-22, oi_screener.data_delay_hours=24):
+  // строки посчитаны так, будто данных новее data_end ещё нет. У платных тиров
+  // полей нет вовсе.
+  delayed?: boolean;
+  data_end?: string;
   signal_date: string | null;
   intraday_date: string | null;   // свежайший интрадей-бар (5-мин), если новее дневной; для честной подписи
   clgroup: 'FIZ' | 'YUR';
