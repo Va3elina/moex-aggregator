@@ -21,6 +21,8 @@ def test_monthly_terms_25pct_two_renewals():
     assert t["pct"] == RETENTION_PCT == 25
     assert t["periods"] == RETENTION_MONTHS == 2
     assert t["discount_rub"] == round(p.amount * 0.25 * 2)
+    assert t["full_rub"] == round(p.amount)
+    assert t["final_rub"] == round(p.amount * 0.75)
 
 
 @pytest.mark.parametrize("tier", ["basic", "pro"])
@@ -31,6 +33,8 @@ def test_yearly_terms_one_month_free(tier):
     # «Месяц в подарок»: ровно цена месяца того же тарифа, ~10% года.
     assert yearly["discount_rub"] == round(PLANS[f"{tier}_monthly"].amount)
     assert yearly["pct"] == 10
+    assert yearly["full_rub"] == round(PLANS[f"{tier}_yearly"].amount)
+    assert yearly["final_rub"] == yearly["full_rub"] - yearly["discount_rub"]
 
 
 def test_no_terms_for_invite_or_unknown_plans():

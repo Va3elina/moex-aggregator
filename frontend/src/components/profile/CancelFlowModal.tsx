@@ -52,6 +52,8 @@ export interface RetentionOffer {
   pct: number;           // % к каждому льготному списанию
   periods: number;       // сколько продлений подряд со скидкой
   discount_rub: number;  // суммарная экономия
+  full_rub: number;      // цена периода (месяц или год) без скидки
+  final_rub: number;     // цена периода со скидкой
 }
 
 const REASONS: { id: CancelReason; label: string }[] = [
@@ -127,9 +129,9 @@ export default function CancelFlowModal({
   const hasOffer = retentionEligible || canDowngrade;
   // Месячным: «−25%» на N месяцев; годовым: «месяц в подарок», сумма в рублях.
   const isYearlyOffer = retentionOffer?.period === 'yearly';
-  const rub = (retentionOffer?.discount_rub ?? 0).toLocaleString('ru-RU');
+  const fmtRub = (v?: number) => `${(v ?? 0).toLocaleString('ru-RU')} ₽`;
   const offerBadge = retentionOffer
-    ? (isYearlyOffer ? `−${rub} ₽` : `−${retentionOffer.pct}%`)
+    ? (isYearlyOffer ? t('Месяц в подарок') : `−${retentionOffer.pct}%`)
     : '';
 
   // Шаги, которые реально увидит человек (offer — только если есть что предложить).
@@ -338,14 +340,28 @@ export default function CancelFlowModal({
                   backgroundColor: 'color-mix(in srgb, var(--accent) 8%, transparent)',
                 }}
               >
-                <div className="flex items-center justify-center gap-2 mb-1" style={{ color: 'var(--accent)' }}>
-                  <Gift size={18} />
-                  <span className="text-3xl font-extrabold">{offerBadge}</span>
+                {/* Всё по центру одной колонкой: оффер → период → цена → условие */}
+                <div className="flex items-center justify-center gap-2" style={{ color: 'var(--accent)' }}>
+                  <Gift size={22} className="shrink-0" />
+                  <span className="text-2xl font-extrabold leading-tight">{offerBadge}</span>
                 </div>
-                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                <div className="mt-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                   {isYearlyOffer
-                    ? t('Месяц в подарок: вычтем его цену из следующего годового продления. Предложение разовое.')
-                    : t('на {{n}} следующих месяца. Дальше по обычной цене. Предложение разовое.', { n: retentionOffer?.periods })}
+                    ? t('Следующий год {{tier}}', { tier: tierLabel })
+                    : t('{{tier}} на {{n}} месяца, цена за месяц', { n: retentionOffer?.periods, tier: tierLabel })}
+                </div>
+                <div className="mt-1 flex items-baseline justify-center gap-2">
+                  <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {fmtRub(retentionOffer?.final_rub)}
+                  </span>
+                  <span className="text-sm line-through" style={{ color: 'var(--text-muted)' }}>
+                    {fmtRub(retentionOffer?.full_rub)}
+                  </span>
+                </div>
+                <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {isYearlyOffer
+                    ? t('Предложение разовое.')
+                    : t('Потом обычная цена. Предложение разовое.')}
                 </div>
               </div>
             )}
@@ -379,7 +395,7 @@ export default function CancelFlowModal({
                   {loading
                     ? t('Применяем…')
                     : isYearlyOffer
-                      ? t('Получить скидку')
+                      ? t('Забрать месяц в подарок')
                       : t('Получить скидку {{pct}}%', { pct: retentionOffer?.pct })}
                 </button>
               ) : (
@@ -454,7 +470,7 @@ export default function CancelFlowModal({
                 <h3 className="text-lg font-bold mb-2">{t('Скидка применена')}</h3>
                 <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                   {isYearlyOffer
-                    ? t('Следующее продление ({{date}}) будет дешевле на {{rub}} ₽. Спасибо, что остаётесь!', { date: expiresLabel, rub })
+                    ? t('Следующий год за {{price}}. Спасибо, что остаётесь!', { price: fmtRub(retentionOffer?.final_rub) })
                     : t('Следующие {{n}} продления будут на {{pct}}% дешевле. Спасибо, что остаётесь!', { n: retentionOffer?.periods, pct: retentionOffer?.pct })}
                 </p>
               </>

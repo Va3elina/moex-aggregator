@@ -145,6 +145,7 @@ def retention_terms(plan_id: str | None) -> dict | None:
     pct — % к каждому льготному списанию (в subscriptions.discount_pct),
     periods — сколько продлений подряд идут со скидкой,
     discount_rub — суммарная экономия; у годового это точная сумма вычета.
+    full_rub / final_rub — цена периода (месяца или года) без скидки и со скидкой.
     """
     p = PLANS.get(plan_id or "")
     if not p:
@@ -155,6 +156,9 @@ def retention_terms(plan_id: str | None) -> dict | None:
             "pct": RETENTION_PCT,
             "periods": RETENTION_MONTHS,
             "discount_rub": round(p.amount * RETENTION_PCT / 100 * RETENTION_MONTHS),
+            # цена одного месяца без скидки и со скидкой
+            "full_rub": round(p.amount),
+            "final_rub": round(p.amount * (100 - RETENTION_PCT) / 100),
         }
     if p.period == "yearly":
         monthly = monthly_fallback(plan_id or "")
@@ -165,6 +169,9 @@ def retention_terms(plan_id: str | None) -> dict | None:
             "pct": max(1, round(monthly.amount / p.amount * 100)),
             "periods": 1,
             "discount_rub": round(monthly.amount),
+            # цена следующего года без скидки и со скидкой (для зачёркнутой цены)
+            "full_rub": round(p.amount),
+            "final_rub": round(p.amount - monthly.amount),
         }
     return None
 

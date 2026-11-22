@@ -311,8 +311,13 @@
   "Подписка отменена": "Subscription cancelled",
     "Передумаете, нажмите «Возобновить» в профиле.": "Changed your mind? Press “Resume” in your profile.",
   "Готово": "Done",
-  "Месяц в подарок: вычтем его цену из следующего годового продления. Предложение разовое.": "One month free: we take its price off your next yearly renewal. One-time offer.",
-  "Получить скидку": "Get the discount",
   "Получить скидку {{pct}}%": "Get {{pct}}% off",
-  "Следующее продление ({{date}}) будет дешевле на {{rub}} ₽. Спасибо, что остаётесь!": "Your next renewal ({{date}}) will be {{rub}} ₽ cheaper. Thanks for staying!"
+  "Следующее продление ({{date}}) будет дешевле на {{rub}} ₽. Спасибо, что остаётесь!": "Your next renewal ({{date}}) will be {{rub}} ₽ cheaper. Thanks for staying!",
+  "Месяц в подарок": "One month free",
+  "Следующий год {{tier}}": "Next year of {{tier}}",
+  "{{tier}} на {{n}} месяца, цена за месяц": "{{tier}} for {{n}} months, price per month",
+  "Предложение разовое.": "One-time offer.",
+  "Потом обычная цена. Предложение разовое.": "Then the regular price. One-time offer.",
+  "Забрать месяц в подарок": "Claim a free month",
+  "Следующий год за {{price}}. Спасибо, что остаётесь!": "Next year for {{price}}. Thanks for staying!"
 }
