@@ -13,6 +13,7 @@ import AdminBillingInvites from '../components/AdminBillingInvites';
 import ApiKeysSection from '../components/profile/ApiKeysSection';
 import ExtensionTokenSection from '../components/profile/ExtensionTokenSection';
 import TelegramAlertsSection from '../components/profile/TelegramAlertsSection';
+import CancelFlowModal from '../components/profile/CancelFlowModal';
 import { ALERTS_ENABLED } from '../config/alertsConfig';
 import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED, PAYMENT_METHODS_UI_ENABLED } from '../config/features';
 
@@ -127,7 +128,7 @@ export default function ProfilePage() {
   // Real subscription status — fetch'аем при mount, заменяет hardcoded "Бесплатный план"
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
-  const [showRetention, setShowRetention] = useState(false);  // модалка retention-оффера
+  const [showCancelFlow, setShowCancelFlow] = useState(false);  // многошаговый путь отмены
 
   // История платежей — последние N подписок любого статуса
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -188,52 +189,49 @@ export default function ProfilePage() {
     }
   };
 
-  // Cancel или Resume — обе ручки идут через те же args, разные endpoints
-  const handleSubAction = async (action: 'cancel' | 'resume', opts?: { force?: boolean }) => {
-    if (!billing?.subscription_id) return;
-    if (action === 'cancel' && !opts?.force) {
-      // Интерсепт: если доступна retention-скидка — показываем оффер 40% вместо
-      // отмены. «Всё равно отменить» в модалке зовёт с force=true.
-      if (billing.retention_eligible) { setShowRetention(true); return; }
-      if (!window.confirm(
-        t('Отменить подписку?') + '\n\n' + t('Авто-продление будет отключено, но доступ к Pro-функциям останется до конца оплаченного периода.')
-      )) return;
-    }
+  // POST в billing-ручку; true — бэк ответил 2xx.
+  const postBilling = async (path: string, body: Record<string, unknown>): Promise<boolean> => {
+    if (!billing?.subscription_id) return false;
     setCancelLoading(true);
     try {
-      await fetch(`/api/billing/${action}`, {
+      const resp = await fetch(`/api/billing/${path}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('access_token')}`,
         },
-        body: JSON.stringify({ subscription_id: billing.subscription_id }),
+        body: JSON.stringify({ subscription_id: billing.subscription_id, ...body }),
       });
-      fetchBilling();
+      return resp.ok;
+    } catch {
+      return false;
     } finally {
       setCancelLoading(false);
-      setShowRetention(false);
     }
   };
 
-  // Принять retention-оффер: скидка 40% на следующее продление вместо отмены.
-  const acceptRetentionOffer = async () => {
-    if (!billing?.subscription_id) return;
-    setCancelLoading(true);
-    try {
-      await fetch('/api/billing/retention/accept', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
-        },
-        body: JSON.stringify({ subscription_id: billing.subscription_id }),
-      });
-      fetchBilling();
-    } finally {
-      setCancelLoading(false);
-      setShowRetention(false);
-    }
+  // Resume — сразу; cancel — открывает многошаговый путь отмены (CancelFlowModal).
+  const handleResume = async () => {
+    await postBilling('resume', {});
+    fetchBilling();
+  };
+
+  // Закрытие модалки отмены — подтягиваем статус: он мог смениться
+  // (отменили или приняли скидку).
+  const closeCancelFlow = () => {
+    setShowCancelFlow(false);
+    fetchBilling();
+  };
+
+  // Что пропадёт при отмене: для Pro — свои фичи + всё из Basic
+  // (строка «Всё из Basic» ничего не говорит о потере, разворачиваем её).
+  const lostFeatures = (tier: string): string[] => {
+    const own = TIER_FEATURES[tier]?.features ?? [];
+    if (tier !== 'pro') return own;
+    return [
+      ...own.filter(f => f !== 'Всё из Basic'),
+      ...(TIER_FEATURES.basic?.features ?? []).filter(f => f !== '20 уведомлений в Telegram'),
+    ];
   };
 
   if (!user) {
@@ -483,7 +481,7 @@ export default function ProfilePage() {
 
               {billing.cancelled_at ? (
                 <button
-                  onClick={() => handleSubAction('resume')}
+                  onClick={handleResume}
                   disabled={cancelLoading}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
                   style={{
@@ -496,7 +494,7 @@ export default function ProfilePage() {
                 </button>
               ) : (
                 <button
-                  onClick={() => handleSubAction('cancel')}
+                  onClick={() => setShowCancelFlow(true)}
                   disabled={cancelLoading}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
                   style={{
@@ -510,51 +508,19 @@ export default function ProfilePage() {
               )}
             </div>
 
-            {/* Retention-оффер: скидка 40% вместо отмены автопродления (1 раз на аккаунт) */}
-            {showRetention && billing?.subscription_id && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-                <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={() => !cancelLoading && setShowRetention(false)} />
-                <div
-                  className="relative w-full max-w-sm rounded-2xl p-6"
-                  style={{
-                    backgroundColor: 'var(--bg-secondary)',
-                    border: '2px solid var(--text-primary)',
-                    boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  <div className="text-center">
-                    <div className="text-3xl font-extrabold mb-1" style={{ color: 'var(--accent)' }}>−40%</div>
-                    <h3 className="text-lg font-bold mb-2">{t('Останьтесь со скидкой')}</h3>
-                    <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                      {t('Не уходите — следующее продление со скидкой')} <b style={{ color: 'var(--text-primary)' }}>40%</b>. {t('Подписка останется активной, дальше — по обычной цене. Предложение одноразовое.')}
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2.5">
-                    <button
-                      onClick={acceptRetentionOffer}
-                      disabled={cancelLoading}
-                      className="w-full px-4 py-3 rounded-full text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
-                      style={{
-                        backgroundColor: 'var(--accent)',
-                        color: 'var(--text-inverse)',
-                        border: '2px solid var(--text-primary)',
-                        boxShadow: 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))',
-                      }}
-                    >
-                      {cancelLoading ? t('Применяем…') : t('Получить скидку 40%')}
-                    </button>
-                    <button
-                      onClick={() => handleSubAction('cancel', { force: true })}
-                      disabled={cancelLoading}
-                      className="w-full px-4 py-2.5 rounded-full text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-50"
-                      style={{ backgroundColor: 'transparent', color: 'var(--text-muted)' }}
-                    >
-                      {t('Всё равно отменить')}
-                    </button>
-                  </div>
-                </div>
-              </div>
+            {/* Многошаговый путь отмены: что потеряете → причина → оффер → подтверждение */}
+            {showCancelFlow && billing?.subscription_id && (
+              <CancelFlowModal
+                tier={billing.tier}
+                expiresLabel={billing.expires_at ? formatDate(billing.expires_at) : '—'}
+                features={lostFeatures(billing.tier)}
+                retentionEligible={!!billing.retention_eligible}
+                loading={cancelLoading}
+                onClose={closeCancelFlow}
+                onAcceptOffer={() => postBilling('retention/accept', {})}
+                onConfirmCancel={(reason, comment) =>
+                  postBilling('cancel', { reason, comment: comment || null })}
+              />
             )}
           </>
         ) : (

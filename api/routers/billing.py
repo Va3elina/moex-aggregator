@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api.billing import service as billing_service
@@ -449,6 +449,10 @@ async def webhook_yookassa(request: Request, db: Session = Depends(get_db)):
 
 class CancelRequest(BaseModel):
     subscription_id: int
+    # Опрос из многошагового пути отмены (CancelFlowModal). Оба поля
+    # необязательные — человек может пропустить вопрос.
+    reason: str | None = Field(default=None, max_length=32)
+    comment: str | None = Field(default=None, max_length=500)
 
 
 @router.post("/cancel")
@@ -484,8 +488,8 @@ async def cancel(
     sub.cancelled_at = datetime.now(timezone.utc)
     db.commit()
 
-    log.info("User #%s soft-cancelled subscription #%s (access until %s)",
-             user.id, sub.id, sub.expires_at)
+    log.info("User #%s soft-cancelled subscription #%s (access until %s), reason=%s comment=%r",
+             user.id, sub.id, sub.expires_at, body.reason or "-", body.comment or "")
     return {
         "ok": True,
         "cancelled_at": sub.cancelled_at.isoformat(),
