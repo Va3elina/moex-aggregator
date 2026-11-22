@@ -125,7 +125,7 @@ export default function CancelFlowModal({
   const canDowngrade = tier === 'pro';
   const retentionEligible = !!retentionOffer;
   const hasOffer = retentionEligible || canDowngrade;
-  // Месячным: «−25%» на N месяцев; годовым: сумма в рублях одним вычетом.
+  // Месячным: «−25%» на N месяцев; годовым: «месяц в подарок», сумма в рублях.
   const isYearlyOffer = retentionOffer?.period === 'yearly';
   const rub = (retentionOffer?.discount_rub ?? 0).toLocaleString('ru-RU');
   const offerBadge = retentionOffer
@@ -344,7 +344,7 @@ export default function CancelFlowModal({
                 </div>
                 <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                   {isYearlyOffer
-                    ? t('к следующему годовому продлению. Предложение разовое.')
+                    ? t('Месяц в подарок: вычтем его цену из следующего годового продления. Предложение разовое.')
                     : t('на {{n}} следующих месяца. Дальше по обычной цене. Предложение разовое.', { n: retentionOffer?.periods })}
                 </div>
               </div>
