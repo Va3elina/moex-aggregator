@@ -1009,7 +1009,7 @@ export default function FundTradesPage() {
                         должны свободно выходить за пределы карточки, не обрезаясь. */}
                     {/* Панель папки: padding:0 — тулбар и сетка идут от края до края
                         со своими отступами (как было у прежней карточки портфеля). */}
-                    <div className="editorial-frame has-tabs" style={{ padding: 0 }}>
+                    <div className="editorial-frame has-tabs" data-dropdown-boundary style={{ padding: 0 }}>
                         {funds.length > 1 && (
                             <div data-tour="ft-portfolio-funds" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1.5px solid var(--border-color)' }}>
                                 {/* Выбор КОНКРЕТНЫХ фондов — таблица с СЧА/доходностью и

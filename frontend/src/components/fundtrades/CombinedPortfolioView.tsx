@@ -548,6 +548,10 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, varian
                                 onChange={onAsOfChange}
                                 onLockedClick={onMonthLockedClick ? () => onMonthLockedClick() : undefined}
                                 minWidth={132}
+                                // Короткий список без тени, не вылезает за низ
+                                // карточки портфеля (data-dropdown-boundary).
+                                menuMaxHeight={280}
+                                menuNoShadow
                             />
                         </div>
                     ) : freshISO && (
