@@ -1096,6 +1096,21 @@ class MainOrchestrator:
         except Exception as e:
             log.error("billing.send_trial_reminders failed: %s", e, exc_info=True)
 
+        # Уведомление за 3 дня до автосписания платных подписок (Единые правила,
+        # ст. 43). Идемпотентно через таблицу renewal_reminders.
+        def _do_renewal_reminders():
+            from api.billing.renewal_notice import send_renewal_reminders
+            db = SessionLocal()
+            try:
+                return send_renewal_reminders(db)
+            finally:
+                db.close()
+        try:
+            rr = await asyncio.to_thread(_do_renewal_reminders)
+            result["renewal_reminders_sent"] = rr.get("sent", 0)
+        except Exception as e:
+            log.error("billing.send_renewal_reminders failed: %s", e, exc_info=True)
+
         log.info("  💳 Billing hourly result: %s", result)
         return result
 

@@ -747,6 +747,28 @@ def _retry_blocked(sub: Subscription, attempts: list, now: datetime) -> str | No
     return None
 
 
+def renewal_terms(sub: Subscription) -> tuple[str, int, Decimal | float, int]:
+    """Что спишет продление этой подписки: (plan_id, discount_pct, discount_rub, periods_left).
+
+    Общая для renew_expiring_subs и письма-напоминания, чтобы сумма в письме
+    совпадала со списанием.
+    """
+    charge_plan_id = sub.plan_id
+    charge_discount = sub.discount_pct or 0
+    charge_discount_rub = sub.discount_rub or 0
+    # Сколько льготных продлений осталось, включая это. Старые записи
+    # (до миграции 117) имеют discount_periods_left=0 → одно продление.
+    periods_left = (sub.discount_periods_left or 1) if charge_discount else 0
+    if sub.fallback_done:
+        fb = monthly_fallback(sub.plan_id)
+        if fb:
+            charge_plan_id = fb.plan_id
+            charge_discount = 0
+            charge_discount_rub = 0
+            periods_left = 0
+    return charge_plan_id, charge_discount, charge_discount_rub, periods_left
+
+
 def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
     """
     Auto-renewal: для каждой active sub с привязанной картой (payment_method_id
@@ -849,19 +871,7 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
         # Card-1: если годовой уже окончательно провалился по NSF (fallback_done)
         # — списываем МЕСЯЧНЫЙ план того же tier, а не годовой. Retention-скидку,
         # рассчитанную под годовую цену, на месяц НЕ переносим (discount=0).
-        charge_plan_id = sub.plan_id
-        charge_discount = sub.discount_pct or 0
-        charge_discount_rub = sub.discount_rub or 0
-        # Сколько льготных продлений осталось, включая это. Старые записи
-        # (до миграции 117) имеют discount_periods_left=0 → одно продление.
-        periods_left = (sub.discount_periods_left or 1) if charge_discount else 0
-        if sub.fallback_done:
-            fb = monthly_fallback(sub.plan_id)
-            if fb:
-                charge_plan_id = fb.plan_id
-                charge_discount = 0
-                charge_discount_rub = 0
-                periods_left = 0
+        charge_plan_id, charge_discount, charge_discount_rub, periods_left = renewal_terms(sub)
 
         try:
             # discount: retention-скидка истекающей подписки идёт в это
@@ -1180,6 +1190,30 @@ def sync_pending_for_user(
 #  7. Charge recurrent — списать с сохранённой карты (auto-renewal + test #6)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def apply_renewal_discount(
+    base_amount: float | Decimal,
+    discount_pct: int = 0,
+    discount_rub: Decimal | float = 0,
+) -> float | Decimal:
+    """Сумма списания продления с retention-скидкой (общая для списания и письма).
+
+    Без скидки возвращает base_amount как есть (тип не меняем).
+    """
+    rub_off = Decimal(str(discount_rub or 0))
+    if rub_off > 0:
+        # Годовой «месяц в подарок»: точная сумма в рублях. Если вычет съел бы
+        # всю цену (тест-цена 3 ₽), списываем без скидки, а не 0 или минус.
+        base = Decimal(str(base_amount))
+        if base > rub_off:
+            return (base - rub_off).quantize(Decimal("0.01"))
+        return base_amount
+    if discount_pct and 0 < discount_pct < 100:
+        return (
+            Decimal(str(base_amount)) * (100 - discount_pct) / 100
+        ).quantize(Decimal("0.01"))
+    return base_amount
+
+
 def charge_recurrent(
     db: Session,
     user: User,
@@ -1230,18 +1264,8 @@ def charge_recurrent(
     # Тест-цена (BILLING_TEST_USER_IDS) действует и на продлении — иначе первое
     # списание 3₽, а следующее уже 2900₽ и тест рекуррента стоит как боевой.
     base_amount = test_price_for(user, plan.amount)
-    effective_amount = base_amount
-    rub_off = Decimal(str(discount_rub or 0))
-    if rub_off > 0:
-        # Годовой «месяц в подарок»: точная сумма в рублях. Если вычет съел бы
-        # всю цену (тест-цена 3 ₽), списываем без скидки, а не 0 или минус.
-        base = Decimal(str(base_amount))
-        if base > rub_off:
-            effective_amount = (base - rub_off).quantize(Decimal("0.01"))
-    elif discount_pct and 0 < discount_pct < 100:
-        effective_amount = (
-            Decimal(str(base_amount)) * (100 - discount_pct) / 100
-        ).quantize(Decimal("0.01"))
+    effective_amount = apply_renewal_discount(base_amount, discount_pct, discount_rub)
+    rub_off = Decimal(str(discount_rub or 0))  # нужен ниже: carry и описание платежа
 
     # Продление идёт через провайдера ПРИВЯЗКИ (pm.provider), не через
     # глобальный дефолт: T-Bank-карты продлеваются в T-Bank, ЮKassa — в ЮKassa.
