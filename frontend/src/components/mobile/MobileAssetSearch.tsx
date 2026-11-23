@@ -22,6 +22,7 @@ import type { Instrument } from '../../types';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useInstrumentFilter } from '../../hooks/useInstrumentFilter';
 import { getLowActivityInfo } from '../../services/api';
+import { noteFavoriteAdded } from '../../utils/favoritesSignupNudge';
 
 interface MobileAssetSearchProps {
   open: boolean;
@@ -163,9 +164,11 @@ export default function MobileAssetSearch({
 
   const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const adding = !favorites.includes(sectype);
     setFavorites((prev) =>
       prev.includes(sectype) ? prev.filter((t) => t !== sectype) : [...prev, sectype],
     );
+    if (adding) noteFavoriteAdded();
   };
 
   // Фильтрация / дедуп / группировка — общий хук useInstrumentFilter (тот же,

@@ -47,6 +47,7 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 import { useSnapshotTracking } from '../../hooks/useSnapshotTracking';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
+import { noteFavoriteAdded } from '../../utils/favoritesSignupNudge';
 
 type Clgroup = 'FIZ' | 'YUR';
 
@@ -291,10 +292,14 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       return next;
     });
     // При добавлении в избранное — предложить алерт (если блок алертов включён).
+    // Без блока алертов гостю предлагаем сохранить избранное в аккаунт
+    // (два окна подряд не показываем).
     if (adding && onRequestAlert) {
       const row = rows?.find((r) => r.sectype === sectype);
       setAlertPrompt({ sectype, name: row?.name || sectype });
-    } else if (!adding) {
+    } else if (adding) {
+      noteFavoriteAdded();
+    } else {
       setAlertPrompt((p) => (p?.sectype === sectype ? null : p));
     }
   };
