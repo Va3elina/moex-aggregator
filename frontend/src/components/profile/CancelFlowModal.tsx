@@ -340,25 +340,34 @@ export default function CancelFlowModal({
                   backgroundColor: 'color-mix(in srgb, var(--accent) 8%, transparent)',
                 }}
               >
-                {/* Всё по центру одной колонкой: оффер → период → цена → условие */}
+                {/* Всё по центру. Годовым главное «Месяц в подарок», цена тихой
+                    строкой ниже; месячным главное −25% и цена месяца. */}
                 <div className="flex items-center justify-center gap-2" style={{ color: 'var(--accent)' }}>
                   <Gift size={22} className="shrink-0" />
                   <span className="text-2xl font-extrabold leading-tight">{offerBadge}</span>
                 </div>
-                <div className="mt-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {isYearlyOffer
-                    ? t('Следующий год {{tier}}', { tier: tierLabel })
-                    : t('{{tier}} на {{n}} месяца, цена за месяц', { n: retentionOffer?.periods, tier: tierLabel })}
-                </div>
-                <div className="mt-1 flex items-baseline justify-center gap-2">
-                  <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {fmtRub(retentionOffer?.final_rub)}
-                  </span>
-                  <span className="text-sm line-through" style={{ color: 'var(--text-muted)' }}>
-                    {fmtRub(retentionOffer?.full_rub)}
-                  </span>
-                </div>
-                <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                {isYearlyOffer ? (
+                  <p className="mt-3 text-sm text-center" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    {t('Следующий год {{tier}} за', { tier: tierLabel })}{' '}
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{fmtRub(retentionOffer?.final_rub)}</span>{' '}
+                    <span className="line-through whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtRub(retentionOffer?.full_rub)}</span>
+                  </p>
+                ) : (
+                  <>
+                    <div className="mt-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {t('{{tier}} на {{n}} месяца, цена за месяц', { n: retentionOffer?.periods, tier: tierLabel })}
+                    </div>
+                    <div className="mt-1 flex items-baseline justify-center gap-2">
+                      <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                        {fmtRub(retentionOffer?.final_rub)}
+                      </span>
+                      <span className="text-sm line-through" style={{ color: 'var(--text-muted)' }}>
+                        {fmtRub(retentionOffer?.full_rub)}
+                      </span>
+                    </div>
+                  </>
+                )}
+                <div className="mt-2 text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
                   {isYearlyOffer
                     ? t('Предложение разовое.')
                     : t('Потом обычная цена. Предложение разовое.')}

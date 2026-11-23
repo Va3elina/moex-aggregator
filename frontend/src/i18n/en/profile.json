@@ -314,7 +314,7 @@
   "Получить скидку {{pct}}%": "Get {{pct}}% off",
   "Следующее продление ({{date}}) будет дешевле на {{rub}} ₽. Спасибо, что остаётесь!": "Your next renewal ({{date}}) will be {{rub}} ₽ cheaper. Thanks for staying!",
   "Месяц в подарок": "One month free",
-  "Следующий год {{tier}}": "Next year of {{tier}}",
+  "Следующий год {{tier}} за": "Next year of {{tier}} for",
   "{{tier}} на {{n}} месяца, цена за месяц": "{{tier}} for {{n}} months, price per month",
   "Предложение разовое.": "One-time offer.",
   "Потом обычная цена. Предложение разовое.": "Then the regular price. One-time offer.",
