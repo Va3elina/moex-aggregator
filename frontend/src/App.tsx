@@ -14,6 +14,7 @@ import { ToastHost } from './components/anomaly/ToastHost';
 import CookieConsentBanner from './components/CookieConsentBanner';
 import PendingRedeemApplier from './components/PendingRedeemApplier';
 import FounderOfferBanner from './components/FounderOfferBanner';
+import FavoritesSignupModal from './components/favsignup/FavoritesSignupModal';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
@@ -199,6 +200,7 @@ export default function App() {
       <AnalyticsPageViewTracker />
       <ConditionalCookieBanner />
       <FounderOfferBanner />
+      <FavoritesSignupModal />
       <RouterErrorBoundary>
         <Suspense fallback={<div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }} />}>
         <Routes>

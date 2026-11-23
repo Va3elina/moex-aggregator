@@ -56,6 +56,13 @@ const PENDING_KEY = 'frame_sync_pending';
 const LEGACY_MAX_KEYS = 1000;
 const LEGACY_DONE_KEY = 'frame_sync_legacy_done';
 
+/** Списки избранного. Если гость собрал избранное и потом вошёл в аккаунт,
+ *  где избранное уже есть, списки ОБЪЕДИНЯЕМ, а не перетираем серверный
+ *  локальным (окно «Не потеряйте своё избранное» зовёт гостей входить). */
+const FAVORITE_KEYS = new Set(['favoriteInstruments', 'favoriteFundTradeAssets']);
+/** Ключи избранного, записанные без сессии (гостем). `frame_` → не синкается. */
+const GUEST_FAV_KEY = 'frame_sync_guest_fav';
+
 const DEBOUNCE_MS = 1500;
 
 function isTracked(key: string): boolean {
@@ -140,6 +147,43 @@ function clearPending(upTo: number): void {
   if (changed) writePending(p);
 }
 
+function readGuestFav(): Set<string> {
+  try {
+    const raw = localStorage.getItem(GUEST_FAV_KEY);
+    const v = raw ? JSON.parse(raw) : null;
+    return new Set(Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function markGuestFav(key: string): void {
+  if (!FAVORITE_KEYS.has(key) || hasSession() || !rawSetItem) return;
+  const s = readGuestFav();
+  if (s.has(key)) return;
+  s.add(key);
+  try { rawSetItem(GUEST_FAV_KEY, JSON.stringify([...s])); } catch { /* quota */ }
+}
+
+function clearGuestFav(): void {
+  try { rawRemoveItem?.(GUEST_FAV_KEY); } catch { /* ignore */ }
+}
+
+/** Объединение двух JSON-списков строк: сначала серверный порядок, затем
+ *  локальные добавления. null — если хоть один не список строк. */
+function unionLists(serverRaw: string, localRaw: string): string | null {
+  try {
+    const a = JSON.parse(serverRaw);
+    const b = JSON.parse(localRaw);
+    const ok = (x: unknown): x is string[] => Array.isArray(x) && x.every((i) => typeof i === 'string');
+    if (!ok(a) || !ok(b)) return null;
+    const seen = new Set(a);
+    return JSON.stringify([...a, ...b.filter((i) => !seen.has(i))]);
+  } catch {
+    return null;
+  }
+}
+
 function collect(): Record<string, string> {
   const data: Record<string, string> = {};
   try {
@@ -211,6 +255,10 @@ export async function hydrateSettingsFromServer(): Promise<void> {
     hydrated = true;
 
     const local = collect();
+    // Избранное, собранное гостем до входа: на этом pull объединяем со
+    // списком аккаунта (ниже), дальше — обычный last-write-wins.
+    const guestFav = readGuestFav();
+    clearGuestFav();
     if (!server || Object.keys(server).length === 0) {
       // Сервер пуст (первый вход с этого аккаунта) — заливаем локальное.
       if (Object.keys(local).length > 0) schedule();
@@ -239,6 +287,14 @@ export async function hydrateSettingsFromServer(): Promise<void> {
       // Применяем только отслеживаемые строки: серверный блоб не должен уметь
       // писать произвольные ключи (access_token и пр.).
       if (typeof value !== 'string' || !isTracked(key)) continue;
+      if (guestFav.has(key) && key in local) {
+        const merged = unionLists(value, local[key]);
+        if (merged != null) {
+          try { rawSetItem(key, merged); } catch { /* quota */ }
+          needPush = true;
+          continue;
+        }
+      }
       if (key in pending) { needPush = true; continue; }
       try { rawSetItem(key, value); } catch { /* quota */ }
     }
@@ -269,7 +325,7 @@ export function installSettingsSync(): void {
   // localStorage.setItem/removeItem(...) по проекту попадают сюда.
   window.localStorage.setItem = (key: string, value: string): void => {
     rawSetItem(key, value);
-    if (isTracked(key)) { markPending(key); schedule(); }
+    if (isTracked(key)) { markPending(key); markGuestFav(key); schedule(); }
   };
   window.localStorage.removeItem = (key: string): void => {
     rawRemoveItem(key);
