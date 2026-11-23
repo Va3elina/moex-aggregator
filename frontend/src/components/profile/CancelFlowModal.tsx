@@ -108,8 +108,15 @@ const primaryBtn = {
   backgroundColor: 'var(--accent)',
   color: 'var(--text-inverse)',
   border: '2px solid var(--text-primary)',
-  boxShadow: 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))',
 } as const;
+
+// Как у кнопок сайта (button.widget-flat в index.css): в покое без тени,
+// при наведении приподнимается с жёсткой тенью 4×4, при нажатии «вдавливается».
+const primaryBtnCls =
+  'w-full px-4 py-3 rounded-full text-sm font-bold shadow-none transition-[transform,box-shadow] duration-150 '
+  + 'hover:-translate-x-px hover:-translate-y-px hover:shadow-[4px_4px_0_var(--text-primary)] '
+  + 'active:translate-x-px active:translate-y-px active:shadow-[1px_1px_0_var(--text-primary)] '
+  + 'disabled:opacity-50 disabled:pointer-events-none';
 
 const quietBtn = { backgroundColor: 'transparent', color: 'var(--text-muted)' } as const;
 
@@ -236,7 +243,7 @@ export default function CancelFlowModal({
             <div className="flex flex-col gap-2.5">
               <button
                 onClick={onClose}
-                className="w-full px-4 py-3 rounded-full text-sm font-bold transition-opacity hover:opacity-90"
+                className={primaryBtnCls}
                 style={primaryBtn}
               >
                 {t('Оставить подписку')}
@@ -306,7 +313,7 @@ export default function CancelFlowModal({
             <div className="flex flex-col gap-2.5">
               <button
                 onClick={onClose}
-                className="w-full px-4 py-3 rounded-full text-sm font-bold transition-opacity hover:opacity-90"
+                className={primaryBtnCls}
                 style={primaryBtn}
               >
                 {t('Оставить подписку')}
@@ -389,7 +396,7 @@ export default function CancelFlowModal({
                 <button
                   onClick={acceptOffer}
                   disabled={loading}
-                  className="w-full px-4 py-3 rounded-full text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className={primaryBtnCls}
                   style={primaryBtn}
                 >
                   {loading
@@ -401,7 +408,7 @@ export default function CancelFlowModal({
               ) : (
                 <button
                   onClick={onClose}
-                  className="w-full px-4 py-3 rounded-full text-sm font-bold transition-opacity hover:opacity-90"
+                  className={primaryBtnCls}
                   style={primaryBtn}
                 >
                   {t('Оставить подписку')}
@@ -444,7 +451,7 @@ export default function CancelFlowModal({
               <button
                 onClick={onClose}
                 disabled={loading}
-                className="w-full px-4 py-3 rounded-full text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
+                className={primaryBtnCls}
                 style={primaryBtn}
               >
                 {t('Оставить подписку')}
@@ -485,7 +492,7 @@ export default function CancelFlowModal({
             )}
             <button
               onClick={onClose}
-              className="w-full px-4 py-3 rounded-full text-sm font-bold transition-opacity hover:opacity-90"
+              className={primaryBtnCls}
               style={primaryBtn}
             >
               {t('Готово')}
