@@ -1484,6 +1484,39 @@ def start_sbp_binding(
     }
 
 
+def _bound_binding_outcome(db: Session, sub: Subscription) -> dict:
+    """Итог первого списания для заявки, уже переведённой в 'bound'.
+
+    charge_recurrent создаёт отдельную подписку на ту же привязку после заявки:
+    active → списано; pending → СБП ещё дожимается (ждём webhook);
+    failed/нет записи → списание не прошло.
+    """
+    follow = (
+        db.query(Subscription)
+        .filter(
+            Subscription.user_id == sub.user_id,
+            Subscription.payment_method_id == sub.payment_method_id,
+            Subscription.id > sub.id,
+        )
+        .order_by(Subscription.id.asc())
+        .first()
+    )
+    if follow is None or follow.status in ("failed", "cancelled"):
+        return {
+            "status": "failed",
+            "payment_method_id": sub.payment_method_id,
+            "message": "Счёт привязан, но оплатить не удалось. Попробуйте ещё раз.",
+        }
+    if follow.status in ("active", "expired"):  # expired — оплачена, но срок уже прошёл
+        return {
+            "status": "charged",
+            "subscription_id": follow.id,
+            "tier": follow.tier,
+            "expires_at": follow.expires_at.isoformat() if follow.expires_at else None,
+        }
+    return {"status": "waiting"}
+
+
 def poll_sbp_binding(db: Session, user: User, subscription_id: int) -> dict:
     """
     Шаг 2: узнать, подтвердил ли юзер привязку, и если да — списать.
@@ -1501,6 +1534,12 @@ def poll_sbp_binding(db: Session, user: User, subscription_id: int) -> dict:
     if not sub or sub.user_id != user.id:
         raise ValueError("Заявка на привязку не найдена")
 
+    if sub.status == "bound":
+        # Привязка уже отыграла, списание делал прошлый запрос. Его ответ мог не
+        # дойти: на телефоне вкладка спит, пока юзер в приложении банка (24.11.2026
+        # деньги списались, а экран ждал вечно — фронт не знал статуса 'bound').
+        # Итог берём из подписки, которую создал charge_recurrent.
+        return _bound_binding_outcome(db, sub)
     if sub.status != "binding":
         # Уже дообработана (или погашена) — отдаём финальное состояние.
         return {"status": "expired" if sub.status == "failed" else sub.status}
