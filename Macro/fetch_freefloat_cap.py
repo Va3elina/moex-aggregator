@@ -46,6 +46,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from moex_tls import moex_ssl_context  # noqa: E402
 
 BASE_DIR = Path(__file__).parent
 PROJECT_DIR = BASE_DIR.parent
@@ -114,7 +117,7 @@ def ensure_table(engine):
 
 def _iss_json(url: str) -> dict:
     req = urllib.request.Request(url, headers=_UA)
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=30, context=moex_ssl_context()) as r:
         return json.load(r)
 
 

@@ -44,6 +44,7 @@ from api.database import get_engine
 from api.logger import get_logger
 from api.services.early_access import require_feature
 from api.routers.breadth import _adjust_for_split
+from api.ru_tls import RU_TLS_VERIFY  # *.moex.com с 24.11.2026 на цепочке Минцифры
 
 log = get_logger()
 
@@ -122,7 +123,7 @@ async def _fetch_repo_series(ticker: str) -> dict[str, dict[str, float]]:
         "from": HISTORY_FROM.isoformat(),
         "till": date.today().isoformat(),
     }
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, verify=RU_TLS_VERIFY) as client:
         pages = await _fetch_iss_history(client, ISS_URL.format(ticker=ticker), params)
     vol: dict[str, float] = {}
     rate: dict[str, float] = {}
@@ -148,7 +149,7 @@ async def _fetch_rusfar_series() -> dict[str, float]:
         "from": HISTORY_FROM.isoformat(),
         "till": date.today().isoformat(),
     }
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, verify=RU_TLS_VERIFY) as client:
         pages = await _fetch_iss_history(client, RUSFAR_URL, params)
     acc: dict[str, float] = {}
     for page in pages:

@@ -21,6 +21,7 @@ from api.services.session_close import (is_live_viewer, view_tag, published_end,
                                         published_next_day)
 from api.schemas.validators import HeatmapSizeByType, HeatmapColorByType, HeatmapGroupByType
 from api.services.splits import price_splits
+from api.ru_tls import RU_TLS_VERIFY  # *.moex.com с 24.11.2026 на цепочке Минцифры
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 
@@ -475,7 +476,7 @@ async def get_imoex_heatmap(
         # тех.работы ISS) → карта НЕ должна падать 500. Пробуем ISS; при ошибке —
         # последние веса из БД (imoex_weights). 503 только если и БД-фоллбэк пуст.
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
+            async with httpx.AsyncClient(timeout=5, verify=RU_TLS_VERIFY) as client:
                 resp = await client.get(IMOEX_ISS_URL)
                 resp.raise_for_status()
                 data = resp.json()

@@ -35,6 +35,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from moex_tls import moex_ssl_context  # noqa: E402
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_DIR / ".env")
@@ -76,7 +79,7 @@ def get(url: str):
         time.sleep(wait)
     _last[0] = time.monotonic()
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=_UA), timeout=20) as r:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=_UA), timeout=20, context=moex_ssl_context()) as r:
             data = json.load(r)
         _fails[0] = 0
         return data

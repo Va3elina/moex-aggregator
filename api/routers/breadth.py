@@ -20,6 +20,7 @@ from api.security.access_control import enforce_guest_limits, enforce_tier_limit
 from api.services.splits import adjust_prices
 from api.services.session_close import (is_live_viewer, view_tag, published_end,
                                         published_next_day, last_published_date)
+from api.ru_tls import RU_TLS_VERIFY  # *.moex.com с 24.11.2026 на цепочке Минцифры
 
 log = get_logger()
 
@@ -82,7 +83,7 @@ async def get_imoex_tickers() -> set[str]:
         return set(cached)
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, verify=RU_TLS_VERIFY) as client:
             resp = await client.get(IMOEX_ISS_URL)
             resp.raise_for_status()
             data = resp.json()

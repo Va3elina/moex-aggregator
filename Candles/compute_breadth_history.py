@@ -34,6 +34,8 @@ from dotenv import load_dotenv
 import os
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+from moex_tls import moex_ca_bundle  # noqa: E402
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 DB_URL = os.getenv("DB_URL")
@@ -173,7 +175,7 @@ def get_stock_tickers(engine) -> list[str]:
 def get_imoex_tickers() -> list[str]:
     """Получает список тикеров из индекса IMOEX через ISS API."""
     try:
-        resp = httpx.get(IMOEX_ISS_URL, timeout=15)
+        resp = httpx.get(IMOEX_ISS_URL, timeout=15, verify=moex_ca_bundle())
         resp.raise_for_status()
         data = resp.json()
         cols = data["analytics"]["columns"]

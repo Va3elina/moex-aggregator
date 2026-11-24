@@ -31,6 +31,8 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+from moex_tls import moex_ssl_context  # noqa: E402
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 DB_URL = os.getenv("DB_URL")
@@ -322,7 +324,7 @@ async def update_all(force: bool = False) -> dict[str, int]:
     log.info("=" * 60)
 
     results: dict[str, int] = {}
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=moex_ssl_context())) as session:
         for secid, info in INDICES.items():
             try:
                 results[secid] = await update_one(session, engine, secid, info, force)

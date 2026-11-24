@@ -41,6 +41,9 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 DB_URL = os.getenv("DB_URL")
 
+# iss.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+from moex_tls import moex_ssl_context  # noqa: E402
+
 try:
     from moex_calendar import get_moscow_time, is_trading_day
 except ImportError:
@@ -72,7 +75,7 @@ ISS_URL = (
 def fetch_valtoday():
     """Возвращает [(secid, value_rub), ...] для контрактов с VALTODAY > 0."""
     req = urllib.request.Request(ISS_URL, headers={"User-Agent": "frame-oi/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=30, context=moex_ssl_context()) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     md = data["marketdata"]
     cols = md["columns"]

@@ -32,6 +32,9 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 DB_URL = os.getenv("DB_URL")
 
+# iss.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+from moex_tls import moex_ssl_context  # noqa: E402
+
 try:
     from moex_calendar import get_moscow_time, is_trading_day
 except ImportError:
@@ -546,7 +549,8 @@ async def update_indices(force: bool = False) -> Dict[str, int]:
     log.info("📊 ЗАГРУЗКА ИНДЕКСОВ MOEX")
     log.info("=" * 60)
 
-    async with aiohttp.ClientSession() as session:
+    connector = aiohttp.TCPConnector(ssl=moex_ssl_context())
+    async with aiohttp.ClientSession(connector=connector) as session:
         for secid, info in INDICES.items():
             log.info(f"\n📈 {secid} — {info['name']}")
             log.info(f"   endpoint: {info['engine']}/{info['market']}")
