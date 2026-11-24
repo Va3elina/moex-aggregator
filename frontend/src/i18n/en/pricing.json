@@ -150,7 +150,6 @@
   "Оплатить {{sum}} ₽": "Pay {{sum}} ₽",
   "С задержкой 24 часа": "24-hour delay",
   "Тариф {{tier}}": "{{tier}} plan",
-  "Выберите период и способ оплаты": "Choose a billing period and payment method",
   "Бесплатно {{n}} дней, затем автоматическое списание.": "Free for {{n}} days, then automatic billing.",
   "Способ оплаты": "Payment method",
   "Система быстрых платежей": "Faster Payments System (SBP)",
@@ -169,5 +168,6 @@
   "{{sum}} ₽ раз в год · экономия {{save}} ₽": "{{sum}} ₽ once a year · save {{save}} ₽",
   "{{sum}} ₽ раз в год": "{{sum}} ₽ once a year",
   "Списание {{sum}} ₽ каждый месяц": "{{sum}} ₽ charged every month",
-  "Без ввода данных карты": "No card details needed"
+  "Без ввода данных карты": "No card details needed",
+  "Выберите период": "Choose a billing period"
 }
