@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Banknote, Landmark, DollarSign, Building2, Lock } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
-import MobilePageHeader from '../../components/mobile/MobilePageHeader';
+import { MobileModeStrip, MobileContextLine } from '../../components/mobile/MobileModeStrip';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
 import MobileCsvExportSheet from '../../components/mobile/MobileCsvExportSheet';
@@ -107,7 +107,7 @@ export default function MobileCbrFlowsPage() {
             <strong>Время</strong> — глубина истории (1Г/Всё)
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Опции</strong> — тип инструмента (Акции/ОФЗ/Валюта)
+            <strong>Опции</strong> — категории участников
             + скрытие отдельных категорий участников
           </p>
           <p>
@@ -142,11 +142,11 @@ export default function MobileCbrFlowsPage() {
       body: (
         <>
           <p style={{ marginBottom: 4 }}>
-            Открыл кнопку <strong>«Опции»</strong>:
+            <strong>Тип инструмента</strong> — полоска наверху: Акции, ОФЗ
+            (облигации фед.займа), Валюта. У каждого свой список категорий участников.
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Тип инструмента:</strong> Акции, ОФЗ (облигации фед.займа),
-            Валюта. У каждого свой список категорий участников.
+            Открыл кнопку <strong>«Опции»</strong>:
           </p>
           <p>
             <strong>Категории участников</strong> можно скрывать/показывать
@@ -264,12 +264,18 @@ export default function MobileCbrFlowsPage() {
       onRefresh={loadData}
       loading={loading}
     >
-      <MobilePageHeader
-        Icon={Banknote}
-        title="Поток капитала"
-        subtitle={`${typeLabel} · ${periodLabel}`}
+      {/* Тип инструмента — полоской режимов наверху (MobileModeStrip). */}
+      <MobileModeStrip<CbrInstrumentType>
+        ariaLabel="Поток капитала"
+        items={TYPE_TABS.map((tab) => ({ key: tab.key, label: tab.label }))}
+        value={type}
+        onChange={setType}
+        tourId="cbr-type-strip"
+      />
+      <MobileContextLine
+        text={`Период ${periodLabel}`}
         helpLink="/methodology/cbr-flows"
-        sourceNote="Источник: Банк России (ОРФР)"
+        note="Источник: Банк России (ОРФР)"
       />
 
       {/* Нудж «данные с задержкой» убран 2026-08 вместе с самой задержкой
@@ -354,30 +360,7 @@ export default function MobileCbrFlowsPage() {
         title="Опции"
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {/* Тип инструмента */}
-          <div>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-              Тип инструмента
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {TYPE_TABS.map((tab) => {
-                const Icon = tab.Icon;
-                const isActive = type === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    className={`fm-chip ${isActive ? 'active' : ''}`}
-                    onClick={() => setType(tab.key)}
-                    style={{ justifyContent: 'flex-start', gap: 10, padding: '12px 16px' }}
-                  >
-                    <Icon size={16} strokeWidth={2.2} />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
+          {/* Тип инструмента — в полоске режимов наверху страницы. */}
           {/* Категории toggle */}
           {data && data.categories.length > 0 && (
             <div>

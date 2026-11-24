@@ -39,7 +39,7 @@ export default function DelayedDataBadge({
 }: {
   /** Ключ индикатора в INDICATOR_FEATURES — по нему берётся реальная задержка. */
   indicator?: string;
-  variant?: 'banner' | 'compact';
+  variant?: 'banner' | 'compact' | 'strip';
   message?: string;
   compactMessage?: string;
   cta?: string;
@@ -51,6 +51,36 @@ export default function DelayedDataBadge({
     !isLoading &&
     ((limits.data_delay_hours ?? 0) > 0 || (limits.snapshot_delay ?? 0) > 0);
   if (!delayed) return null;
+
+  // 'strip' — мобильная строка во всю ширину под полоской режимов: одна строка
+  // вместо плашки в две (холст «Режимы и задержка», вариант З1, 2026-11).
+  if (variant === 'strip') {
+    return (
+      <div
+        role="note"
+        style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
+          minHeight: 30, padding: '4px clamp(10px, 3.4vw, 14px)',
+          fontSize: 'var(--fs-xs, 0.8125rem)', lineHeight: 1.3,
+          background: 'color-mix(in oklab, var(--accent) 10%, var(--bg-primary))',
+          borderBottom: '1px solid color-mix(in oklab, var(--accent) 28%, transparent)',
+        }}
+      >
+        <Clock size={13} strokeWidth={2.2} style={{ color: 'var(--accent)', flexShrink: 0 }} aria-hidden="true" />
+        <span style={{ minWidth: 0, flex: '0 1 auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span style={{ fontWeight: 600 }}>{t('Данные с задержкой')}</span>{' '}
+          <span style={{ opacity: 0.72 }}>{t(compactMessage)}</span>
+        </span>
+        <span style={{ flex: 1 }} />
+        <a
+          href={pricingUrlFrom('delay_banner', indicator)}
+          style={{ flexShrink: 0, fontWeight: 700, color: 'var(--accent)', textDecoration: 'underline', whiteSpace: 'nowrap' }}
+        >
+          {t(compactCta)}
+        </a>
+      </div>
+    );
+  }
 
   const compact = variant === 'compact';
 

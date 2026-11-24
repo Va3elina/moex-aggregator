@@ -4,13 +4,13 @@
  * Простая структура: chart (cap + ratio) + viewMode toggle + period sheet.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Scale, Lock } from 'lucide-react';
+import { Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
-import MobilePageHeader from '../../components/mobile/MobilePageHeader';
+import { MobileModeStrip, MobileContextLine } from '../../components/mobile/MobileModeStrip';
 import MobileChart from '../../components/mobile/MobileChart';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
@@ -98,7 +98,7 @@ export default function MobileBuffettPage() {
             <strong>Время</strong> — период и шаг агрегации
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Опции</strong> — версия индикатора (Cap/GDP или Cap/M2)
+            <strong>Опции</strong> — выгрузка данных в CSV
           </p>
           <p>
             <strong>Экран</strong> — развернуть график на весь экран
@@ -128,13 +128,14 @@ export default function MobileBuffettPage() {
       onEnter: () => { setPeriodSheetOpen(true); setModeSheetOpen(false); },
     },
     {
-      selector: null,
+      selector: '.fm-modes',
       title: 'Версии индикатора',
-      align: 'top',
+      position: 'bottom',
+      spotlightPadding: 4,
       body: (
         <>
           <p style={{ marginBottom: 6 }}>
-            Открыл кнопку <strong>«Опции»</strong>. Две версии индикатора:
+            Наверху — две версии индикатора:
           </p>
           <p style={{ marginBottom: 4 }}>
             <strong>Cap / ВВП</strong> — классика, сравнение с экономикой.
@@ -148,7 +149,7 @@ export default function MobileBuffettPage() {
           </p>
         </>
       ),
-      onEnter: () => { setViewMode('cap-m2'); setModeSheetOpen(true); setPeriodSheetOpen(false); },
+      onEnter: () => { setViewMode('cap-m2'); setModeSheetOpen(false); setPeriodSheetOpen(false); },
     },
     {
       selector: '[data-tour="buffett-chart"]',
@@ -324,10 +325,24 @@ export default function MobileBuffettPage() {
       onRefresh={loadData}
       loading={loading}
     >
-      <MobilePageHeader
-        Icon={Scale}
-        title="Индикатор Баффетта"
-        subtitle={`${settingsSummary} · ${PERIOD_LABELS[period]}`}
+      {/* Версия индикатора — полоской режимов наверху (MobileModeStrip);
+          «Кап / M2» закрыта тарифом — замок и окно подписки по нажатию. */}
+      <MobileModeStrip<ViewMode>
+        ariaLabel="Индикатор Баффетта"
+        items={[
+          { key: 'cap-gdp', label: 'Кап / ВВП', title: 'Капитализация / ВВП' },
+          { key: 'cap-m2', label: 'Кап / M2', title: 'Капитализация / M2',
+            locked: !buffAccess.isLoading && !buffAccess.canUseMode('cap-m2') },
+        ]}
+        value={viewMode}
+        onChange={setViewMode}
+        onLockedClick={(m) => {
+          const tier = buffAccess.requiredTierFor({ mode: m });
+          if (tier) showUpgrade({ tier, featureName: 'режим «Капитализация / M2»', indicator: 'buffett' });
+        }}
+      />
+      <MobileContextLine
+        text={`${viewMode === 'cap-gdp' ? 'Капитализация / ВВП' : 'Капитализация / M2'} · ${PERIOD_LABELS[period]}`}
         helpLink="/methodology/buffett"
       />
 
@@ -360,64 +375,8 @@ export default function MobileBuffettPage() {
         onClose={() => setModeSheetOpen(false)}
         title="Опции"
       >
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Версия индикатора */}
-          <div>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-              Версия индикатора
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(['cap-gdp', 'cap-m2'] as const).map((m) => {
-                const allowed = buffAccess.isLoading || buffAccess.canUseMode(m);
-                const label = m === 'cap-gdp' ? 'Капитализация / ВВП' : 'Капитализация / M2';
-                return (
-                  <button
-                    key={m}
-                    onClick={() => {
-                      if (!allowed) {
-                        const tier = buffAccess.requiredTierFor({ mode: m });
-                        if (tier) {
-                          showUpgrade({
-                            tier,
-                            featureName: `режим «${label}»`,
-                            indicator: 'buffett',
-                          });
-                        }
-                        return;
-                      }
-                      setViewMode(m);
-                    }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '12px 14px',
-                      background: viewMode === m ? 'var(--accent)' : 'var(--bg-secondary)',
-                      color: viewMode === m ? 'var(--text-inverse)' : 'var(--text-primary)',
-                      border: '1.5px solid var(--text-primary)',
-                      borderRadius: 10,
-                      fontWeight: 700,
-                      fontSize: 'var(--fs-base)',
-                      cursor: allowed ? 'pointer' : 'not-allowed',
-                      opacity: allowed ? 1 : 0.5,
-                      position: 'relative',
-                    }}
-                    aria-disabled={!allowed}
-                  >
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      {label}
-                      {!allowed && <Lock size={12} strokeWidth={2.2} />}
-                    </div>
-                    <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 500, opacity: 0.8, marginTop: 3, lineHeight: 1.3 }}>
-                      {m === 'cap-gdp' ? 'Классика. Сравнение с экономикой.' : 'Альтернатива. Сравнение с денежной массой.'}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-        </div>
+        {/* Версия индикатора переехала в полоску режимов наверху страницы
+            (MobileModeStrip) — здесь остался только экспорт. */}
         <MobileCsvExportRow
           indicator="buffett"
           onClose={() => setModeSheetOpen(false)}

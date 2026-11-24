@@ -11,12 +11,17 @@
  *   - Период через sheet (1д/1н/1м/3м/6м/1г/2г/5л/Всё)
  *   - Один график: цена + net OI
  *   - Экспирации, толкование тура — Phase 4
+ *
+ * Вкладки «График» ⇄ «Скринер сигналов» (?tab=screener, как на десктопе):
+ * скринер — отдельная лента MobileOiScreener в той же оболочке. На его
+ * вкладке нижняя панель оставляет только «Опции» (фильтры ленты), а тап по
+ * строке возвращает на график с выбранным активом.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BarChart3 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import MobileLayout from '../../components/mobile/MobileLayout';
-import MobilePageHeader from '../../components/mobile/MobilePageHeader';
+import { MobileModeStrip, MobileContextLine } from '../../components/mobile/MobileModeStrip';
 import DelayedDataBadge from '../../components/DelayedDataBadge';
 import MobileChart from '../../components/mobile/MobileChart';
 import MobileSheet from '../../components/mobile/MobileSheet';
@@ -24,6 +29,7 @@ import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
 import MobileCsvExportSheet from '../../components/mobile/MobileCsvExportSheet';
 import { buildOiExportConfig } from '../../components/export/exportConfigs';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
+import MobileOiScreener from '../../components/oi/MobileOiScreener';
 import OptionHelp from '../../components/OptionHelp';
 import { OI_VARIANT_HELP } from '../../data/oiVariantHelp';
 import { getChartData, getInstrument } from '../../services/api';
@@ -102,7 +108,29 @@ export default function MobileOpenInterestPage() {
   // State
   // Diplink из Telegram-сигнала: ?instrument= (+ контекст применяется ниже).
   // Раньше на мобилке URL не читался вовсе → актив всегда был дефолтный 'SR'.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { t } = useTranslation();
+
+  // ── Вкладки: график ⇄ «Скринер сигналов». Состояние в URL (?tab=screener),
+  // как на десктопе: переживает перезагрузку, даёт диплинк, а системная кнопка
+  // «назад» возвращает с графика обратно в ленту.
+  const activeTab: 'chart' | 'screener' =
+    searchParams.get('tab') === 'screener' ? 'screener' : 'chart';
+  const isScreener = activeTab === 'screener';
+  const setActiveTab = (tab: 'chart' | 'screener') => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'screener') next.set('tab', tab);
+    else next.delete('tab');
+    setSearchParams(next);
+  };
+  // Лентой владеет MobileOiScreener; странице от неё нужны сводка фильтров
+  // (подзаголовок), флаг загрузки (полоска под шапкой) и «обновить» для жеста
+  // pull-to-refresh. Sheet фильтров открывает кнопка ⚙ нижней панели.
+  const [screenerSummary, setScreenerSummary] = useState('');
+  const [screenerLoading, setScreenerLoading] = useState(false);
+  const [screenerOptionsOpen, setScreenerOptionsOpen] = useState(false);
+  const screenerReloadRef = useRef<(() => Promise<void>) | null>(null);
+
   const [selectedInstrument, setSelectedInstrument] = useState(
     () => searchParams.get('instrument') || 'SR');
   useAssetViewTracking('oi', selectedInstrument);
@@ -174,9 +202,14 @@ export default function MobileOpenInterestPage() {
   // Режима 'price' на мобилке нет → пропускаем. Гард по строке URL + сравнение тикера.
   const selectedInstrumentRef = useRef(selectedInstrument);
   selectedInstrumentRef.current = selectedInstrument;
+
   const appliedDeepLinkRef = useRef('');
   useEffect(() => {
-    const urlKey = searchParams.toString();
+    // ?tab — не часть диплинка: переключение вкладок не должно заново
+    // применять контекст сигнала из URL поверх того, что юзер уже поменял.
+    const linkParams = new URLSearchParams(searchParams);
+    linkParams.delete('tab');
+    const urlKey = linkParams.toString();
     if (urlKey === appliedDeepLinkRef.current) return;
     appliedDeepLinkRef.current = urlKey;
     const dl = parseOiDeepLink(searchParams);
@@ -191,6 +224,20 @@ export default function MobileOpenInterestPage() {
     if (dl.oiVariant) setOiVariant(dl.oiVariant);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // Тап по строке скринера → график ЭТОГО актива без сброса настроек графика
+  // (интервал/период/группа остаются как были — паритет с десктопом). В URL
+  // остаётся только instrument, ?tab пропадает — открывается вкладка графика.
+  // Актив ставим сразу, в том же рендере, что и смену вкладки: если отдать это
+  // эффекту-диплинку, вкладка графика сначала запросит ПРЕЖНИЙ актив и только
+  // потом новый — лишний запрос ряда на мобильной сети.
+  const handleScreenerSelect = (sectype: string) => {
+    if (sectype !== selectedInstrumentRef.current) {
+      setSelectedInstrument(sectype);
+      setInstrumentName('');
+    }
+    setSearchParams({ instrument: sectype });
+  };
 
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -419,14 +466,24 @@ export default function MobileOpenInterestPage() {
     }
   }, [selectedInstrument, intervalValue, clgroup, period, showUpgrade]);
 
-  useEffect(() => { void loadData(); }, [loadData]);
+  // График грузим только на его вкладке: открытый по диплинку скринер не
+  // должен тянуть ряд цен и ОИ, который никто не видит. loadedForRef — чтобы
+  // возврат на вкладку не перезапрашивал уже загруженные данные.
+  const loadedForRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (isScreener || loadedForRef.current === loadData) return;
+    loadedForRef.current = loadData;
+    void loadData();
+  }, [loadData, isScreener]);
   // Реалтайм — инкрементальный догруз: тянем только новые точки вместо полного
   // ряда (5м/6м = 6.2 МБ на каждое SSE-событие, и это на мобильной сети).
   // Дельта не применима → обычный loadData, как раньше.
   useChartRealtimeDelta({
     data,
     onMerged: setData,
-    onFallback: () => { void loadData(); },
+    // На вкладке скринера графика нет на экране — событие с сервера не должно
+    // тянуть его ряд (при возврате на вкладку он загрузится сам).
+    onFallback: () => { if (!isScreener) void loadData(); },
     controls: { sectype: selectedInstrument, interval: intervalValue, clgroup },
   });
 
@@ -510,40 +567,72 @@ export default function MobileOpenInterestPage() {
 
   return (
     <MobileLayout
-      onAssetClick={() => setAssetSearchOpen(true)}
-      assetLabel={instrumentName}
-      assetTicker={frontContract || selectedInstrument}
-      assetSectype={selectedInstrument}
+      // На вкладке скринера актива и периода нет — в нижней панели остаётся
+      // только ⚙ (фильтры ленты); полный экран нужен графику, не списку.
+      onAssetClick={isScreener ? undefined : () => setAssetSearchOpen(true)}
+      assetLabel={isScreener ? undefined : instrumentName}
+      assetTicker={isScreener ? undefined : frontContract || selectedInstrument}
+      assetSectype={isScreener ? undefined : selectedInstrument}
       assetTourId="oi-asset"
-      onTimeClick={() => setPeriodSheetOpen(true)}
-      timeSummary={timeLabel}
+      onTimeClick={isScreener ? undefined : () => setPeriodSheetOpen(true)}
+      timeSummary={isScreener ? undefined : timeLabel}
       timeTourId="oi-time"
-      onSettingsClick={() => setOptionsSheetOpen(true)}
-      settingsSummary={optionsLabel}
+      onSettingsClick={isScreener ? () => setScreenerOptionsOpen(true) : () => setOptionsSheetOpen(true)}
+      settingsSummary={isScreener ? screenerSummary : optionsLabel}
       settingsTourId="oi-settings"
+      enableFullscreen={!isScreener}
       fullscreenTourId="oi-fullscreen"
-      onRefresh={loadData}
-      loading={loading}
+      onRefresh={isScreener ? () => screenerReloadRef.current?.() : loadData}
+      loading={isScreener ? screenerLoading : loading}
     >
-      <MobilePageHeader
-        Icon={BarChart3}
-        title="Открытые позиции"
-        subtitle={`${instrumentName} · ${optionsLabel} · ${timeLabel}`}
+      {/* Полоска режимов и строка настроек — общий верх страниц с подвидами
+          (MobileModeStrip). Режим на виду, а не в «Опциях»: скринер —
+          самостоятельный экран, спрятанный в настройках графика его не находили. */}
+      <MobileModeStrip<'chart' | 'screener'>
+        ariaLabel="Открытые позиции"
+        items={[
+          { key: 'chart', label: t('Открытые позиции') },
+          { key: 'screener', label: t('Скринер сигналов') },
+        ]}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
+      <MobileContextLine
+        text={isScreener ? screenerSummary : `${instrumentName} · ${optionsLabel} · ${timeLabel}`}
         helpLink="/methodology/oi"
       />
 
-      {/* Нудж «данные с задержкой» (Free/гость, data_delay_hours=24). Компакт —
-          чтобы не отъедать высоту у full-bleed графика; padding зеркалит
-          .fm-pageheader, иначе плашка липнет к краям экрана. */}
-      <div style={{ padding: '0 clamp(10px, 3.4vw, 14px)', flexShrink: 0 }}>
+      {/* Задержка для Free/гостя (data_delay_hours=24) — одна строка во всю
+          ширину. У скринера свой ключ матрицы (oi_screener): задержку ленты
+          и графика снимают врозь. */}
+      {isScreener ? (
+        <DelayedDataBadge
+          indicator="oi_screener"
+          variant="strip"
+          compactMessage="— сигналы за вчерашний день."
+          compactCta="Свежие →"
+        />
+      ) : (
         <DelayedDataBadge
           indicator="open_interest"
-          variant="compact"
+          variant="strip"
           compactMessage="— без сегодняшнего дня."
-          compactCta="Свежие данные →"
+          compactCta="Свежие →"
         />
-      </div>
+      )}
 
+      {isScreener && (
+        <MobileOiScreener
+          onSelect={handleScreenerSelect}
+          optionsOpen={screenerOptionsOpen}
+          onOptionsClose={() => setScreenerOptionsOpen(false)}
+          onSummary={setScreenerSummary}
+          onLoading={setScreenerLoading}
+          reloadRef={screenerReloadRef}
+        />
+      )}
+
+      {!isScreener && (<>
       {/* Full-bleed chart — без рамки/padding'а, как в TradingView mobile.
           Absolute positioning гарантирует что chart заполнит весь parent —
           height:100% на MobileChart wrapRef плохо resolves в flex-context
@@ -819,9 +908,13 @@ export default function MobileOpenInterestPage() {
         })}
       />
 
+      </>)}{/* /вкладка графика */}
+
+      {/* Тур — про график (шаги целятся в его кнопки и сам чарт): на вкладке
+          скринера не открываем, покажется при первом заходе на график. */}
       <OnboardingTour
         steps={tourSteps}
-        open={tour.open}
+        open={tour.open && !isScreener}
         onClose={tour.close}
       />
     </MobileLayout>

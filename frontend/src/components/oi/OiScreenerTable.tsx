@@ -32,7 +32,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
 import { Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { t as tt, getLang } from '../../i18n';
+import { t as tt } from '../../i18n';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
 import HelpTooltip from '../HelpTooltip';
@@ -48,6 +48,11 @@ import { useSnapshotTracking } from '../../hooks/useSnapshotTracking';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { requestFavoriteAdd } from '../../utils/favoritesSignupNudge';
+import {
+  GROUP_OPTIONS, FAVORITES_KEY, STRENGTH_ACCENT_THR,
+  fmtRatio, pluralAssets, sideShare, isStrengthAccent, readFavorites,
+  filterSortScreenerRows, sharpRatioRange,
+} from './screenerShared';
 
 type Clgroup = 'FIZ' | 'YUR';
 
@@ -73,23 +78,6 @@ const horizonHelp = () => [
   { heading: tt('Недели'), body: tt('Сдвиг позиции за 14 торговых дней (около двух недель) против того, сколько актив обычно проходит за такой же срок. Показывает то, что копилось неделями и в дневной ленте незаметно.') },
 ];
 
-// Реальные значения instruments.group (как в пикере активов). Ключи — данные,
-// не переводятся; подписи — через t().
-const GROUP_OPTIONS = [
-  { key: 'all', label: 'Все категории' },
-  { key: 'Индексы', label: 'Индексы' },
-  { key: 'Валюта', label: 'Валюта' },
-  { key: 'Сырьё', label: 'Сырьё' },
-  { key: 'Акции', label: 'Акции' },
-  { key: 'Крипто', label: 'Крипто' },
-] as const;
-
-const FAVORITES_KEY = 'favoriteInstruments'; // общий ключ с пикером активов
-
-// «4,3×» в русском, «4.3×» в английском.
-function fmtRatio(r: number): string {
-  return r.toLocaleString(getLang() === 'en' ? 'en-GB' : 'ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
-}
 /** «4,3×» для колонки «Сила» с поджатым десятичным разделителем. В моноширинном
  *  шрифте запятая занимает целую клетку и раздвигала «4 , 3» — число выглядело
  *  шире и иначе, чем «79%» в соседней «Доле». */
@@ -99,20 +87,6 @@ function RatioNum({ r }: { r: number }) {
   if (!m) return <>{s}</>;
   return <>{m[1]}<span style={{ margin: '0 -0.22em' }}>{m[2]}</span>{m[3]}{m[4]}</>;
 }
-/** «1 актив / 2 актива / 5 активов» */
-function pluralAssets(n: number): string {
-  if (getLang() === 'en') return n === 1 ? '1 asset' : `${n} assets`;
-  const mod10 = n % 10, mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return `${n} актив`;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} актива`;
-  return `${n} активов`;
-}
-
-// Порог визуального акцента числа «Силы» (чёрный вместо серого) — одинаков для
-// дня и 2 недель. Не путать с порогом «резко» (sharpThr), от которого зависят
-// тексты и алерты.
-const STRENGTH_ACCENT_THR = 2;
-
 // Кегль чисел «Доли» и «Силы» — общий, ×1,2 к базовому (2026-11).
 const NUM_FS = 'calc(var(--fs-base) * 1.2)';
 
@@ -200,12 +174,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     else { setSortKey(key); setSortDir(-1); }
   };
   const sortArrow = (key: 'ratio' | 'skew') => (sortKey === key ? (sortDir === -1 ? ' ▼' : ' ▲') : '');
-  const [favorites, setFavorites] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem(FAVORITES_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
+  const [favorites, setFavorites] = useState<string[]>(readFavorites);
 
   // ── Стабилизация высоты. Два разных источника «прыжков» — два механизма.
   //
@@ -301,57 +270,13 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     }
   };
 
-  const visible = useMemo(() => {
-    if (!rows) return [];
-    const favSet = new Set(favorites);
-    let out = rows.filter((r) =>
-      (group === 'all' || r.group === group) &&
-      (!onlyFav || favSet.has(r.sectype)),
-    );
-    // Порядок СКВОЗНОЙ по силе. Ни полос по статусу, ни подъёма избранных:
-    //  - полосы (sharp → normal → …) ставили тихую sharp-строку выше громкой
-    //    обычной, и лента противоречила колонке «Сила»; переворот порядка не
-    //    выносил наверх слабейшие — сверху оставалась та же полоса, из-за чего
-    //    сортировка по силе читалась как сломанная;
-    //  - избранные наверху разрывали ряд по силе в произвольных местах. Для
-    //    «только избранные» есть отдельный фильтр ★, он и решает эту задачу.
-    // sortDir = −1 → сильные сверху (дефолт).
-    // По перекосу: −1 → самый лонговый сверху, +1 → самый шортовый сверху.
-    // Строки без перекоса — в конце обеих сторон, как и без силы.
-    if (sortKey === 'skew') {
-      return [...out].sort((a, b) => {
-        if (a.net_pct == null || b.net_pct == null) {
-          if (a.net_pct == null && b.net_pct == null) return 0;
-          return a.net_pct == null ? 1 : -1;
-        }
-        return sortDir * (a.net_pct - b.net_pct);
-      });
-    }
-    out = [...out].sort((a, b) => {
-      // Строки без силы держим в конце ОБЕИХ сортировок вручную: через общий
-      // ключ (ratio ?? −1) по возрастанию они всплыли бы наверх и первая
-      // страница состояла бы из «мало участников».
-      if (a.ratio == null || b.ratio == null) {
-        if (a.ratio == null && b.ratio == null) return 0;
-        return a.ratio == null ? 1 : -1;
-      }
-      return sortDir * (a.ratio - b.ratio);
-    });
-    return out;
-  }, [rows, favorites, group, sortKey, sortDir, onlyFav]);
-
-  // Калибровка размера головы кометы: размах ×N sharp-строк по видимой
-  // выборке. Длина хвоста не нормируется — она
-  // геометрическая, расстояние по шкале от «вчера» к сегодня.
-  // Считается по ВИДИМОЙ выборке — фильтр категории меняет и калибровку,
-  // строки сравниваются с соседями по экрану.
-  const stats = useMemo(() => {
-    const sharpRatios = visible.filter((r) => r.status === 'sharp' && r.ratio != null).map((r) => r.ratio!);
-    return {
-      ratioLo: sharpRatios.length ? Math.min(...sharpRatios) : null,
-      ratioHi: sharpRatios.length ? Math.max(...sharpRatios) : null,
-    };
-  }, [visible]);
+  // Состав и порядок ленты, калибровка головы кометы — общие с мобильной
+  // вкладкой (screenerShared): там же объяснено, почему порядок сквозной.
+  const visible = useMemo(
+    () => (rows ? filterSortScreenerRows(rows, { group, onlyFav, favorites, sortKey, sortDir }) : []),
+    [rows, favorites, group, sortKey, sortDir, onlyFav],
+  );
+  const stats = useMemo(() => sharpRatioRange(visible), [visible]);
 
   const groupWord = clgroup === 'FIZ' ? t('физлица') : t('юрлица');
   const mirrorWord = clgroup === 'FIZ' ? t('юрлица') : t('физлица');
@@ -423,9 +348,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       whiteSpace: 'nowrap', display: 'inline-block', fontWeight: 800,
       // Шрифт как у «Доли»; акцент только цветом и от STRENGTH_ACCENT_THR (2×)
       // на обоих горизонтах — ниже порога «резко» недельной ленты (3×).
-      // Сравниваем ПОКАЗАННОЕ значение (до 0,1): 1,96 выводится как «2,0×» и
-      // не должно быть серым рядом с чёрным «2,0×».
-      color: Math.round(r.ratio * 10) / 10 >= STRENGTH_ACCENT_THR ? 'var(--text-primary)' : 'var(--text-muted)',
+      color: isStrengthAccent(r.ratio) ? 'var(--text-primary)' : 'var(--text-muted)',
     };
     if (r.status !== 'sharp') {
       return (
@@ -829,7 +752,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                     // Сторона читается по цвету — без слова «лонг/шорт». Кегль как у «Силы»:
                     // обе колонки — голые числа (пилюлю у «Силы» убрали, 2026-11).
                     <span style={{ fontSize: NUM_FS, fontWeight: 800, letterSpacing: '0.01em', color: r.net_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-short)' }}>
-                      {Math.round((100 + Math.abs(r.net_pct)) / 2)}%
+                      {sideShare(r.net_pct)}%
                     </span>
                   )}
                 </div>

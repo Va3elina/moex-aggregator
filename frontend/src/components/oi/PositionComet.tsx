@@ -45,6 +45,10 @@ interface Props {
    *  панели песочницы живёт в узком контейнере на большом мониторе — вьюпортный
    *  ×1,5 раздувал бы комету выше его строк. */
   scaleOverride?: number;
+  /** Цвет ободка головы — цвет фона ПОД кометой. По умолчанию карточка
+   *  (bg-secondary); мобильная лента без рамки лежит на bg-primary, и белое
+   *  кольцо на бумажном фоне читалось бы ореолом. */
+  ringColor?: string;
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -87,6 +91,7 @@ export default function PositionComet({
   netPct, netPctPrev, ratio, ratioLo, ratioHi,
   prevLabel, deltaLabel,
   scaleOverride,
+  ringColor = 'var(--bg-secondary)',
 }: Props) {
   const { t } = useTranslation();
   const prevWord = prevLabel ?? t('вчера');
@@ -178,7 +183,7 @@ export default function PositionComet({
     height: headBox,
     marginLeft: -(headR + ring),
     borderRadius: '50%',
-    border: `${ring}px solid var(--bg-secondary)`,
+    border: `${ring}px solid ${ringColor}`,
     background: leg,
   };
 

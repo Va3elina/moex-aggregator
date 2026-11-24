@@ -290,5 +290,14 @@
   "— вы видите сигналы за вчерашний день. Сегодняшняя лента открыта по подписке.": "— you are seeing yesterday's signals. Today's feed is available with a subscription.",
   "— это сигналы за вчерашний день.": "— these are yesterday's signals.",
   "Открыть свежие сигналы →": "Get fresh signals →",
-  "Свежие сигналы →": "Fresh signals →"
+  "Свежие сигналы →": "Fresh signals →",
+  "График": "Chart",
+  "Горизонт": "Horizon",
+  "Категория активов": "Asset category",
+  "Только избранные": "Favorites only",
+  "Нажмите на строку, чтобы открыть график актива.": "Tap a row to open the asset's chart.",
+  "Полоса — шкала долей: слева 100% шорт, по центру поровну, справа 100% лонг. Точка — где {{group}} стоят сейчас, хвост — сдвиг {{over}}.": "The bar is a share scale: 100% short on the left, an even split in the centre, 100% long on the right. The dot is where {{group}} stand now, the tail is the shift {{over}}.",
+  "Сила 4,3× — за 2 недели позиция сдвинулась в 4,3 раза сильнее, чем этот актив обычно проходит за такой срок.": "Strength 4.3× means the position moved 4.3 times more over 2 weeks than this asset usually moves in that time.",
+  "Сила 4,3× — за день позиция сдвинулась в 4,3 раза сильнее, чем этот актив двигается обычно.": "Strength 4.3× means the position moved 4.3 times more over the day than this asset usually moves.",
+  "«!» — позиции по активу обновляются только на конец дня, сигнал появляется на следующий день.": "“!” — positions for this asset update only at the end of the day, so the signal appears the next day."
 }

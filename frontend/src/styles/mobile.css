@@ -290,6 +290,285 @@
   padding-right: clamp(10px, 3.4vw, 14px);
 }
 
+/* ========== Полоска режимов индикатора (MobileModeStrip) ==========
+   Утверждённый вид (холст «Полоска режимов», 2026-11): вкладки делят ширину
+   поровну, подпись по центру своей доли, оранжевая черта СВЕРХУ активной —
+   вкладка «свисает» с нижней линии шапки сайта. Без рамок и заливок: на
+   телефоне мало места для лишнего визуального акцента. */
+.fm-modes {
+  display: flex;
+  align-items: stretch;
+  height: 44px;
+  padding: 0 clamp(10px, 3.4vw, 14px);
+  flex-shrink: 0;
+}
+
+.fm-mode {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  line-height: 1.1;
+  padding: 0 2px 3px;
+  background: none;
+  border: 0;
+  border-top: 3px solid transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-display, var(--font-body, 'Inter', system-ui, sans-serif));
+  font-size: clamp(13px, 3.9vw, 15px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+}
+
+.fm-mode.active {
+  border-top-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.fm-mode[aria-disabled='true'] {
+  opacity: 0.55;
+}
+
+/* 4–5 режимов (фонды, сезонность): мельче, длинная подпись — в две строки. */
+.fm-modes.many .fm-mode {
+  font-size: clamp(11.5px, 3.3vw, 13px);
+}
+
+/* Строка настроек под полоской: текст по центру, «?» методологии сразу за
+   ним. Кружок подогнан к ВИДИМОМУ размеру текста (высота заглавных), а не к
+   высоте строки — на 14px он читался крупнее и жирнее соседних слов. */
+.fm-context {
+  flex-shrink: 0;
+  padding: 0 clamp(10px, 3.4vw, 14px) 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+
+.fm-context-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: clamp(10.5px, 3vw, 11.5px);
+  color: var(--text-secondary);
+}
+
+.fm-context-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fm-context-help {
+  position: relative;
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  margin-top: 1px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 1px solid var(--text-muted);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+
+/* Зона тапа 44px вокруг маленького кружка. */
+.fm-context-help::after {
+  content: '';
+  position: absolute;
+  inset: -16px;
+}
+
+.fm-context-note {
+  margin-top: 2px;
+  text-align: center;
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.fm-app.fullscreen .fm-modes,
+.fm-app.fullscreen .fm-context {
+  display: none;
+}
+
+/* ========== Скринер сигналов ОИ (MobileOiScreener) ==========
+   Утверждённый вариант B (холст, 2026-11): одна строка на актив, без рамки
+   вокруг ленты. Колонка имени узкая (длинное имя растворяется у края, как на
+   ПК), всё свободное место — комете. Доля и сила одним кеглем. Шапка колонок
+   неподвижна, прокручиваются строки. */
+.fm-screener {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fm-screener-grid {
+  display: grid;
+  grid-template-columns: 18px clamp(74px, 22vw, 92px) minmax(0, 1fr) 36px 40px 26px;
+  column-gap: 6px;
+  align-items: center;
+  padding: 0 6px 0 clamp(10px, 3.4vw, 14px);
+}
+
+.fm-screener-head {
+  padding-top: 7px;
+  padding-bottom: 7px;
+  border-bottom: 1.5px solid var(--text-primary);
+  flex-shrink: 0;
+  font-family: 'IBM Plex Mono', 'SF Mono', 'Menlo', monospace;
+  font-size: clamp(8.5px, 2.5vw, 9.5px);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.fm-screener-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+button.fm-screener-th {
+  justify-self: center;
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  margin: -6px 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.fm-screener-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.fm-screener-row {
+  height: 42px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+  cursor: pointer;
+}
+
+.fm-screener-row:active {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.fm-screener-asset {
+  min-width: 0;
+}
+
+.fm-screener-name-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fm-screener-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: clamp(11px, 3.2vw, 12px);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Растворение у правого края — только когда имя реально обрезано
+   (класс ставит компонент по замеру, как FadedAssetName на ПК). */
+.fm-screener-name.faded {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+}
+
+.fm-screener-ticker {
+  font-size: clamp(8.5px, 2.5vw, 9px);
+  color: var(--text-secondary);
+  letter-spacing: 0.03em;
+  line-height: 1.3;
+}
+
+.fm-screener-eod {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 1px solid var(--text-muted);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Доля и сила — ОДИН кегль и начертание, как на ПК (общий NUM_FS). */
+.fm-screener-num {
+  justify-self: center;
+  font-size: clamp(12px, 3.5vw, 13px);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.fm-screener-fav {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.fm-screener-state {
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.fm-screener-foot {
+  padding: 12px clamp(10px, 3.4vw, 14px) 14px;
+  font-size: clamp(10.5px, 3vw, 12px);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.fm-screener-foot p {
+  margin: 0 0 6px;
+}
+
+.fm-screener-foot p:last-child {
+  margin-bottom: 0;
+}
+
 /* ========== Page Actions Bar — fixed между chart и BottomRail ========== */
 .fm-page-actions {
   position: fixed;
