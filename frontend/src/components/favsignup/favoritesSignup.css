@@ -116,18 +116,7 @@
   box-sizing: border-box;
 }
 .fsm-row--last { border-bottom: none; }
-.fsm-dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  color: #FFFFFF;
-  font-size: 10px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-}
+.fsm-logo { display: flex; flex: none; }
 .fsm-ticker { font-weight: 700; font-size: 12px; }
 .fsm-name { font-size: 11px; color: #6B6B6B; }
 .fsm-star { margin-left: auto; position: relative; width: 14px; height: 14px; flex: none; }
@@ -184,7 +173,6 @@
 .fsm-phone-notch { width: 38px; height: 5px; border-radius: 3px; background: #0A0A0A; align-self: center; margin-bottom: 10px; }
 .fsm-phone-title { font-family: var(--font-display, Archivo), Inter, sans-serif; font-weight: 800; font-size: 13px; margin: 0 4px 6px; }
 .fsm-phone .fsm-row { height: 28px; gap: 6px; padding: 0 4px; }
-.fsm-phone .fsm-dot { width: 16px; height: 16px; font-size: 9px; }
 .fsm-phone .fsm-ticker { font-size: 11px; }
 .fsm-phone-new { overflow: hidden; max-height: 0; animation-name: fsm-phone-new; }
 
@@ -363,13 +351,7 @@
   100% { opacity: 1; transform: none; }
 }
 
-/* Без движения: показываем конечный кадр (актив уже в избранном). */
-@media (prefers-reduced-motion: reduce) {
-  .fsm-anim { animation: none !important; }
-  .fsm-backdrop--sheet .fsm-panel { animation: none; }
-  .fsm-row-in, .fsm-phone-new { max-height: 34px; }
-  .fsm-phone-new { max-height: 28px; }
-  .fsm-row-out { max-height: 0; }
-  .fsm-cursor, .fsm-ring, .fsm-tap { opacity: 0; }
-  .fsm-pause { display: none; }
-}
+/* prefers-reduced-motion НЕ глушит анимацию намеренно: в Windows флаг ставит
+   «Эффекты анимации: выкл» (часто выключено ради скорости), и на ПК окно
+   теряло весь смысл — показывало статичный кадр. Анимация мягкая, без
+   вспышек, и её всегда можно остановить кнопкой паузы (WCAG 2.2.2). */

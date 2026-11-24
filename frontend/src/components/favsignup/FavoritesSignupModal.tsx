@@ -1,9 +1,9 @@
 /**
  * FavoritesSignupModal — «Не потеряйте своё избранное».
  *
- * Глобальное окно (смонтировано в App): ждёт событие FAV_SIGNUP_EVENT от
- * звёздочек избранного (см. utils/favoritesSignupNudge — кому и когда) и
- * предлагает гостю бесплатную регистрацию. Десктоп — окно по центру,
+ * Глобальное окно (смонтировано в App): ждёт событие FAV_SIGNUP_EVENT —
+ * гость упёрся в лимит избранного (см. utils/favoritesSignupNudge) — и
+ * предлагает бесплатную регистрацию. Десктоп — окно по центру,
  * телефон (<768px) — нижняя шторка. Сверху — зацикленная анимация
  * добавления актива в избранное (по образцу onboarding-окон TradingView),
  * с паузой. Закрытие: крестик, ESC, клик по фону.
@@ -21,7 +21,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { trackEvent } from '../../hooks/useYandexMetrica';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
-import { FAV_SIGNUP_EVENT, markFavoritesSignupShown } from '../../utils/favoritesSignupNudge';
+import { FAV_SIGNUP_EVENT } from '../../utils/favoritesSignupNudge';
+import InstrumentIcon from '../InstrumentIcon';
 import './favoritesSignup.css';
 
 const STAR_POINTS = '12 2 15 9 22 9.3 16.5 14 18.5 21 12 17 5.5 21 7.5 14 2 9.3 9 9';
@@ -44,12 +45,17 @@ function Star({ filled, className }: { filled: boolean; className?: string }) {
   );
 }
 
-function Row({ letter, color, ticker, name, starred, last }: {
-  letter: string; color: string; ticker: string; name: string; starred: boolean; last?: boolean;
+/** Настоящий логотип эмитента — тот же, что в поиске актива на сайте. */
+function Logo({ ticker, size = 18 }: { ticker: string; size?: number }) {
+  return <span className="fsm-logo"><InstrumentIcon sectype={ticker} size={size} rounded="full" /></span>;
+}
+
+function Row({ ticker, name, starred, last }: {
+  ticker: string; name: string; starred: boolean; last?: boolean;
 }) {
   return (
     <div className={`fsm-row${last ? ' fsm-row--last' : ''}`}>
-      <span className="fsm-dot" style={{ background: color }}>{letter}</span>
+      <Logo ticker={ticker} />
       <span className="fsm-ticker">{ticker}</span>
       <span className="fsm-name">{name}</span>
       <span className="fsm-star"><Star filled={starred} /></span>
@@ -73,15 +79,15 @@ function Preview({ sheet }: { sheet: boolean }) {
     <div className="fsm-scene fsm-anim" aria-hidden="true">
       <div className="fsm-card">
         <div className="fsm-label">{t('ИЗБРАННЫЕ')}</div>
-        <Row letter="S" color="#1E8A4C" ticker="SBER" name={t('Сбербанк')} starred />
+        <Row ticker="SBER" name={t('Сбербанк')} starred />
         <div className="fsm-row-in fsm-anim">
-          <Row letter="Я" color="#0A0A0A" ticker="YDEX" name={t('Яндекс')} starred />
+          <Row ticker="YDEX" name={t('Яндекс')} starred />
         </div>
         <div className="fsm-label fsm-label--second">{t('ОСТАЛЬНЫЕ')}</div>
-        <Row letter="G" color="#2F6FD0" ticker="GAZP" name={t('Газпром')} starred={false} />
+        <Row ticker="GAZP" name={t('Газпром')} starred={false} />
         <div className="fsm-row-out fsm-anim">
           <div className="fsm-row">
-            <span className="fsm-dot" style={{ background: '#0A0A0A' }}>Я</span>
+            <Logo ticker="YDEX" />
             <span className="fsm-ticker">YDEX</span>
             <span className="fsm-name">{t('Яндекс')}</span>
             <span className="fsm-star">
@@ -90,7 +96,7 @@ function Preview({ sheet }: { sheet: boolean }) {
             </span>
           </div>
         </div>
-        <Row letter="L" color="#C8402A" ticker="LKOH" name={t('Лукойл')} starred={false} last />
+        <Row ticker="LKOH" name={t('Лукойл')} starred={false} last />
 
         <div className="fsm-ring fsm-anim" />
         {sheet ? (
@@ -112,12 +118,12 @@ function Preview({ sheet }: { sheet: boolean }) {
           <div className="fsm-phone-notch" />
           <div className="fsm-phone-title">{t('Избранное')}</div>
           <div className="fsm-row">
-            <span className="fsm-dot" style={{ background: '#1E8A4C' }}>S</span>
+            <Logo ticker="SBER" size={16} />
             <span className="fsm-ticker">SBER</span>
           </div>
           <div className="fsm-phone-new fsm-anim">
             <div className="fsm-row">
-              <span className="fsm-dot" style={{ background: '#0A0A0A' }}>Я</span>
+              <Logo ticker="YDEX" size={16} />
               <span className="fsm-ticker">YDEX</span>
             </div>
           </div>
@@ -143,7 +149,6 @@ export default function FavoritesSignupModal() {
   useEffect(() => {
     const onNudge = () => {
       if (isAuthenticated) return;
-      markFavoritesSignupShown();
       setPaused(false);
       setOpenPath(window.location.pathname);
       trackEvent('favsignup_shown', { device: window.innerWidth < 768 ? 'mobile' : 'desktop' });
@@ -156,6 +161,13 @@ export default function FavoritesSignupModal() {
     setOpenPath(null);
     trackEvent('favsignup_close');
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    // Логотипы в сцене — lazy <img> (TickerLogo), часть строк в начале цикла
+    // свёрнута в 0 высоты и без прогрева грузилась бы рывком посреди анимации.
+    for (const t of ['SBER', 'YDEX', 'GAZP', 'LKOH']) new Image().src = `/logos/sm/${t}.png`;
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -229,8 +241,8 @@ export default function FavoritesSignupModal() {
           <h2 id="fsm-title" className="fsm-title">{t('Не потеряйте своё избранное')}</h2>
           <p className="fsm-text">
             {sheet
-              ? t('Сейчас список хранится только в этом браузере — он пропадёт, если очистить данные сайта или сменить телефон. Зарегистрируйтесь, и избранное сохранится в вашем аккаунте.')
-              : t('Сейчас список хранится только в этом браузере — он пропадёт, если очистить данные сайта или зайти с другого устройства. Зарегистрируйтесь, и избранное сохранится в вашем аккаунте.')}
+              ? t('Без аккаунта в избранное можно добавить только 2 актива, и список хранится лишь в этом браузере — он пропадёт, если очистить данные сайта или сменить телефон. Зарегистрируйтесь: избранное станет без ограничений и сохранится в вашем аккаунте.')
+              : t('Без аккаунта в избранное можно добавить только 2 актива, и список хранится лишь в этом браузере — он пропадёт, если очистить данные сайта или зайти с другого устройства. Зарегистрируйтесь: избранное станет без ограничений и сохранится в вашем аккаунте.')}
           </p>
         </div>
         <div className="fsm-actions">
