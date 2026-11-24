@@ -854,7 +854,8 @@ function ConsentModal({
   const renewPeriodRu = trialInfo
     ? trialInfo.periodRu
     : chosen && planChoice?.yearly && chosen === planChoice.yearly ? t('год') : t('месяц');
-  const linkStyle = { color: 'var(--accent)', textDecoration: 'underline' } as const;
+  // Ссылки на документы — цветом текста, только подчёркнуты (без акцента).
+  const linkStyle = { color: 'inherit', textDecoration: 'underline' } as const;
 
   return (
     <div
@@ -977,7 +978,7 @@ function ConsentModal({
               disabled={isLoading}
               onSelect={() => setMethod('sbp')}
               title={t('Система быстрых платежей')}
-              note={t('QR-код или переход в приложение банка, без ввода карты')}
+              note={t('В приложении вашего банка')}
             />
             <MethodOption
               kind="tpay"
@@ -1013,7 +1014,7 @@ function ConsentModal({
           label={
             <>
               {t('Согласен на автоматическое списание')}{' '}
-              <b>{t('{{sum}} ₽ раз в {{period}}', { sum: fmt(renewAmount), period: renewPeriodRu })}</b>{' '}
+              {t('{{sum}} ₽ раз в {{period}}', { sum: fmt(renewAmount), period: renewPeriodRu })}{' '}
               {t('по')}{' '}
               <Link to="/recurring" target="_blank" style={linkStyle}>
                 {t('Договору о рекуррентных платежах')}
@@ -1040,11 +1041,7 @@ function ConsentModal({
             ? (trialInfo ? t('Открываем…') : t('Создаём…'))
             : trialInfo
               ? t('Начать бесплатно')
-              : chosen
-                ? (payBySbp
-                  ? t('Оплатить {{sum}} ₽ по СБП', { sum: fmt(chosen.amount) })
-                  : t('Оплатить {{sum}} ₽', { sum: fmt(chosen.amount) }))
-                : t('Оплатить')}
+              : t('Оплатить')}
         </button>
         {!canConfirm && !isLoading && (
           <p className="mt-2 text-center" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -1131,16 +1128,20 @@ function MethodOption({
  * 36×26 она встаёт в 36×15 — по высоте как видимый знак СБП (~15px).
  */
 function PayMark({ kind }: { kind: 'tpay' | 'sbp' }) {
+  // Знак СБП на 30% крупнее (47×34), T-Pay прежнего размера; оба в боксе
+  // одной ширины, чтобы подписи справа стояли ровно.
+  const [w, h] = kind === 'sbp' ? [47, 34] : [36, 26];
   return (
-    <img
-      src={kind === 'sbp' ? '/pay/sbp.png' : '/pay/tpay.svg'}
-      alt=""
-      aria-hidden="true"
-      width={36}
-      height={26}
-      className="shrink-0"
-      style={{ width: 36, height: 26, objectFit: 'contain' }}
-    />
+    <span className="shrink-0 flex items-center justify-center" style={{ width: 47, height: 34 }}>
+      <img
+        src={kind === 'sbp' ? '/pay/sbp.png' : '/pay/tpay.svg'}
+        alt=""
+        aria-hidden="true"
+        width={w}
+        height={h}
+        style={{ width: w, height: h, objectFit: 'contain' }}
+      />
+    </span>
   );
 }
 
