@@ -1,6 +1,6 @@
 // Конфигурация фондов — общие константы для FundsMoneyPage и FundsCatalogPage
 
-import { BOND_GOV_ISINS, BOND_ISSUER_LOGO } from './bondIssuers.generated';
+import { BOND_GOV_ISINS, BOND_ISSUER_LOGO, BOND_SECID } from './bondIssuers.generated';
 
 // `img` (опц.) — путь к фирменному лого УК (рендерится круглым вместо буквы).
 // letter/bg/color остаются как fallback, если картинка не загрузится.
@@ -536,6 +536,21 @@ const TICKER_TO_NAME_EXTRA: Record<string, string> = {
 export function resolveFundTicker(name?: string | null, isin?: string | null): string | undefined {
     if (isin) return ISIN_TO_TICKER[isin] || undefined;
     return assetTicker(name);
+}
+
+/**
+ * Код бумаги ДЛЯ ПОКАЗА рядом с именем: у акции — её тикер (SBER), у облигации —
+ * биржевой код SECID (SU26254RMFS1, RU000A10…), как его пишут брокеры. Только
+ * подпись и ссылка: график цены/лого акции по-прежнему идут через resolveFundTicker,
+ * облигация не превращается в акцию. У старых ОФЗ SECID ≠ ISIN, поэтому справочник
+ * BOND_SECID (scripts/build_bond_issuers.py); выпуск SU… не из справочника — его
+ * ISIN и есть код (префикс SU выдают только Минфину).
+ */
+export function fundAssetCode(name?: string | null, isin?: string | null): string | undefined {
+    const stock = resolveFundTicker(name, isin);
+    if (stock) return stock;
+    if (!isin) return undefined;
+    return BOND_SECID[isin] ?? (/^SU\d{5}[A-Z]{4}\d$/.test(isin) ? isin : undefined);
 }
 
 /** Каноничное имя бумаги (формат Сезонности); иначе — исходное имя из данных фонда. */

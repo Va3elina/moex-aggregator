@@ -4,7 +4,10 @@
 Генерит frontend/src/config/bondIssuers.generated.ts:
   BOND_GOV_ISINS    — гособлигации (ОФЗ, субъекты РФ, муниципальные) → герб;
   BOND_ISSUER_LOGO  — корпоблигация → тикер акции эмитента (или ключ лого
-                      эмитента без акций), только если у ключа ЕСТЬ лого.
+                      эмитента без акций), только если у ключа ЕСТЬ лого;
+  BOND_SECID        — любая облигация → биржевой код (SECID ISS), его
+                      показываем как «тикер» рядом с именем. У старых ОФЗ
+                      код не равен ISIN (RU000A0JS3W6 → SU26207RMFS9).
 
 Источник — MOEX ISS (наш обычный источник, без скрейпинга):
   securities.json?q=<ISIN>               → emitent_id / emitent_inn / type;
@@ -205,11 +208,14 @@ def main() -> None:
 
     gov: list[str] = []
     issuer: dict[str, str] = {}
+    secid: dict[str, str] = {}
     missing: dict[str, list] = defaultdict(lambda: [0.0, 0])
     for isin in sorted(volume):
         r = info.get(isin)
         if not r or not (r['type'] or '').endswith('_bond'):
             continue  # акции/ДР/фонды — это ISIN_TO_TICKER; неизвестные ISS — пропуск
+        if r.get('secid'):
+            secid[isin] = r['secid']
         if r['type'] in GOV_TYPES or r['emitent_inn'] == MINFIN_INN:
             gov.append(isin)
             continue
@@ -236,6 +242,11 @@ def main() -> None:
         *[f"    {i}: '{t}'," for i, t in sorted(issuer.items())],
         '};',
         '',
+        '// Облигация → биржевой код (SECID). Показывается как тикер рядом с именем.',
+        'export const BOND_SECID: Readonly<Record<string, string>> = {',
+        *[f"    {i}: '{t}'," for i, t in sorted(secid.items())],
+        '};',
+        '',
     ]
     OUT.write_text('\n'.join(lines), encoding='utf-8')
 
@@ -243,7 +254,7 @@ def main() -> None:
     vol_gov = sum(volume[i] for i in gov)
     vol_miss = sum(v[0] for v in missing.values())
     print(f'{OUT.relative_to(ROOT)}: герб {len(gov)} ISIN ({vol_gov / 1e9:.0f} млрд ₽), '
-          f'лого эмитента {len(issuer)} ({vol_issuer / 1e9:.0f} млрд ₽), '
+          f'лого эмитента {len(issuer)} ({vol_issuer / 1e9:.0f} млрд ₽), код {len(secid)}, '
           f'без лого {sum(v[1] for v in missing.values())} ({vol_miss / 1e9:.0f} млрд ₽)')
     print(f'Эмитенты без лого, топ-{a.top} по объёму в фондах на последнюю справку:')
     for title, (v, n) in sorted(missing.items(), key=lambda x: -x[1][0])[:a.top]:

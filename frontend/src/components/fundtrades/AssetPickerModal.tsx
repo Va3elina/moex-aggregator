@@ -4,7 +4,7 @@ import ModalLayer from '../../components/ModalLayer';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { Search, X, Star, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import InstrumentIcon from '../InstrumentIcon';
-import { resolveFundTicker, fundAssetName, fundAssetColor, resolveFundIconTicker } from '../../config/fundConfig';
+import { fundAssetName, fundAssetColor, resolveFundIconTicker, fundAssetCode } from '../../config/fundConfig';
 import { formatCompact } from '../../utils/formatNumber';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { noteFavoriteAdded } from '../../utils/favoritesSignupNudge';
@@ -218,7 +218,8 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
     // Унификация с Сезонностью: резолвим бумагу → каноничный тикер (по ISIN),
     // каноничное имя и фирменный цвет. Лого — через InstrumentIcon (тот же путь,
     // что в ОИ/Сезонности: STOCK_LOGO_OVERRIDE → стикерпак → /logos/<тикер>.png).
-    const ticker = resolveFundTicker(asset.asset_name, asset.isin);
+    // Подпись справа от имени: тикер акции или биржевой код облигации.
+    const code = fundAssetCode(asset.asset_name, asset.isin);
     const iconTicker = resolveFundIconTicker(asset.asset_name, asset.isin);
     const color = fundAssetColor(asset.asset_name, asset.isin);
     const displayName = fundAssetName(asset.asset_name, asset.isin);
@@ -259,9 +260,9 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           <span className="font-bold truncate" style={{ fontSize: 'var(--fs-sm)', lineHeight: isMobile ? 1.25 : undefined }} title={displayName}>
             {displayName}
           </span>
-          {ticker && (
+          {code && (
             <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', lineHeight: isMobile ? 1.2 : undefined }}>
-              {ticker}
+              {code}
             </span>
           )}
         </div>
