@@ -60,6 +60,8 @@ ISS_TQBR_URL = ("https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQ
 
 # === Календарь MOEX ===
 sys.path.insert(0, str(PROJECT_DIR))
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+from moex_tls import moex_ssl_context  # noqa: E402
 try:
     from moex_calendar import get_moscow_time, is_trading_day
 except ImportError:
@@ -369,7 +371,7 @@ def fetch_from_smartlab(engine) -> int:
         req = urllib.request.Request(SMARTLAB_URL, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
-        resp = urllib.request.urlopen(req, timeout=30)
+        resp = urllib.request.urlopen(req, timeout=30, context=moex_ssl_context())
         status = resp.getcode()
         log.info(f"  HTTP статус: {status}")
 
@@ -727,7 +729,7 @@ def fetch_issuesize() -> dict:
     """ISSUESIZE (общее число ВЫПУЩЕННЫХ акций — включая заблокированные, они тоже
     выпущенные) по бумагам TQBR из ISS. База для gap-safe расчёта total."""
     req = urllib.request.Request(ISS_TQBR_URL, headers={"User-Agent": "Mozilla/5.0 (compatible; FrameBot/1.0)"})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=30, context=moex_ssl_context()) as r:
         d = json.load(r)
     c = d["securities"]["columns"]
     si, ii = c.index("SECID"), c.index("ISSUESIZE")

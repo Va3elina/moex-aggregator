@@ -42,6 +42,8 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+from moex_tls import moex_ssl_context  # noqa: E402
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 DB_URL = os.getenv("DB_URL")
@@ -77,7 +79,7 @@ def _get_json(url: str, timeout: int = 30, attempts: int = 3, backoff: float = 3
     for attempt in range(1, attempts + 1):
         try:
             req = urllib.request.Request(url, headers=_UA)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=moex_ssl_context()) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except Exception as e:
             last_err = e

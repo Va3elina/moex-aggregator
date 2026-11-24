@@ -43,6 +43,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from moex_tls import moex_ssl_context  # noqa: E402
 
 PROJECT_DIR = Path(__file__).parent.parent
 load_dotenv(PROJECT_DIR / ".env")
@@ -113,7 +116,7 @@ def _iss_json(url: str) -> dict:
     for attempt in range(ISS_RETRIES):
         try:
             req = urllib.request.Request(url, headers=_UA)
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=30, context=moex_ssl_context()) as r:
                 return json.load(r)
         except Exception as e:  # сеть/5xx/таймаут — ISS периодически моргает
             last_err = e

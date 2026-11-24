@@ -38,6 +38,7 @@ if "@db:" in _db:
     os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
 import pipeline_heartbeat              # noqa: E402
+from moex_tls import moex_ca_bundle     # noqa: E402  (web.moex.com на Минцифры)
 from api.database import SessionLocal  # noqa: E402
 from signals import config             # noqa: E402
 
@@ -78,7 +79,8 @@ _INSERT = text("""
 
 def _fetch_events() -> list[dict]:
     """Парсит CSV закрытий реестра. Кодировка Windows-1251 — НЕ UTF-8."""
-    r = requests.get(CSV_URL, headers={"User-Agent": _UA}, timeout=HTTP_TIMEOUT)
+    r = requests.get(CSV_URL, headers={"User-Agent": _UA}, timeout=HTTP_TIMEOUT,
+                     verify=moex_ca_bundle())
     r.raise_for_status()
     raw = r.content.decode("windows-1251")
     reader = csv.reader(io.StringIO(raw), delimiter=";")

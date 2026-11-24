@@ -30,6 +30,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from moex_tls import moex_ssl_context  # noqa: E402
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_DIR / ".env")
@@ -45,7 +48,7 @@ log = logging.getLogger("stock_splits")
 def fetch_iss_splits() -> dict[str, tuple[str, float]]:
     """{secid: (tradedate, ratio)} — по последнему сплиту бумаги."""
     req = urllib.request.Request(ISS_SPLITS, headers=_UA)
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=30, context=moex_ssl_context()) as r:
         d = json.load(r)["splits"]
     cols = d["columns"]
     out: dict[str, tuple[str, float]] = {}

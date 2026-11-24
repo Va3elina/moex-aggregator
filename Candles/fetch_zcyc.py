@@ -25,6 +25,9 @@ import urllib.request
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import create_engine, text
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from moex_tls import moex_ssl_context  # noqa: E402
 
 DB_URL = os.getenv("DB_URL")
 CBR_URL = ("https://www.cbr.ru/hd_base/zcyc_params/?UniDbQuery.Posted=True"
@@ -58,14 +61,14 @@ def parse_cbr(html: str) -> list[dict]:
 def fetch_cbr(frm: date, to: date) -> list[dict]:
     url = CBR_URL.format(frm=frm.strftime("%d.%m.%Y"), to=to.strftime("%d.%m.%Y"))
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=45) as r:
+    with urllib.request.urlopen(req, timeout=45, context=moex_ssl_context()) as r:
         return parse_cbr(r.read().decode("utf-8", "ignore"))
 
 
 def fetch_iss(d: date) -> dict | None:
     """Кривая за один день из ISS: {date, '1': …}. None — торгов не было."""
     req = urllib.request.Request(ISS_URL.format(d=d.isoformat()), headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=20, context=moex_ssl_context()) as r:
         j = json.load(r)
     блок = j.get("yearyields") or {}
     cols, rows = блок.get("columns") or [], блок.get("data") or []
