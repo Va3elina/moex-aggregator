@@ -1249,7 +1249,7 @@ function ConsentRow({
 }) {
   return (
     <label
-      className="flex items-start gap-3 cursor-pointer select-none mb-3 p-3 rounded-xl border transition-colors"
+      className="flex items-start gap-2.5 cursor-pointer select-none mb-3 px-2.5 py-2 rounded-lg border transition-colors"
       style={{
         borderColor: checked ? 'var(--accent)' : 'var(--border-color)',
         background: checked ? 'rgba(255,92,43,0.06)' : 'transparent',
@@ -1258,16 +1258,16 @@ function ConsentRow({
       <span
         className="relative inline-flex flex-shrink-0 items-center justify-center mt-0.5"
         style={{
-          width: 18,
-          height: 18,
-          borderRadius: 5,
+          width: 16,
+          height: 16,
+          borderRadius: 4,
           background: checked ? 'var(--accent)' : 'transparent',
           border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--border-color)'}`,
           color: 'var(--bg-primary)',
           transition: 'background 0.18s ease, border-color 0.18s ease',
         }}
       >
-        {checked && <Check size={13} strokeWidth={3} />}
+        {checked && <Check size={11} strokeWidth={3} />}
         <input
           type="checkbox"
           checked={checked}
@@ -1282,9 +1282,9 @@ function ConsentRow({
       </span>
       <span
         style={{
-          fontSize: 'var(--fs-sm, 13px)',
+          fontSize: 12,
           color: 'var(--text-primary)',
-          lineHeight: 1.45,
+          lineHeight: 1.4,
         }}
       >
         {label}
