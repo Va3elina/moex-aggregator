@@ -166,8 +166,8 @@
   "Пользовательское соглашение": "Terms of Service",
   "Как мы обрабатываем данные — в": "How we process data is described in the",
   "Политике конфиденциальности": "Privacy Policy",
-  "В приложении вашего банка": "In your bank app",
   "{{sum}} ₽ раз в год · экономия {{save}} ₽": "{{sum}} ₽ once a year · save {{save}} ₽",
   "{{sum}} ₽ раз в год": "{{sum}} ₽ once a year",
-  "Списание {{sum}} ₽ каждый месяц": "{{sum}} ₽ charged every month"
+  "Списание {{sum}} ₽ каждый месяц": "{{sum}} ₽ charged every month",
+  "Без ввода данных карты": "No card details needed"
 }
