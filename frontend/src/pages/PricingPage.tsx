@@ -936,33 +936,79 @@ function ConsentModal({
           </div>
         )}
 
-        {planChoice && chosen && (
-          <div role="radiogroup" aria-label={t('Период оплаты')} className="mb-4">
-            {planChoice.yearly && (
-              <PeriodOption
-                selected={chosen === planChoice.yearly}
-                disabled={isLoading}
-                onSelect={() => planChoice.onSelect(planChoice.yearly!.plan_id)}
-                title={t('Ежегодно')}
-                badge={yearlySaving > 0 ? t('Выгоднее') : null}
-                note={yearlySaving > 0
-                  ? t('Экономия {{sum}} ₽ в год', { sum: fmt(yearlySaving) })
-                  : null}
-                price={`${fmt(planChoice.yearly.amount)} ₽ ${t('/год')}`}
-                subPrice={`${fmt(Math.round(planChoice.yearly.amount / 12))} ₽ ${t('/мес')}`}
-              />
-            )}
-            {planChoice.monthly && (
-              <PeriodOption
-                selected={chosen === planChoice.monthly}
-                disabled={isLoading}
-                onSelect={() => planChoice.onSelect(planChoice.monthly!.plan_id)}
-                title={t('Помесячно')}
-                price={`${fmt(planChoice.monthly.amount)} ₽ ${t('/мес')}`}
-              />
-            )}
-          </div>
-        )}
+        {planChoice && chosen && (() => {
+          // Вариант C: переключатель периода-«таблетка» + крупная цена за месяц.
+          const isYear = chosen === planChoice.yearly;
+          const yearDiscountPct = planChoice.monthly && planChoice.yearly && yearlySaving > 0
+            ? Math.round((yearlySaving / (planChoice.monthly.amount * 12)) * 100)
+            : 0;
+          const perMonth = isYear ? Math.round(chosen.amount / 12) : chosen.amount;
+          const pill = (selected: boolean) => ({
+            minHeight: 40,
+            padding: '0 16px',
+            borderRadius: 999,
+            fontSize: 14,
+            fontWeight: 700,
+            background: selected ? 'var(--text-primary)' : 'transparent',
+            color: selected ? 'var(--bg-primary)' : 'var(--text-primary)',
+            transition: 'background 0.18s ease, color 0.18s ease',
+          });
+          return (
+            <div
+              className="mb-4 flex flex-col items-center text-center"
+              style={{ background: 'var(--bg-secondary)', borderRadius: 16, padding: '16px 16px 18px', gap: 10 }}
+            >
+              {planChoice.yearly && planChoice.monthly && (
+                <div
+                  role="radiogroup"
+                  aria-label={t('Период оплаты')}
+                  className="inline-flex"
+                  style={{ background: 'var(--bg-tertiary)', borderRadius: 999, padding: 3, gap: 3 }}
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={isYear}
+                    disabled={isLoading}
+                    onClick={() => planChoice.onSelect(planChoice.yearly!.plan_id)}
+                    className="inline-flex items-center gap-1.5"
+                    style={pill(isYear)}
+                  >
+                    {t('Ежегодно')}
+                    {yearDiscountPct > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 999, background: 'var(--accent)', color: '#fff' }}>
+                        −{yearDiscountPct}%
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={!isYear}
+                    disabled={isLoading}
+                    onClick={() => planChoice.onSelect(planChoice.monthly!.plan_id)}
+                    style={pill(!isYear)}
+                  >
+                    {t('Помесячно')}
+                  </button>
+                </div>
+              )}
+              <div className="flex items-baseline justify-center gap-1.5">
+                <span style={{ fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                  {fmt(perMonth)}&nbsp;₽
+                </span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('/мес')}</span>
+              </div>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                {isYear
+                  ? (yearlySaving > 0
+                    ? t('{{sum}} ₽ раз в год · экономия {{save}} ₽', { sum: fmt(chosen.amount), save: fmt(yearlySaving) })
+                    : t('{{sum}} ₽ раз в год', { sum: fmt(chosen.amount) }))
+                  : t('Списание {{sum}} ₽ каждый месяц', { sum: fmt(chosen.amount) })}
+              </span>
+            </div>
+          );
+        })()}
 
         {hasSbp && (
           <div role="radiogroup" aria-label={t('Способ оплаты')} className="mb-4">
@@ -1142,96 +1188,6 @@ function PayMark({ kind }: { kind: 'tpay' | 'sbp' }) {
         style={{ width: w, height: h, objectFit: 'contain' }}
       />
     </span>
-  );
-}
-
-/**
- * PeriodOption — радио-карточка периода оплаты в consent-модалке: слева
- * название и пояснение, справа полная сумма списания за период.
- */
-function PeriodOption({
-  selected,
-  disabled,
-  onSelect,
-  title,
-  badge,
-  note,
-  price,
-  subPrice,
-}: {
-  selected: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  title: string;
-  badge?: string | null;
-  note?: string | null;
-  price: string;
-  subPrice?: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      disabled={disabled}
-      onClick={onSelect}
-      className="w-full flex items-start gap-3 text-left mb-2 p-3 rounded-xl border transition-colors"
-      style={{
-        borderColor: selected ? 'var(--accent)' : 'var(--border-color)',
-        background: selected ? 'rgba(255,92,43,0.06)' : 'transparent',
-      }}
-    >
-      <span
-        className="flex-shrink-0 flex items-center justify-center"
-        style={{
-          width: 18,
-          height: 18,
-          marginTop: 1,
-          borderRadius: '50%',
-          border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border-color)'}`,
-        }}
-      >
-        {selected && (
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }} />
-        )}
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="flex items-center gap-2 flex-wrap">
-          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</span>
-          {badge && (
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                padding: '2px 6px',
-                borderRadius: 6,
-                background: 'var(--accent)',
-                color: 'var(--bg-primary)',
-              }}
-            >
-              {badge}
-            </span>
-          )}
-        </span>
-        {note && (
-          <span className="block mt-0.5" style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.35 }}>
-            {note}
-          </span>
-        )}
-      </span>
-      <span className="flex-shrink-0 text-right">
-        <span className="block" style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-          {price}
-        </span>
-        {subPrice && (
-          <span className="block mt-0.5" style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            {subPrice}
-          </span>
-        )}
-      </span>
-    </button>
   );
 }
 
