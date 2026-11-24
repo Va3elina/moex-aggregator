@@ -32,7 +32,7 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 import { useSnapshotTracking } from '../../hooks/useSnapshotTracking';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
-import { noteFavoriteAdded } from '../../utils/favoritesSignupNudge';
+import { requestFavoriteAdd } from '../../utils/favoritesSignupNudge';
 import {
   GROUP_OPTIONS, FAVORITES_KEY,
   fmtRatio, pluralAssets, sideShare, isStrengthAccent, readFavorites,
@@ -195,10 +195,9 @@ export default function MobileOiScreener({
   const toggleFavorite = (sectype: string, e: MouseEvent) => {
     e.stopPropagation();
     const adding = !favorites.includes(sectype);
+    // Лимит избранного у гостя — как в таблице на ПК: окно регистрации вместо звёздочки.
+    if (adding && !requestFavoriteAdd(favorites)) return;
     track('screener_fav', { secid: sectype, on: adding });
-    // Гостю на второй звёздочке — предложение сохранить избранное в аккаунт
-    // (как в таблице на ПК, где нет блока алертов).
-    if (adding) noteFavoriteAdded();
     setFavorites((prev) => {
       const next = prev.includes(sectype) ? prev.filter((s) => s !== sectype) : [...prev, sectype];
       localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
