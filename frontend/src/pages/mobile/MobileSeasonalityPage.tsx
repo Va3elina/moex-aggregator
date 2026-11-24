@@ -8,13 +8,13 @@
  *   - Compare years, exclude dividends — Phase 4
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Lock, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
 import { displayTicker } from '../../utils/displayTicker';
 import MobileLayout from '../../components/mobile/MobileLayout';
-import MobilePageHeader from '../../components/mobile/MobilePageHeader';
+import { MobileModeStrip, MobileContextLine } from '../../components/mobile/MobileModeStrip';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileCsvExportRow from '../../components/mobile/MobileCsvExportRow';
@@ -239,8 +239,7 @@ export default function MobileSeasonalityPage() {
             <strong>Актив</strong> — выбор тикера: акции, валюты, индексы, сырьё
           </p>
           <p>
-            <strong>Опции</strong> — режим (Календарь / Годовая),
-            сравнение с другими годами, фильтры
+            <strong>Опции</strong> — сравнение с другими годами, фильтры
           </p>
         </>
       ),
@@ -254,16 +253,12 @@ export default function MobileSeasonalityPage() {
       body: (
         <>
           <p style={{ marginBottom: 4 }}>
+            <strong>Режимы</strong> — полоска наверху. Дни недели, Месяцы и
+            Дни месяца — средние % по выбранной шкале: видны традиционно
+            сильные и слабые периоды. Годовая — накопленная динамика года.
+          </p>
+          <p style={{ marginBottom: 4 }}>
             Открыл кнопку <strong>«Опции»</strong>. Внутри:
-          </p>
-          <p style={{ marginBottom: 4 }}>
-            <strong>Календарь</strong> — средние % по выбранной шкале
-            (Дни недели / Месяцы / Дни месяца). Видны традиционно сильные
-            и слабые периоды.
-          </p>
-          <p style={{ marginBottom: 4 }}>
-            <strong>Годовая</strong> — накопленная динамика года, можно
-            сравнить текущий год с прошлыми.
           </p>
           <p>
             <strong>Сравнение с годами:</strong> «Период с года» и «Конкретный год».
@@ -449,12 +444,24 @@ export default function MobileSeasonalityPage() {
       onRefresh={loadData}
       loading={loading}
     >
-      <MobilePageHeader
-        Icon={CalendarDays}
-        title="Сезонность"
-        subtitle={`${selectedName} · ${MODE_LABELS[mode]}${
-          periods.length === 1 ? ` · с ${periods[0].sinceYear} г.` : ''
-        }`}
+      {/* Тип графика — полоской режимов наверху (MobileModeStrip). Три
+          «календарных» режима (гистограмма) закрыты тарифом так же, как в
+          «Опциях»; «Часы» на мобиле не предлагаются (см. выше). */}
+      <MobileModeStrip<MobileMode>
+        ariaLabel="Сезонность"
+        items={(['weekday', 'monthly', 'monthday', 'yearly'] as MobileMode[]).map((m) => ({
+          key: m, label: MODE_LABELS[m], locked: m !== 'yearly' && histogramLocked,
+        }))}
+        value={mode}
+        onChange={setMode}
+        onLockedClick={() => {
+          const tier = seasonAccess.requiredTierFor({ mode: 'histogram' });
+          if (tier) showUpgrade({ tier, featureName: 'режим «Календарь»', indicator: 'seasonality' });
+        }}
+        tourId="seasonality-modes-strip"
+      />
+      <MobileContextLine
+        text={`${selectedName}${periods.length === 1 ? ` · с ${periods[0].sinceYear} г.` : ''}`}
         helpLink="/methodology/seasonality"
       />
 
@@ -532,75 +539,8 @@ export default function MobileSeasonalityPage() {
         title="Опции"
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Top-level toggle: Календарь (bars) vs Годовая (line chart).
-              Это разные chart-типы — не объединяем в один список. */}
-          <div>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-              Тип графика
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                className={`fm-chip ${mode !== 'yearly' ? 'active' : ''}`}
-                onClick={() => {
-                  if (histogramLocked) {
-                    const tier = seasonAccess.requiredTierFor({ mode: 'histogram' });
-                    if (tier) {
-                      showUpgrade({
-                        tier,
-                        featureName: 'режим «Календарь»',
-                        indicator: 'seasonality',
-                      });
-                    }
-                    return;
-                  }
-                  if (mode === 'yearly') setMode('monthly');
-                }}
-                style={{
-                  flex: 1,
-                  justifyContent: 'center',
-                  padding: '12px 8px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  opacity: histogramLocked ? 0.5 : 1,
-                  cursor: histogramLocked ? 'not-allowed' : 'pointer',
-                }}
-                aria-disabled={histogramLocked}
-              >
-                Календарь
-                {histogramLocked && <Lock size={11} strokeWidth={2.2} />}
-              </button>
-              <button
-                className={`fm-chip ${mode === 'yearly' ? 'active' : ''}`}
-                onClick={() => setMode('yearly')}
-                style={{ flex: 1, justifyContent: 'center', padding: '12px 8px' }}
-              >
-                Годовая
-              </button>
-            </div>
-          </div>
-
-          {/* Группировка показывается только в гистограммном режиме */}
-          {mode !== 'yearly' && (
-            <div>
-              <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-                Группировка
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {(['weekday', 'monthly', 'monthday'] as MobileMode[]).map((m) => (
-                  <button
-                    key={m}
-                    className={`fm-chip ${mode === m ? 'active' : ''}`}
-                    onClick={() => setMode(m)}
-                    style={{ justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    {MODE_LABELS[m]}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
+          {/* Тип графика и группировка (Дни недели / Месяцы / Дни месяца /
+              Годовая) — в полоске режимов наверху страницы. */}
           {/* Сравнить с — два независимых типа: «Период с года» (rolling, со
               своими настройками — без выбросов / без дивгэпов) + «Конкретный год».
               Суммарный лимит: MAX_COMPARE_SERIES (5). Не считает базовую серию. */}
