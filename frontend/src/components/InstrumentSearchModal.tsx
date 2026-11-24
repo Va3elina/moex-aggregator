@@ -11,7 +11,7 @@ import { useUpgradePrompt } from './tier/UpgradeModal';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useInstrumentFilter } from '../hooks/useInstrumentFilter';
 import { useTranslation } from 'react-i18next';
-import { noteFavoriteAdded } from '../utils/favoritesSignupNudge';
+import { requestFavoriteAdd } from '../utils/favoritesSignupNudge';
 
 interface Instrument {
   sec_id: string;
@@ -248,9 +248,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     e.stopPropagation();
     if (favorites.includes(sectype)) {
       setFavorites(favorites.filter(t => t !== sectype));
-    } else {
+    } else if (requestFavoriteAdd(favorites)) {
       setFavorites([...favorites, sectype]);
-      noteFavoriteAdded();
     }
   };
 

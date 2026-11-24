@@ -15,6 +15,7 @@ import { apiFetch } from '../../services/api';
 import InstrumentIcon from '../InstrumentIcon';
 import { formatCompact } from '../../utils/formatNumber';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { requestFavoriteAdd } from '../../utils/favoritesSignupNudge';
 import { useTranslation } from 'react-i18next';
 import { t } from '../../i18n';
 
@@ -123,6 +124,7 @@ export default function MultiInstrumentSearchModal({
 
     const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
         e.stopPropagation();
+        if (!favorites.includes(sectype) && !requestFavoriteAdd(favorites)) return; // лимит гостя
         setFavorites((prev) => {
             const next = prev.includes(sectype)
                 ? prev.filter((t) => t !== sectype)

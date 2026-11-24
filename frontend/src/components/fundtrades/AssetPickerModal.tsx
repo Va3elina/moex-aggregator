@@ -7,7 +7,7 @@ import InstrumentIcon from '../InstrumentIcon';
 import { fundAssetName, fundAssetColor, resolveFundIconTicker, fundAssetCode } from '../../config/fundConfig';
 import { formatCompact } from '../../utils/formatNumber';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { noteFavoriteAdded } from '../../utils/favoritesSignupNudge';
+import { requestFavoriteAdd } from '../../utils/favoritesSignupNudge';
 
 // Один актив в списке выбора. `key` — стабильный идентификатор строки
 // (обычно isin || asset_name), `funds_count` — сколько фондов держат бумагу.
@@ -134,9 +134,8 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
     e.stopPropagation();
     if (favorites.includes(key)) {
       setFavorites(favorites.filter(k => k !== key));
-    } else {
+    } else if (requestFavoriteAdd(favorites)) {
       setFavorites([...favorites, key]);
-      noteFavoriteAdded();
     }
   };
 

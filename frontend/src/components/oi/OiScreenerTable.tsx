@@ -47,7 +47,7 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 import { useSnapshotTracking } from '../../hooks/useSnapshotTracking';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
-import { noteFavoriteAdded } from '../../utils/favoritesSignupNudge';
+import { requestFavoriteAdd } from '../../utils/favoritesSignupNudge';
 
 type Clgroup = 'FIZ' | 'YUR';
 
@@ -285,6 +285,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const toggleFavorite = (sectype: string, e: MouseEvent) => {
     e.stopPropagation();
     const adding = !favorites.includes(sectype);
+    if (adding && !requestFavoriteAdd(favorites)) return; // лимит гостя → окно регистрации
     track('screener_fav', { secid: sectype, on: adding });
     setFavorites((prev) => {
       const next = prev.includes(sectype) ? prev.filter((s) => s !== sectype) : [...prev, sectype];
@@ -292,14 +293,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       return next;
     });
     // При добавлении в избранное — предложить алерт (если блок алертов включён).
-    // Без блока алертов гостю предлагаем сохранить избранное в аккаунт
-    // (два окна подряд не показываем).
     if (adding && onRequestAlert) {
       const row = rows?.find((r) => r.sectype === sectype);
       setAlertPrompt({ sectype, name: row?.name || sectype });
-    } else if (adding) {
-      noteFavoriteAdded();
-    } else {
+    } else if (!adding) {
       setAlertPrompt((p) => (p?.sectype === sectype ? null : p));
     }
   };
