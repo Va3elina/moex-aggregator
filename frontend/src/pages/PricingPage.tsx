@@ -949,8 +949,9 @@ function ConsentModal({
             borderRadius: 999,
             fontSize: 14,
             fontWeight: 700,
-            background: selected ? 'var(--text-primary)' : 'transparent',
-            color: selected ? 'var(--bg-primary)' : 'var(--text-primary)',
+            // Выбранный период — акцентным оранжевым, белый текст.
+            background: selected ? 'var(--accent)' : 'transparent',
+            color: selected ? '#fff' : 'var(--text-primary)',
             transition: 'background 0.18s ease, color 0.18s ease',
           });
           return (
@@ -976,7 +977,7 @@ function ConsentModal({
                   >
                     {t('Ежегодно')}
                     {yearDiscountPct > 0 && (
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 999, background: 'var(--accent)', color: '#fff' }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 999, background: isYear ? '#fff' : 'var(--accent)', color: isYear ? 'var(--accent)' : '#fff' }}>
                         −{yearDiscountPct}%
                       </span>
                     )}
@@ -1024,7 +1025,7 @@ function ConsentModal({
               disabled={isLoading}
               onSelect={() => setMethod('sbp')}
               title={t('Система быстрых платежей')}
-              note={t('В приложении вашего банка')}
+              note={t('Без ввода данных карты')}
             />
             <MethodOption
               kind="tpay"
