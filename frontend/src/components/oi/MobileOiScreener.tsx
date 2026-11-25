@@ -211,7 +211,9 @@ export default function MobileOiScreener({
     if (key === sortKey) setSortDir((d) => (d === -1 ? 1 : -1));
     else { setSortKey(key); setSortDir(-1); }
   };
-  const sortArrow = (key: ScreenerSortKey) => (sortKey === key ? (sortDir === -1 ? ' ▼' : ' ▲') : '');
+  // Стрелка рисуется в слоте фиксированной ширины (.fm-screener-arrow), который
+  // есть всегда, — подпись не сдвигается, когда сортировку переключают.
+  const sortArrow = (key: ScreenerSortKey) => (sortKey === key ? (sortDir === -1 ? '▼' : '▲') : '');
 
   const hasEodOnly = visible.some((r) => !r.has_intraday);
 
@@ -321,11 +323,11 @@ export default function MobileOiScreener({
         <div className="fm-screener-grid fm-screener-head">
           <span style={{ gridColumn: '1 / 3' }}>{t('Актив')}</span>
           <span className="fm-screener-scale" aria-hidden><span>{t('шорт')}</span><span>{t('лонг')}</span></span>
-          <button type="button" className="fm-screener-th" onClick={() => clickSort('skew')}>
-            {t('Доля')}{sortArrow('skew')}
+          <button type="button" className={`fm-screener-th${sortKey === 'skew' ? ' active' : ''}`} onClick={() => clickSort('skew')}>
+            {t('Доля')}<span className="fm-screener-arrow" aria-hidden>{sortArrow('skew')}</span>
           </button>
-          <button type="button" className="fm-screener-th" onClick={() => clickSort('ratio')}>
-            {t('Сила')}{sortArrow('ratio')}
+          <button type="button" className={`fm-screener-th${sortKey === 'ratio' ? ' active' : ''}`} onClick={() => clickSort('ratio')}>
+            {t('Сила')}<span className="fm-screener-arrow" aria-hidden>{sortArrow('ratio')}</span>
           </button>
           <span />
         </div>
@@ -360,7 +362,7 @@ export default function MobileOiScreener({
                 className="fm-screener-grid fm-screener-row"
                 style={{ opacity: r.status === 'illiquid' || r.status === 'nodata' ? 0.55 : 1 }}
               >
-                <InstrumentIcon sectype={r.sectype} size={18} />
+                <InstrumentIcon sectype={r.sectype} size={24} />
 
                 {/* Актив: узкая колонка, длинное имя растворяется у края. */}
                 <div className="fm-screener-asset">
@@ -382,7 +384,7 @@ export default function MobileOiScreener({
                     ratioHi={stats.ratioHi}
                     prevLabel={prevWord}
                     deltaLabel={overWord}
-                    scaleOverride={0.7}
+                    scaleOverride={0.85}
                     ringColor="var(--bg-primary)"
                   />
                 </div>
@@ -414,7 +416,7 @@ export default function MobileOiScreener({
                   className="fm-screener-fav"
                   style={{ color: isFav ? 'var(--accent)' : 'var(--text-secondary)' }}
                 >
-                  <Star size={15} fill={isFav ? 'var(--accent)' : 'none'} strokeWidth={2} />
+                  <Star size={20} fill={isFav ? 'var(--accent)' : 'none'} strokeWidth={2} />
                 </button>
               </div>
             );

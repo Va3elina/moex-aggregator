@@ -405,68 +405,101 @@
    Утверждённый вариант B (холст, 2026-11): одна строка на актив, без рамки
    вокруг ленты. Колонка имени узкая (длинное имя растворяется у края, как на
    ПК), всё свободное место — комете. Доля и сила одним кеглем. Шапка колонок
-   неподвижна, прокручиваются строки. */
+   неподвижна, прокручиваются строки.
+
+   2026-11-25: строки вдвое выше (≈7 активов на экран вместо ≈13) и крупнее
+   шрифт; сетка целиком помещается в ширину экрана на любом телефоне —
+   колонки сжимаются, а не вылезают за край. */
 .fm-screener {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* Ничего не вылезает вбок: раньше лента сдвигалась пальцем на ~12px. */
+  overflow-x: hidden;
 }
 
+/* Одна сетка на шапку и строки. Колонки задаём от ширины экрана (vw) с
+   потолком, чтобы на 320px всё сжималось, а на 430px не расползалось.
+   Звёздочке — честные 40px под палец (в строке высотой 76px мишень и так
+   на всю высоту). */
 .fm-screener-grid {
   display: grid;
-  grid-template-columns: 18px clamp(74px, 22vw, 92px) minmax(0, 1fr) 36px 40px 26px;
-  column-gap: 6px;
+  grid-template-columns:
+    clamp(22px, 7vw, 28px)
+    clamp(62px, 23vw, 100px)
+    minmax(0, 1fr)
+    clamp(38px, 11.5vw, 46px)
+    clamp(40px, 12.5vw, 50px)
+    clamp(32px, 10vw, 40px);
+  column-gap: clamp(4px, 1.6vw, 8px);
   align-items: center;
-  padding: 0 6px 0 clamp(10px, 3.4vw, 14px);
+  padding: 0 2px 0 clamp(10px, 3.4vw, 14px);
 }
 
+/* Кнопкам ленты снимаем глобальный «тач-минимум» 44×44 (index.css,
+   pointer: coarse): он раздувал ★ и заголовки сортировки шире их колонок —
+   отсюда горизонтальный сдвиг ленты и «разъехавшаяся» шапка. Размер зоны
+   нажатия задаём здесь сами. */
+.fm-screener button {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Шапка — тихая подпись прямо над колонками, без капслока и жирной линии:
+   в прошлой версии подписи стояли «отдельно» от данных. */
 .fm-screener-head {
-  padding-top: 7px;
-  padding-bottom: 7px;
-  border-bottom: 1.5px solid var(--text-primary);
+  height: 30px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 18%, transparent);
   flex-shrink: 0;
-  font-family: 'IBM Plex Mono', 'SF Mono', 'Menlo', monospace;
-  font-size: clamp(8.5px, 2.5vw, 9.5px);
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-primary);
+  font-size: clamp(10.5px, 3vw, 11.5px);
+  font-weight: 600;
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
 .fm-screener-scale {
   display: flex;
   justify-content: space-between;
-  font-size: 0.9em;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--text-secondary);
 }
 
+/* Заголовок-сортировка: стрелка в зарезервированном слоте фиксированной
+   ширины — текст не прыгает при смене колонки сортировки. */
 button.fm-screener-th {
   justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
   background: none;
   border: 0;
-  padding: 6px 0;
-  margin: -6px 0;
+  padding: 0;
   color: inherit;
   font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
   cursor: pointer;
+}
+
+button.fm-screener-th.active {
+  color: var(--text-primary);
+}
+
+.fm-screener-arrow {
+  display: inline-block;
+  width: 0.9em;
+  text-align: right;
+  font-size: 0.85em;
 }
 
 .fm-screener-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
 
 .fm-screener-row {
-  height: 42px;
+  height: 76px;
   border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
   cursor: pointer;
 }
@@ -489,7 +522,7 @@ button.fm-screener-th {
 .fm-screener-name {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: clamp(11px, 3.2vw, 12px);
+  font-size: clamp(13px, 3.9vw, 15px);
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
@@ -504,7 +537,7 @@ button.fm-screener-th {
 }
 
 .fm-screener-ticker {
-  font-size: clamp(8.5px, 2.5vw, 9px);
+  font-size: clamp(10px, 2.9vw, 11px);
   color: var(--text-secondary);
   letter-spacing: 0.03em;
   line-height: 1.3;
@@ -529,7 +562,7 @@ button.fm-screener-th {
 /* Доля и сила — ОДИН кегль и начертание, как на ПК (общий NUM_FS). */
 .fm-screener-num {
   justify-self: center;
-  font-size: clamp(12px, 3.5vw, 13px);
+  font-size: clamp(13.5px, 4.2vw, 16px);
   font-weight: 800;
   letter-spacing: 0.01em;
   white-space: nowrap;
