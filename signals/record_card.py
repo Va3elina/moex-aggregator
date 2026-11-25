@@ -7,7 +7,8 @@
 
 Период — от того, с чем сравниваем:
   • исторический рекорд → период «Всё», отмечены 1–2 главных прежних пика;
-  • рекорд за N лет → самый короткий период страницы /oi (6м, 1г, 5л, Всё), в который попадает прошлый раз, когда
+  • рекорд за 3 месяца / полгода → только текущая точка, без прежних кружков; период 6м / 1г;
+  • рекорд за год и больше → самый короткий период страницы /oi (6м, 1г, 5л, Всё), в который попадает прошлый раз, когда
     было выше; он — главный прежний пик, внутри ещё один крупный, если есть.
 
 Рисует docker-образ frame-chart-render (frontend/chart-render). Любой сбой → None, бот шлёт текст без картинки.
@@ -26,7 +27,9 @@ SITE_API = "https://framedata.ru/api/chart"
 IMAGE = "frame-chart-render"
 MS = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
 PRESETS = (("6м", 182), ("1г", 365), ("5л", 1825))          # периоды страницы открытых позиций сайта
-MONTH_CODE = "FGHJKMNQUVXZ"                                   # буква месяца экспирации фьючерса
+# короткие окна рекорда (дней): прежние случаи кружками не отмечаем — только текущая точка (Вадим 25.11)
+SHORT = {"за 3 месяца": 91, "за полгода": 182}
+MONTH_CODE = "FGHJKMNQUVXZ"                                  # буква месяца экспирации фьючерса
 # показатель бота → режим графика сайта и сторона рекорда
 LEG = {"netl": ("positions", 1), "nets": ("positions", -1), "ntl": ("participants", 1), "nts": ("participants", -1)}
 
@@ -126,6 +129,13 @@ def build(x: dict, value: float, day, cases: list | None = None) -> dict | None:
                 need = (day - oldest).days * 1.15 + 20
                 period, days = next(((p, n) for p, n in PRESETS if n >= need), ("Всё", None))
                 start = (day - dt.timedelta(days=days)).isoformat() if days else None
+    if x["window"] in SHORT:
+        # короткое окно — на графике только текущая точка: кружок, стрелка, крупная подпись; прежние случаи
+        # не отмечаем (Вадим 25.11), период — самый короткий, где видно всё окно
+        peaks = []
+        need = SHORT[x["window"]] * 1.15 + 20
+        period, days = next(((p, n) for p, n in PRESETS if n >= need), ("Всё", None))
+        start = (day - dt.timedelta(days=days)).isoformat() if days else None
     if start:
         off = next((i for i, p in enumerate(line) if p["time"][:10] >= start), 0)
         price, line, vals = price[off:], line[off:], vals[off:]
@@ -138,7 +148,7 @@ def build(x: dict, value: float, day, cases: list | None = None) -> dict | None:
                  "ticker": front_ticker(x["sec"], switches, day), "details": ["1д", period, "Физлица"]},
         "signal": {"headline": head, "colorVar": "--oi-cyan", "dir": "high" if sg > 0 else "low",
                    "peaks": [{"date": line[i]["time"][:10], "value": sg * vals[i], "label": lab(i)} for i in peaks],
-                   "cases": bool(cases)},
+                   "cases": bool(cases) and x["window"] not in SHORT},
     }
 
 
