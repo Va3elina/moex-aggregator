@@ -658,6 +658,9 @@
      Подходит к paper-фону и earth-tone палитре heatmap. */
   --funds-flow-positive: #4A9268;
   --funds-flow-negative: #C46847;
+  /* Покупки в «Сделках фондов» (гистограмма + кругляши) — тот же зелёный, что в
+     палитре рисовки экспорта (AnnotationToolbar «Зелёный»), в пару к красному #C46847. */
+  --fundtrades-buy: #0A6B3B;
   --bg-primary: #F4F1EA;            /* тёплая бумага */
   --bg-secondary: #FFFFFF;          /* panel */
   --bg-tertiary: #F7F4ED;           /* panel-inner */

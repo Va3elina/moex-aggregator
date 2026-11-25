@@ -379,7 +379,7 @@ export default function CompanyFlowsHistogram({
                                         return (
                                             <g key={i} opacity={opacity}>
                                                 {hIn > 0 && (
-                                                    <rect x={x} y={`${midY - hIn}%`} width={w} height={`${hIn}%`} fill={'var(--funds-flow-positive)'} {...strokeProps} rx="2" />
+                                                    <rect x={x} y={`${midY - hIn}%`} width={w} height={`${hIn}%`} fill={'var(--fundtrades-buy, var(--funds-flow-positive))'} {...strokeProps} rx="2" />
                                                 )}
                                                 {hOut > 0 && (
                                                     <rect x={x} y={`${midY}%`} width={w} height={`${hOut}%`} fill={'var(--funds-flow-negative)'} {...strokeProps} rx="2" />
@@ -423,7 +423,7 @@ export default function CompanyFlowsHistogram({
                         {/* Тултип: чистый поток + разбивка по фондам (вклад в движение). */}
                         {hoveredIndex !== null && tooltipPos && hoverBreakdown && (() => {
                             const net = hoverBreakdown.net;
-                            const netColor = net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
+                            const netColor = net >= 0 ? 'var(--fundtrades-buy, var(--funds-flow-positive))' : 'var(--funds-flow-negative)';
                             const MAX_ROWS = 6;
                             const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
                             const extra = hoverBreakdown.rows.length - shown.length;
