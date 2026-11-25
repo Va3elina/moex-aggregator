@@ -6,7 +6,9 @@
  *   - Как watermark на графиках (SimpleChart)
  *
  * Глиф 32×32 — четыре L-образных угла, образующие рамку. Wordmark "FRAME"
- * пишется Archivo 800 рядом, размер пропорционален глифу.
+ * пишется Archivo 800 рядом, размер пропорционален глифу. Сразу за ним —
+ * приписка «data» (меньше и тоньше, цвет основного текста темы): бренд
+ * читается как «FRAMEdata» (25.11.2026).
  *
  * Цвет: по умолчанию `currentColor` — наследует от родителя. Для accent-варианта
  * передавай `color="var(--accent)"`.
@@ -25,7 +27,23 @@ interface FrameLogoProps {
   weight?: 400 | 500 | 600 | 700 | 800;
   /** Дополнительный класс контейнера. */
   className?: string;
+  /** Цвет приписки «data». По умолчанию — цвет основного текста темы
+   *  (в светлой теме чёрный, в тёмной светлый). Водяной знак передаёт
+   *  currentColor, чтобы весь знак был одного цвета. */
+  dataColor?: string;
+  /** Показывать ли приписку «data» после FRAME. По умолчанию да. */
+  showData?: boolean;
 }
+
+// Замеры Archivo в Chrome (25.11.2026): ширина "FRAME" при fontSize 30 и
+// letterSpacing −0.5 — 110 ед. для 800 и ≈106.4 для 700; "data" при 500 —
+// ≈1.98 ед. на 1px кегля. Базовая линия у dominantBaseline="central" лежит
+// на ≈0.335·кегль ниже центра — отсюда сдвиг dy для меньшей «data».
+const FRAME_W: Record<number, number> = { 400: 100, 500: 103, 600: 105, 700: 106.5, 800: 110 };
+const DATA_SIZE = 18;
+const DATA_GAP = 0.5;
+const DATA_W = DATA_SIZE * 1.98;
+const BASELINE_K = 0.335;
 
 export default function FrameLogo({
   size = 28,
@@ -33,6 +51,8 @@ export default function FrameLogo({
   showWordmark = true,
   weight = 800,
   className = '',
+  dataColor = 'var(--text-primary)',
+  showData = true,
 }: FrameLogoProps) {
   // Single-SVG approach: glyph + text в одном SVG с явным y-positioning.
   // Раньше HTML inline-flex/inline-block — alignment зависел от font metrics
@@ -73,7 +93,8 @@ export default function FrameLogo({
   const GLYPH_LEFT_INSET = 3; // x, на котором начинается контент глифа
   const gap = GLYPH_LEFT_INSET - (32 - 29); // = 0: добиваем правый зазор до 3 ед
   const textStartX = 32 + gap;
-  const textWidth = 110; // bumped с 95 — fontSize 30 (вместо 26) занимает больше
+  const frameW = FRAME_W[weight] ?? 110;
+  const textWidth = showData ? frameW + DATA_GAP + DATA_W + 1 : 110;
   const totalWidth = textStartX + textWidth;
   const renderHeight = size;
   const renderWidth = (totalWidth / 32) * size;
@@ -86,7 +107,7 @@ export default function FrameLogo({
         viewBox={`0 0 ${totalWidth} 32`}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        aria-label="Frame"
+        aria-label={showData ? 'FRAMEdata' : 'Frame'}
       >
         {/* Glyph corner brackets */}
         <path d="M3 3 H13 V8 H8 V13 H3 Z" fill={color} />
@@ -106,6 +127,20 @@ export default function FrameLogo({
           dominantBaseline="central"
         >
           FRAME
+          {showData && (
+            // tspan сам встаёт сразу за FRAME (ширина не зависит от толщины);
+            // dy опускает центр меньшего кегля так, чтобы базовые линии совпали.
+            <tspan
+              dx={DATA_GAP}
+              dy={BASELINE_K * (30 - DATA_SIZE)}
+              fontSize={DATA_SIZE}
+              fontWeight={500}
+              letterSpacing={0}
+              fill={dataColor}
+            >
+              data
+            </tspan>
+          )}
         </text>
       </svg>
     </span>
