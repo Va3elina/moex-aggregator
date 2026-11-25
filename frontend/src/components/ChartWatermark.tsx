@@ -64,7 +64,7 @@ export default function ChartWatermark({
     Math.max(lo, Math.min(size, lo + ((vw - 375) * (size - lo)) / (1440 - 375))),
   );
 
-  // В editorial — FRAME-лого (брекеты + wordmark "FRAMEdata"), 1в1 как в шапке, одним цветом.
+  // В editorial — FRAME-лого (брекеты + wordmark "FRAMEDATA"), 1в1 как в шапке.
   // Тёмная тень убирается на light-фонах (она для контраста с цветными
   // гистограммами на dark-теме, но на бумажном #F4F1EA выглядит как UI-артефакт).
   if (isEditorial) {
@@ -83,7 +83,7 @@ export default function ChartWatermark({
           alignItems: 'center',
         }}
       >
-        <FrameLogo size={effSize} color="currentColor" dataColor="currentColor" showWordmark={showText} weight={700} />
+        <FrameLogo size={effSize} color="currentColor" showWordmark={showText} weight={700} />
       </div>
     );
   }
