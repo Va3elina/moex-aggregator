@@ -577,7 +577,7 @@ export default function CompanyFlowsPriceMap({
                                 { color: PRICE_LINE_COLOR, label: priceUnit === 'pct' ? `${assetName || t('Цена')}, ${t('% от номинала')}` : assetName || t('Цена'), marker: 'dot' },
                                 {
                                     color: 'var(--funds-flow-negative)',
-                                    colorRight: 'var(--fundtrades-buy, var(--funds-flow-positive))',
+                                    colorRight: 'var(--oi-green, var(--funds-flow-positive))',
                                     label: t('Чистые покупки и продажи (млн ₽)'),
                                     marker: 'split',
                                 },
@@ -668,7 +668,7 @@ export default function CompanyFlowsPriceMap({
                                 const r = rFor(m.net) * popFor(i, visMarkers.length);
                                 if (r <= 0.2) return null;
                                 const dim = hoveredIdx !== null && hoveredIdx !== i;
-                                const color = m.net > 0 ? 'var(--fundtrades-buy, var(--funds-flow-positive))' : 'var(--funds-flow-negative)';
+                                const color = m.net > 0 ? 'var(--oi-green, var(--funds-flow-positive))' : 'var(--funds-flow-negative)';
                                 const left = `${xFrac(m.wi) * 100}%`;
                                 const yLine = lineYAtX(xFrac(m.wi) * 1000);
                                 const top = `${(yLine ?? yFrac(close) * 1000) / 10}%`;
@@ -731,7 +731,7 @@ export default function CompanyFlowsPriceMap({
                         {hoveredIdx !== null && tooltipPos && hoverBreakdown && (() => {
                             const price = closes[visMarkers[hoveredIdx].wi];
                             const net = hoverBreakdown.net;
-                            const netColor = net >= 0 ? 'var(--fundtrades-buy, var(--funds-flow-positive))' : 'var(--funds-flow-negative)';
+                            const netColor = net >= 0 ? 'var(--oi-green, var(--funds-flow-positive))' : 'var(--funds-flow-negative)';
                             const MAX_ROWS = 6;
                             const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
                             const extra = hoverBreakdown.rows.length - shown.length;
