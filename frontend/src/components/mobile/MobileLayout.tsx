@@ -180,7 +180,10 @@ export default function MobileLayout({
 
       {/* Top loading bar — тонкая полоска под TopBar когда страница refresh'ится.
           Indeterminate animation (как у Safari address bar при загрузке). */}
-      {loading && !isFullscreen && <div className="fm-loading-bar" aria-hidden />}
+      {/* Слот нулевой высоты: полоска absolute поверх контента, не сдвигает вёрстку. */}
+      <div className="fm-loading-slot" aria-hidden>
+        {loading && !isFullscreen && <div className="fm-loading-bar" />}
+      </div>
 
       {/* Pull-to-refresh indicator — плавающий spinner сверху */}
       {indicatorVisible && (
