@@ -33,7 +33,7 @@ interface MobileFlowsHistogramProps {
   showIndex?: boolean;
 }
 
-const COLOR_IN = 'var(--funds-flow-positive, #5BD49C)';
+const COLOR_IN = 'var(--oi-green, var(--funds-flow-positive, #5BD49C))';
 const COLOR_OUT = 'var(--funds-flow-negative, #FF7A5C)';
 // Линия индекса — синяя, как индекс-эталон на графике СЧА этой же страницы
 // (MobileChart) и линия цены в «Силе рынка».
