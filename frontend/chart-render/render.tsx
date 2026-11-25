@@ -329,28 +329,36 @@ if (sig.headline) {
   // перенос — перед «за»/«с» («рекордный лонг / за 2 года», «минимум / с 2001 года»)
   const za = words.findIndex((x, k) => k > 0 && (x === 'за' || x === 'с'));
   const cut = za > 0 ? za : Math.ceil(words.length / 2);
-  const lines = measure(sig.headline, SZ, 800) > plotW * 0.45 && words.length > 1
-    ? [words.slice(0, cut).join(' '), words.slice(cut).join(' ')] : [sig.headline];
-  const w = Math.max(...lines.map((l: string) => measure(l, SZ, 800))), h = LH * lines.length;
-  let best = { x: padL + 10, y: padT + 6, s: Infinity, sx: 0, sy: 0 };
-  for (let x = padL + 12; x + w <= plotR - 12; x += 12) {
-    for (let y = -LEG_H + 2; y + h <= plotB - 6; y += 8) {
-      if (x < tgt.x + 30 && x + w > tgt.x - 30 && y < tgt.y + 30 && y + h > tgt.y - 30) continue;
-      // начало стрелки — середина ближней к точке стороны блока
-      const sx = tgt.x > x + w ? x + w + 8 : tgt.x < x ? x - 8 : x + w / 2;
-      const sy = tgt.x > x + w || tgt.x < x ? y + h / 2 : tgt.y < y ? y - 8 : y + h + 8;
-      const len = Math.hypot(tgt.x - sx, tgt.y - sy);
-      if (len < 45 || len > 340) continue;                   // указатель короткий, насколько позволяет свободное место
-      // стрелка не ложится на линию: её направление не должно совпадать с тем, откуда линия пришла в точку
-      const aIn = Math.atan2(tgt.y - sy, tgt.x - sx);
-      let dAng = Math.abs(aIn - lineIn); if (dAng > Math.PI) dAng = 2 * Math.PI - dAng;
-      const along = dAng < 0.5 ? 1e7 : dAng < 0.8 ? (0.8 - dAng) * 200000 : 0;   // вдоль линии — запрещено
-      // выше и левее точки — как обычно на канале; ниже точки — дороже
-      const side = y + h > tgt.y ? 400 : 0;
-      const sc = sum(x - 8, y - 6, w + 16, h + 12) * 80 + pathCost(sx, sy, tgt.x, tgt.y) * 15 + len * 2 + along + side;
-      if (sc < best.s) best = { x, y, s: sc, sx, sy };
+  // варианты: в две строки (обычно) и в одну — узкая полоса без линий бывает, где высокий блок не влезает
+  const two = words.length > 1 ? [words.slice(0, cut).join(' '), words.slice(cut).join(' ')] : null;
+  const layouts = measure(sig.headline, SZ, 800) > plotW * 0.45 && two
+    ? [{ lines: two, pen: 0 }, { lines: [sig.headline], pen: 300 }] : [{ lines: [sig.headline], pen: 0 }];
+  let best = { x: padL + 10, y: padT + 6, s: Infinity, sx: 0, sy: 0, lines: layouts[0].lines };
+  // Свободное от линий место — предпочтение, не закон (Вадим 25.11): короткая стрелка лучше, но если рядом с точкой
+  // всё занято линиями, подпись уходит дальше по полю (стрелка до ~600 px, длиннее 340 — со штрафом)
+  for (const { lines, pen } of layouts) {
+    const w = Math.max(...lines.map((l: string) => measure(l, SZ, 800))), h = LH * lines.length;
+    for (let x = padL + 12; x + w <= plotR - 12; x += 12) {
+      for (let y = -LEG_H + 2; y + h <= plotB - 6; y += 8) {
+        if (x < tgt.x + 30 && x + w > tgt.x - 30 && y < tgt.y + 30 && y + h > tgt.y - 30) continue;
+        // начало стрелки — середина ближней к точке стороны блока
+        const sx = tgt.x > x + w ? x + w + 8 : tgt.x < x ? x - 8 : x + w / 2;
+        const sy = tgt.x > x + w || tgt.x < x ? y + h / 2 : tgt.y < y ? y - 8 : y + h + 8;
+        const len = Math.hypot(tgt.x - sx, tgt.y - sy);
+        if (len < 45 || len > 600) continue;
+        // стрелка не ложится на линию: её направление не должно совпадать с тем, откуда линия пришла в точку
+        const aIn = Math.atan2(tgt.y - sy, tgt.x - sx);
+        let dAng = Math.abs(aIn - lineIn); if (dAng > Math.PI) dAng = 2 * Math.PI - dAng;
+        const along = dAng < 0.5 ? 1e7 : dAng < 0.8 ? (0.8 - dAng) * 200000 : 0;   // вдоль линии — запрещено
+        // выше и левее точки — как обычно на канале; ниже точки — дороже
+        const side = y + h > tgt.y ? 400 : 0;
+        const far = Math.max(0, len - 340) * 8;
+        const sc = sum(x - 8, y - 6, w + 16, h + 12) * 80 + pathCost(sx, sy, tgt.x, tgt.y) * 15 + len * 2 + far + along + side + pen;
+        if (sc < best.s) best = { x, y, s: sc, sx, sy, lines };
+      }
     }
   }
+  const lines = best.lines;
   over += lines.map((l: string, k: number) => `<text x="${best.x}" y="${best.y + SZ + k * LH - 6}" fill="${COLOR}" font-size="${SZ}" font-weight="800" letter-spacing="-0.5" ${HALO(8)}>${l}</text>`).join('');
   const ang = Math.atan2(tgt.y - best.sy, tgt.x - best.sx), ex = tgt.x - Math.cos(ang) * 28, ey = tgt.y - Math.sin(ang) * 28;
   const a = ang, L = 15;
