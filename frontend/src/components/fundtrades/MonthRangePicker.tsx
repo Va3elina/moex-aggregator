@@ -2,9 +2,9 @@
 // кнопка-календарь справа от пресетов 1М/6М/1Г/3Г, по клику — сетка месяцев по годам.
 //
 // Семантика диапазона ровно та же, что у пресетов: сравниваем снапшот месяца «с»
-// (база) со снапшотом месяца «по» (цель). Подпись «мар – май 2024» читается как
-// «что изменилось между составом на конец марта и составом на конец мая» — поэтому
-// пресет 1М и диапазон апр→май дают одинаковый результат.
+// (база) со снапшотом месяца «по» (цель). Подпись — месяцы самих сделок: база мар →
+// цель май = «апр – май 2024» (что изменилось между составом на конец марта и на
+// конец мая), поэтому пресет 1М и диапазон апр→май дают одинаковый результат.
 //
 // Первый клик — просто якорь, направление задаёт второй: кликнул позже якоря —
 // якорь стал базой, кликнул раньше — якорь стал целью. Месяцы без снапшота серые
@@ -23,7 +23,7 @@ import { CalendarRange, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
-import { monthShort } from '../../i18n';
+import { monthShort, monthName } from '../../i18n';
 
 /** Границы диапазона — ISO-даты снапшотов из available_months (месяц-энды). */
 export interface MonthRange { from: string; to: string }
@@ -51,10 +51,20 @@ function rowsOf(cells: (string | null)[]): number[] {
 const isoYear = (iso: string) => Number(iso.slice(0, 4));
 const isoMonth = (iso: string) => Number(iso.slice(5, 7)) - 1;
 
-/** «мар – май 2024», через границу года — «окт 2023 – май 2024». */
+/**
+ * Подпись ПЕРИОДА СДЕЛОК для пары снапшотов база → цель. База — состав на конец
+ * месяца ДО периода, поэтому сделки идут с месяца после базы по месяц цели
+ * включительно: сен → окт = «октябрь 2026», мар → май = «апр – май 2024»,
+ * через границу года — «ноя 2023 – май 2024». Раньше подпись начиналась с базы,
+ * и месячный отчёт читался как двухмесячный («сен – окт»).
+ */
 export function monthRangeLabel(fromISO: string, toISO: string): string {
-    const fy = isoYear(fromISO), ty = isoYear(toISO);
-    const fm = monthShort(isoMonth(fromISO)), tm = monthShort(isoMonth(toISO));
+    const ty = isoYear(toISO), tmi = isoMonth(toISO);
+    // Первый месяц сделок = база + 1 (декабрь базы переходит в январь следующего года).
+    const startIdx = isoYear(fromISO) * 12 + isoMonth(fromISO) + 1;
+    const fy = Math.floor(startIdx / 12), fmi = startIdx % 12;
+    if (fy * 12 + fmi >= ty * 12 + tmi) return `${monthName(tmi)} ${ty}`;
+    const fm = monthShort(fmi), tm = monthShort(tmi);
     return fy === ty ? `${fm} – ${tm} ${ty}` : `${fm} ${fy} – ${tm} ${ty}`;
 }
 

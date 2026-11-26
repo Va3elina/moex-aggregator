@@ -4,7 +4,7 @@
 //
 // Редизайн (июль 2026, макет Claude Design): переключатель периода 1М/6М/1Г
 // живёт в шапке блока (prop onPeriodChange), под заголовком — фактический
-// диапазон месяцев консенсуса («январь – июль 2026»). Полосы
+// месяцы сделок консенсуса («фев – июл 2026», для 1М — «июль 2026»). Полосы
 // нейтральные, величины тёмные: направление читается секциями «Чистые покупки ↑» /
 // «Чистые продажи ↓», единица (млрд/млн ₽) приглушена отдельным спаном.
 //
@@ -17,7 +17,7 @@
 
 import { type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { t, monthShort } from '../../i18n';
+import { t } from '../../i18n';
 import { fundAssetName, resolveFundIconTicker } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
@@ -73,14 +73,14 @@ const nameFade: CSSProperties = {
     maskImage: FADE_MASK, WebkitMaskImage: FADE_MASK,
 };
 
-// Диапазон консенсуса: конец = resolved_month, начало = минус длина периода.
-// «янв – июл 2026», через границу года — «окт 2025 – июл 2026».
-function monthRangeLabel(endISO: string, period: MoversPeriod): string {
-    const end = new Date(endISO);
-    const start = new Date(end.getFullYear(), end.getMonth() - PERIOD_MONTHS[period], 1);
-    const sM = monthShort(start.getMonth()), eM = monthShort(end.getMonth());
-    if (start.getFullYear() === end.getFullYear()) return `${sM} – ${eM} ${end.getFullYear()}`;
-    return `${sM} ${start.getFullYear()} – ${eM} ${end.getFullYear()}`;
+// Период сделок пресета: цель = resolved_month, база = минус длина периода.
+// Подпись — месяцы самих сделок (см. monthRangeLabel в MonthRangePicker):
+// 1М → «октябрь 2026», 6М → «май – окт 2026», 1Г → «ноя 2025 – окт 2026».
+function presetRangeLabel(endISO: string, period: MoversPeriod): string {
+    const y = Number(endISO.slice(0, 4)), m = Number(endISO.slice(5, 7)) - 1;
+    const baseIdx = y * 12 + m - PERIOD_MONTHS[period];
+    const baseISO = `${Math.floor(baseIdx / 12)}-${String((baseIdx % 12) + 1).padStart(2, '0')}-01`;
+    return customRangeLabel(baseISO, endISO);
 }
 
 function MoverLogo({ m, size }: { m: FundTradesMover; size: number }) {
@@ -132,7 +132,7 @@ export default function PortfolioMoversPanel({
     const sub = range
         ? customRangeLabel(range.from, range.to)
         : movers?.resolved_month
-            ? monthRangeLabel(movers.resolved_month, period)
+            ? presetRangeLabel(movers.resolved_month, period)
             : t(PERIOD_SUB[period]);
 
     const head = (
