@@ -113,6 +113,12 @@ const MONTHS_SHORT_RU = ['янв', 'фев', 'мар', 'апр', 'май', 'ию
 const MONTHS_SHORT_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS_GENITIVE_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 const MONTHS_FULL_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS_NOMINATIVE_RU = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+
+/** Полное название месяца «октябрь» / «October», 0-based. */
+export function monthName(i: number): string {
+  return (getLang() === 'en' ? MONTHS_FULL_EN : MONTHS_NOMINATIVE_RU)[i] ?? '';
+}
 
 /** Короткие месяцы, 0-based. Ру: «янв», en: «Jan». */
 export function monthShort(i: number): string {
