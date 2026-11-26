@@ -10,7 +10,7 @@
  * Стилизация editorial — outline+hard-shadow задаётся через CSS-override
  * `[data-theme^="editorial"] .frame-dropdown`. На OKX/dark — обычный flat pill.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ChevronDown, Lock } from 'lucide-react';
 import OptionHelp from './OptionHelp';
@@ -79,6 +79,12 @@ interface DropdownProps<T extends string> {
    *  переключателю общей обводкой, а не висит отдельным кружком в тулбаре.
    *  Ячейка не кликается как часть триггера — клик по ней список не открывает. */
   trailing?: ReactNode;
+  /** Потолок высоты выпадающего меню в px (по умолчанию 60vh). Меню к тому же
+   *  не выходит за нижний край ближайшего предка с `data-dropdown-boundary`
+   *  (либо окна) — высота поджимается, остальное листается скроллом. */
+  menuMaxHeight?: number;
+  /** Убрать hard-shadow у выпадающего блока (сама плашка без тени). */
+  menuNoShadow?: boolean;
 }
 
 export default function Dropdown<T extends string>({
@@ -92,9 +98,37 @@ export default function Dropdown<T extends string>({
   className = '',
   onLockedClick,
   trailing,
+  menuMaxHeight,
+  menuNoShadow = false,
 }: DropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Фактическая max-height меню: потолок, поджатый до нижнего края контейнера.
+  const [fitHeight, setFitHeight] = useState<number | null>(null);
+
+  // Меряем ДО отрисовки (layout effect), чтобы меню не мелькало длинным.
+  useLayoutEffect(() => {
+    if (!open) { setFitHeight(null); return; }
+    const measure = () => {
+      const menu = menuRef.current;
+      if (!menu) return;
+      const boundary = wrapRef.current?.closest('[data-dropdown-boundary]');
+      const bottom = boundary
+        ? Math.min(boundary.getBoundingClientRect().bottom, window.innerHeight)
+        : window.innerHeight;
+      const cap = menuMaxHeight ?? Math.round(window.innerHeight * 0.6);
+      const avail = bottom - menu.getBoundingClientRect().top - 12;
+      setFitHeight(Math.max(120, Math.min(cap, avail)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [open, menuMaxHeight]);
 
   // Закрытие по клику вне + ESC
   useEffect(() => {
@@ -205,14 +239,15 @@ export default function Dropdown<T extends string>({
 
       {open && (
         <div
+          ref={menuRef}
           className="frame-dropdown-menu absolute z-50 mt-1 py-1 rounded-xl"
           style={{
             backgroundColor: 'var(--bg-secondary)',
             border: '2px solid var(--text-primary)',
-            boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
+            boxShadow: menuNoShadow ? 'none' : 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
             minWidth: '100%',
             maxWidth: menuMaxWidth,
-            maxHeight: '60vh',
+            maxHeight: fitHeight ?? menuMaxHeight ?? '60vh',
             overflowY: 'auto',
           }}
         >
