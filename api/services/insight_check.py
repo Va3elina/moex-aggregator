@@ -25,7 +25,11 @@ STYLE = ((re.compile(r"(?:^|[.!?◽️]\s*)(?:писали|сообщали),? �
          # R02, R18 из editor_rules.yaml — правила, которые держались только на промпте и повторялись
          (re.compile(r"\d[\d  ,]*\s*(?:тыс\w*\.?|млн\w*\.?)?\s*контракт", re.I),
           "число контрактов - не называй, «исторический максимум» говорит больше (R02)"),
-         (re.compile(r"аналитик\w*", re.I), "мнение аналитиков брокеров - не повод и не аргумент (R18)"))
+         (re.compile(r"аналитик\w*", re.I), "мнение аналитиков брокеров - не повод и не аргумент (R18)"),
+         # R36 (Вадим 25.11, #7662): связка-заготовка вместо мысли
+         (re.compile(r"но есть нюанс", re.I), "«Но есть нюанс» - заготовка, скажи мысль прямо (R36)"))
+# R35 (Вадим 25.11, #7662): зачин «17 ноября мы писали…» он вычеркнул — первая фраза поста = факт находки
+OPENER_SELF = re.compile(r"^\W*(?:\d{1,2}\s+\w+\s+|недавно\s+|ранее\s+)?мы\s+(?:уже\s+)?(?:писали|рассказывали)", re.I)
 CODES = re.compile(r"\b(?:MX|IMOEXF|USDRUBF|CNYRUBF|CR|Si)\b")
 TITLE_EMOJI = re.compile(r"[\U0001F300-\U0001FAFF☀-➿]️?\s*$")
 # Даты не входят в потолок чисел: с ним писатель размывал даты аналогий («весной прошлого года»), и судья
@@ -63,6 +67,9 @@ def check(draft: str, card: str) -> dict:
     if BOILERPLATE.search(draft or ""):
         defects.append("заготовка вместо вывода")
     defects += [msg for rx, msg in STYLE if rx.search(body)]
+    first = next((x for x in lines[1:] if not x.strip().startswith("#")), "")
+    if OPENER_SELF.search(first.replace("◽️", "").replace("◽", "")):
+        defects.append("пост начат ссылкой на свой прошлый пост - начни с факта (R35)")
     paras = sum(1 for x in lines[1:] if x.lstrip().startswith("◽"))
     if not 2 <= paras <= 4:
         defects.append(f"абзацев {paras} - от двух до четырёх, по теме (R23)")

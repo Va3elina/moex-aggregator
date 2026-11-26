@@ -16,6 +16,7 @@ import { pricingUrlFrom } from '../../utils/purchaseSource';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import FrameLogo from '../FrameLogo';
+import { useViewportWidth } from '../../config/fluidScale';
 import MobileAnomalyBell from '../anomaly/MobileAnomalyBell';
 
 interface MobileTopBarProps {
@@ -24,6 +25,9 @@ interface MobileTopBarProps {
 }
 
 export default function MobileTopBar({ onBack }: MobileTopBarProps) {
+  // «FRAMEDATA» длиннее прежнего «FRAME»: на узких телефонах (iPhone SE, 320px)
+  // знак 18px упирался в кнопки справа — там уменьшаем до 15px.
+  const vw = useViewportWidth();
   const { user } = useAuth();
   const { theme, cycleTheme } = useTheme();
   const isLight = theme === 'editorial-light';
@@ -46,7 +50,7 @@ export default function MobileTopBar({ onBack }: MobileTopBarProps) {
         ) : (
           <>
             <Link to="/" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
-              <FrameLogo size={18} color="var(--accent)" />
+              <FrameLogo size={vw < 360 ? 15 : 18} color="var(--accent)" />
             </Link>
           </>
         )}

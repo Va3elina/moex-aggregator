@@ -19,7 +19,7 @@ import { dateLocale } from '../i18n';
 import {
   X, Heart, Check,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
-  CalendarDays, Banknote, LayoutGrid, Settings, Loader2,
+  CalendarDays, Banknote, LayoutGrid, Settings,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -840,14 +840,23 @@ function ConsentModal({
   const yearlySaving = planChoice?.monthly && planChoice.yearly
     ? planChoice.monthly.amount * 12 - planChoice.yearly.amount
     : 0;
-  // Второй шаг «как платим». Появляется только когда доступна СБП-привязка:
-  // форма банка и привязка счёта — два РАЗНЫХ сценария у T-Bank, одним вызовом
-  // их не объединить, выбор должен произойти до ухода с сайта. Чтобы в модалке
-  // была одна кнопка, развилку вынесли на отдельный шаг.
-  const [step, setStep] = useState<'consent' | 'method'>('consent');
-  const hasMethodStep = !trialInfo && !!onConfirmSbp;
-  // Какой способ нажали: isLoading общий на оба, лоадер показываем только на нажатом.
-  const [picked, setPicked] = useState<'tpay' | 'sbp' | null>(null);
+  // Способ оплаты выбирается в ЭТОМ ЖЕ окне (вариант C, 24.11.2026): СБП по
+  // умолчанию, если бэкенд её отдал (sbp_qr_enabled), иначе только карта/T-Pay.
+  // Форма банка и привязка счёта у T-Bank — два разных вызова, поэтому
+  // способ фиксируем до ухода с сайта и жмём одну кнопку.
+  const hasSbp = !trialInfo && !!onConfirmSbp;
+  const [method, setMethod] = useState<'sbp' | 'card'>(hasSbp ? 'sbp' : 'card');
+  const payBySbp = hasSbp && method === 'sbp';
+
+  // Сумма и период автосписания для текста согласия (ЗоЗПП/Единые правила:
+  // согласие на автосписание — отдельное, неотмеченное, с суммой и периодом).
+  const renewAmount = trialInfo ? trialInfo.amount : chosen?.amount ?? 0;
+  const renewPeriodRu = trialInfo
+    ? trialInfo.periodRu
+    : chosen && planChoice?.yearly && chosen === planChoice.yearly ? t('год') : t('месяц');
+  // Ссылки на документы — цветом текста, только подчёркнуты (без акцента).
+  const linkStyle = { color: 'inherit', textDecoration: 'underline' } as const;
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-6"
@@ -889,62 +898,25 @@ function ConsentModal({
             fontWeight: 800,
             letterSpacing: '-0.02em',
             color: 'var(--text-primary)',
-            // на развилке подзаголовка нет — заголовку нужен полный отступ
-            marginBottom: step === 'method' ? '1.25rem' : '0.4rem',
+            marginBottom: '0.4rem',
             paddingRight: '2rem',
           }}
         >
-          {step === 'method'
-            ? t('Выберите способ оплаты')
-            : (trialInfo ? t('Бесплатный пробный период') : t('Подтверждение'))}
+          {trialInfo ? t('Бесплатный пробный период') : planChoice ? t('Тариф {{tier}}', { tier: planChoice.title }) : t('Подтверждение')}
         </h2>
-        {step !== 'method' && (
-          <p
-            style={{
-              fontSize: 'var(--fs-sm, 13px)',
-              color: 'var(--text-secondary)',
-              lineHeight: 1.5,
-              marginBottom: trialInfo ? '0.75rem' : '1.25rem',
-            }}
-          >
-            {trialInfo
-              ? t('Бесплатно {{n}} дней, затем автоматическое списание. Подтвердите согласие:', { n: trialInfo.days })
-              : planChoice
-                ? t('Тариф {{tier}}. Выберите период и подтвердите согласие:', { tier: planChoice.title })
-                : t('Перед оплатой подтвердите согласие со следующими условиями:')}
-          </p>
-        )}
+        <p
+          style={{
+            fontSize: 'var(--fs-sm, 13px)',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.5,
+            marginBottom: trialInfo ? '0.75rem' : '1.25rem',
+          }}
+        >
+          {trialInfo
+            ? t('Бесплатно {{n}} дней, затем автоматическое списание.', { n: trialInfo.days })
+            : t('Выберите период')}
+        </p>
 
-        {step === 'method' ? (
-          <>
-            <button
-              onClick={() => { setPicked('tpay'); onConfirm(); }}
-              disabled={isLoading}
-              className={`w-full flex items-center gap-3 rounded-xl border p-4 transition-colors ${isLoading && picked === 'tpay' ? '' : 'disabled:opacity-50'}`}
-              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}
-            >
-              <PayMark kind="tpay" />
-              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                {isLoading && picked === 'tpay' ? t('Создаём…') : t('Картой или T-Pay')}
-              </span>
-              {isLoading && picked === 'tpay' && <PaySpinner />}
-            </button>
-
-            <button
-              onClick={() => { setPicked('sbp'); onConfirmSbp?.(); }}
-              disabled={isLoading}
-              className={`w-full flex items-center gap-3 rounded-xl border p-4 mt-3 transition-colors ${isLoading && picked === 'sbp' ? '' : 'disabled:opacity-50'}`}
-              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}
-            >
-              <PayMark kind="sbp" />
-              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                {isLoading && picked === 'sbp' ? t('Создаём…') : t('Счёт по СБП')}
-              </span>
-              {isLoading && picked === 'sbp' && <PaySpinner />}
-            </button>
-          </>
-        ) : (
-          <>
         {trialInfo && (
           <div
             style={{
@@ -964,125 +936,233 @@ function ConsentModal({
           </div>
         )}
 
-        {planChoice && chosen && (
-          <div role="radiogroup" aria-label={t('Период оплаты')} className="mb-4">
-            {planChoice.yearly && (
-              <PeriodOption
-                selected={chosen === planChoice.yearly}
-                disabled={isLoading}
-                onSelect={() => planChoice.onSelect(planChoice.yearly!.plan_id)}
-                title={t('Ежегодно')}
-                badge={yearlySaving > 0 ? t('Выгоднее') : null}
-                note={yearlySaving > 0
-                  ? t('Экономия {{sum}} ₽ в год', { sum: fmt(yearlySaving) })
-                  : null}
-                price={`${fmt(planChoice.yearly.amount)} ₽ ${t('/год')}`}
-                subPrice={`${fmt(Math.round(planChoice.yearly.amount / 12))} ₽ ${t('/мес')}`}
-              />
-            )}
-            {planChoice.monthly && (
-              <PeriodOption
-                selected={chosen === planChoice.monthly}
-                disabled={isLoading}
-                onSelect={() => planChoice.onSelect(planChoice.monthly!.plan_id)}
-                title={t('Помесячно')}
-                price={`${fmt(planChoice.monthly.amount)} ₽ ${t('/мес')}`}
-              />
-            )}
+        {planChoice && chosen && (() => {
+          // Вариант C: переключатель периода-«таблетка» + крупная цена за месяц.
+          const isYear = chosen === planChoice.yearly;
+          const yearDiscountPct = planChoice.monthly && planChoice.yearly && yearlySaving > 0
+            ? Math.round((yearlySaving / (planChoice.monthly.amount * 12)) * 100)
+            : 0;
+          const perMonth = isYear ? Math.round(chosen.amount / 12) : chosen.amount;
+          const pill = (selected: boolean) => ({
+            minHeight: 40,
+            padding: '0 16px',
+            borderRadius: 999,
+            fontSize: 14,
+            fontWeight: 700,
+            // Выбранный период — акцентным оранжевым, белый текст.
+            background: selected ? 'var(--accent)' : 'transparent',
+            color: selected ? '#fff' : 'var(--text-primary)',
+            transition: 'background 0.18s ease, color 0.18s ease',
+          });
+          return (
             <div
-              className="flex items-baseline justify-between gap-3 mt-3 pt-3"
-              style={{ borderTop: '1px solid var(--border-color)' }}
+              className="mb-4 flex flex-col items-center text-center"
+              style={{ background: 'var(--bg-secondary)', borderRadius: 16, padding: '16px 16px 18px', gap: 10 }}
             >
-              <span style={{ fontSize: 'var(--fs-sm, 13px)', color: 'var(--text-secondary)' }}>
-                {t('Спишется сегодня')}
-              </span>
-              <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                {fmt(chosen.amount)} ₽
+              {planChoice.yearly && planChoice.monthly && (
+                <div
+                  role="radiogroup"
+                  aria-label={t('Период оплаты')}
+                  className="inline-flex"
+                  style={{ background: 'var(--bg-tertiary)', borderRadius: 999, padding: 3, gap: 3 }}
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={isYear}
+                    disabled={isLoading}
+                    onClick={() => planChoice.onSelect(planChoice.yearly!.plan_id)}
+                    className="inline-flex items-center gap-1.5"
+                    style={pill(isYear)}
+                  >
+                    {t('Ежегодно')}
+                    {yearDiscountPct > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 999, background: isYear ? '#fff' : 'var(--accent)', color: isYear ? 'var(--accent)' : '#fff' }}>
+                        −{yearDiscountPct}%
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={!isYear}
+                    disabled={isLoading}
+                    onClick={() => planChoice.onSelect(planChoice.monthly!.plan_id)}
+                    style={pill(!isYear)}
+                  >
+                    {t('Помесячно')}
+                  </button>
+                </div>
+              )}
+              <div className="flex items-baseline justify-center gap-1.5">
+                <span style={{ fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                  {fmt(perMonth)}&nbsp;₽
+                </span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('/мес')}</span>
+              </div>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                {isYear
+                  ? (yearlySaving > 0
+                    ? t('{{sum}} ₽ раз в год · экономия {{save}} ₽', { sum: fmt(chosen.amount), save: fmt(yearlySaving) })
+                    : t('{{sum}} ₽ раз в год', { sum: fmt(chosen.amount) }))
+                  : t('Списание {{sum}} ₽ каждый месяц', { sum: fmt(chosen.amount) })}
               </span>
             </div>
+          );
+        })()}
+
+        {hasSbp && (
+          <div role="radiogroup" aria-label={t('Способ оплаты')} className="mb-4">
+            <div
+              className="mb-2"
+              style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}
+            >
+              {t('Способ оплаты')}
+            </div>
+            <MethodOption
+              kind="sbp"
+              selected={method === 'sbp'}
+              disabled={isLoading}
+              onSelect={() => setMethod('sbp')}
+              title={t('Система быстрых платежей')}
+              note={t('Без ввода данных карты')}
+            />
+            <MethodOption
+              kind="tpay"
+              selected={method === 'card'}
+              disabled={isLoading}
+              onSelect={() => setMethod('card')}
+              title={t('Картой или T-Pay')}
+              note={t('Карта любого банка, Мир, T-Pay')}
+            />
           </div>
         )}
 
-        {/* Единый consent на 3 документа — Соглашение, Privacy, Recurrent.
-            Раньше было 2 чекбокса + toggle, сейчас одна галка покрывает весь
-            legal-stack. Юзер review'ит документы по ссылкам (открываются
-            в новых вкладках), ставит галку = информированное согласие. */}
+        {chosen && (
+          <div
+            className="flex items-baseline justify-between gap-3 mb-4 pt-3"
+            style={{ borderTop: '1px solid var(--border-color)' }}
+          >
+            <span style={{ fontSize: 'var(--fs-sm, 13px)', color: 'var(--text-secondary)' }}>
+              {t('Спишется сегодня')}
+            </span>
+            <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+              {fmt(chosen.amount)} ₽
+            </span>
+          </div>
+        )}
+
+        {/* Отдельное НЕОТМЕЧЕННОЕ согласие на автосписание с суммой и периодом.
+            Соглашение принимается кнопкой оплаты (ГК 438 п.3), Политика —
+            только ссылка (152-ФЗ ст.18.1: публикуется, «соглашаться» не нужно). */}
         <ConsentRow
           checked={agreementConsent}
           onChange={onAgreementChange}
           label={
             <>
-              {t('Я согласен с')}{' '}
-              <Link
-                to="/agreement"
-                target="_blank"
-                style={{ color: 'var(--accent)', textDecoration: 'underline' }}
-              >
-                {t('Пользовательским соглашением')}
-              </Link>
-              ,{' '}
-              <Link
-                to="/privacy"
-                target="_blank"
-                style={{ color: 'var(--accent)', textDecoration: 'underline' }}
-              >
-                {t('Политикой конфиденциальности')}
-              </Link>
-              {' '}{t('и')}{' '}
-              <Link
-                to="/recurring"
-                target="_blank"
-                style={{ color: 'var(--accent)', textDecoration: 'underline' }}
-              >
-                {t('Договором о рекуррентных платежах')}
+              {t('Согласен на автоматическое списание')}{' '}
+              {t('{{sum}} ₽ раз в {{period}}', { sum: fmt(renewAmount), period: renewPeriodRu })}{' '}
+              {t('по')}{' '}
+              <Link to="/recurring" target="_blank" style={linkStyle}>
+                {t('Договору о рекуррентных платежах')}
               </Link>
               .{' '}
               <span style={{ color: 'var(--text-muted)' }}>
-                {t('Подписка автоматически продлевается, отменить можно в профиле.')}
+                {t('Напомним за 3 дня до списания. Отключить автопродление и удалить карту можно в профиле.')}
               </span>
             </>
           }
         />
 
-
-        {/* Buttons */}
-        <div className="flex gap-3 mt-6">
-          <button
-            onClick={onClose}
-            disabled={isLoading}
-            className="flex-1 py-3 rounded-xl text-sm font-medium border transition-colors disabled:opacity-50"
-            style={{
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-secondary)',
-              background: 'transparent',
-            }}
-          >
-            {t('Отменить', { context: 'checkout' })}
-          </button>
-          <button
-            onClick={hasMethodStep ? () => setStep('method') : onConfirm}
-            disabled={!canConfirm || isLoading}
-            className="flex-1 py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              background: 'var(--accent)',
-              color: 'var(--bg-primary)',
-            }}
-          >
-            {isLoading
-              ? (trialInfo ? t('Открываем…') : t('Создаём…'))
-              : trialInfo
-                ? t('Начать бесплатно')
-                : chosen
-                  ? t('Оплатить {{sum}} ₽', { sum: fmt(chosen.amount) })
-                  : t('Оплатить')}
-          </button>
-        </div>
-
-          </>
+        <button
+          onClick={payBySbp ? onConfirmSbp : onConfirm}
+          disabled={!canConfirm || isLoading}
+          className="w-full mt-3 py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{
+            background: 'var(--accent)',
+            color: 'var(--bg-primary)',
+            minHeight: 48,
+          }}
+        >
+          {isLoading
+            ? (trialInfo ? t('Открываем…') : t('Создаём…'))
+            : trialInfo
+              ? t('Начать бесплатно')
+              : t('Оплатить')}
+        </button>
+        {!canConfirm && !isLoading && (
+          <p className="mt-2 text-center" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            {t('Отметьте согласие на автосписание, чтобы продолжить')}
+          </p>
         )}
-
+        <p className="mt-3 text-center" style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          {trialInfo ? t('Нажимая «Начать бесплатно», вы принимаете') : t('Нажимая «Оплатить», вы принимаете')}{' '}
+          <Link to="/agreement" target="_blank" style={linkStyle}>
+            {t('Пользовательское соглашение')}
+          </Link>
+          . {t('Как мы обрабатываем данные — в')}{' '}
+          <Link to="/privacy" target="_blank" style={linkStyle}>
+            {t('Политике конфиденциальности')}
+          </Link>
+          .
+        </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * MethodOption — строка выбора способа оплаты (вариант C): значок, название,
+ * пояснение и отметка справа.
+ */
+function MethodOption({
+  kind,
+  selected,
+  disabled,
+  onSelect,
+  title,
+  note,
+}: {
+  kind: 'tpay' | 'sbp';
+  selected: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+  title: string;
+  note: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      onClick={onSelect}
+      className="w-full flex items-center gap-3 text-left mb-2 p-3 rounded-xl border transition-colors"
+      style={{
+        borderColor: selected ? 'var(--accent)' : 'var(--border-color)',
+        background: selected ? 'rgba(255,92,43,0.06)' : 'transparent',
+        minHeight: 56,
+      }}
+    >
+      <PayMark kind={kind} />
+      <span className="flex-1 min-w-0">
+        <span className="block" style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</span>
+        <span className="block mt-0.5" style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.35 }}>{note}</span>
+      </span>
+      <span
+        className="flex-shrink-0 flex items-center justify-center"
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: '50%',
+          border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border-color)'}`,
+          background: selected ? 'var(--accent)' : 'transparent',
+          color: 'var(--bg-primary)',
+        }}
+      >
+        {selected && <Check size={12} strokeWidth={3} />}
+      </span>
+    </button>
   );
 }
 
@@ -1095,118 +1175,20 @@ function ConsentModal({
  * 36×26 она встаёт в 36×15 — по высоте как видимый знак СБП (~15px).
  */
 function PayMark({ kind }: { kind: 'tpay' | 'sbp' }) {
+  // Знак СБП на 30% крупнее (47×34), T-Pay прежнего размера; оба в боксе
+  // одной ширины, чтобы подписи справа стояли ровно.
+  const [w, h] = kind === 'sbp' ? [47, 34] : [36, 26];
   return (
-    <img
-      src={kind === 'sbp' ? '/pay/sbp.png' : '/pay/tpay.svg'}
-      alt=""
-      aria-hidden="true"
-      width={36}
-      height={26}
-      className="shrink-0"
-      style={{ width: 36, height: 26, objectFit: 'contain' }}
-    />
-  );
-}
-
-/** Спиннер справа в кнопке способа оплаты, пока создаётся платёж. */
-function PaySpinner() {
-  return (
-    <Loader2
-      size={18}
-      aria-hidden="true"
-      className="ml-auto shrink-0 animate-spin"
-      style={{ color: 'var(--text-secondary)' }}
-    />
-  );
-}
-
-/**
- * PeriodOption — радио-карточка периода оплаты в consent-модалке: слева
- * название и пояснение, справа полная сумма списания за период.
- */
-function PeriodOption({
-  selected,
-  disabled,
-  onSelect,
-  title,
-  badge,
-  note,
-  price,
-  subPrice,
-}: {
-  selected: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  title: string;
-  badge?: string | null;
-  note?: string | null;
-  price: string;
-  subPrice?: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      disabled={disabled}
-      onClick={onSelect}
-      className="w-full flex items-start gap-3 text-left mb-2 p-3 rounded-xl border transition-colors"
-      style={{
-        borderColor: selected ? 'var(--accent)' : 'var(--border-color)',
-        background: selected ? 'rgba(255,92,43,0.06)' : 'transparent',
-      }}
-    >
-      <span
-        className="flex-shrink-0 flex items-center justify-center"
-        style={{
-          width: 18,
-          height: 18,
-          marginTop: 1,
-          borderRadius: '50%',
-          border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border-color)'}`,
-        }}
-      >
-        {selected && (
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }} />
-        )}
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="flex items-center gap-2 flex-wrap">
-          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</span>
-          {badge && (
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                padding: '2px 6px',
-                borderRadius: 6,
-                background: 'var(--accent)',
-                color: 'var(--bg-primary)',
-              }}
-            >
-              {badge}
-            </span>
-          )}
-        </span>
-        {note && (
-          <span className="block mt-0.5" style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.35 }}>
-            {note}
-          </span>
-        )}
-      </span>
-      <span className="flex-shrink-0 text-right">
-        <span className="block" style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-          {price}
-        </span>
-        {subPrice && (
-          <span className="block mt-0.5" style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            {subPrice}
-          </span>
-        )}
-      </span>
-    </button>
+    <span className="shrink-0 flex items-center justify-center" style={{ width: 47, height: 34 }}>
+      <img
+        src={kind === 'sbp' ? '/pay/sbp.png' : '/pay/tpay.svg'}
+        alt=""
+        aria-hidden="true"
+        width={w}
+        height={h}
+        style={{ width: w, height: h, objectFit: 'contain' }}
+      />
+    </span>
   );
 }
 
@@ -1224,7 +1206,7 @@ function ConsentRow({
 }) {
   return (
     <label
-      className="flex items-start gap-3 cursor-pointer select-none mb-3 p-3 rounded-xl border transition-colors"
+      className="flex items-start gap-2.5 cursor-pointer select-none mb-3 px-2.5 py-2 rounded-lg border transition-colors"
       style={{
         borderColor: checked ? 'var(--accent)' : 'var(--border-color)',
         background: checked ? 'rgba(255,92,43,0.06)' : 'transparent',
@@ -1233,16 +1215,16 @@ function ConsentRow({
       <span
         className="relative inline-flex flex-shrink-0 items-center justify-center mt-0.5"
         style={{
-          width: 18,
-          height: 18,
-          borderRadius: 5,
+          width: 16,
+          height: 16,
+          borderRadius: 4,
           background: checked ? 'var(--accent)' : 'transparent',
           border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--border-color)'}`,
           color: 'var(--bg-primary)',
           transition: 'background 0.18s ease, border-color 0.18s ease',
         }}
       >
-        {checked && <Check size={13} strokeWidth={3} />}
+        {checked && <Check size={11} strokeWidth={3} />}
         <input
           type="checkbox"
           checked={checked}
@@ -1257,9 +1239,9 @@ function ConsentRow({
       </span>
       <span
         style={{
-          fontSize: 'var(--fs-sm, 13px)',
+          fontSize: 12,
           color: 'var(--text-primary)',
-          lineHeight: 1.45,
+          lineHeight: 1.4,
         }}
       >
         {label}
@@ -1307,8 +1289,9 @@ function ComparisonMatrix() {
         // открываются вместе на Basic, как и в карточках выше.
         ['Данные по юрлицам и число трейдеров', '—', 'Да', 'Да'],
         ['Задержка данных', '24 часа', 'Без задержки', 'Без задержки'],
-        // Лента сигналов закрыта для free с 2026-08-09 (features.py: oi_screener).
-        ['Скринер сигналов', '—', 'Да', 'Да'],
+        // Лента сигналов: с 2026-11-22 открыта free с задержкой в день, как и
+        // график (features.py: oi_screener.data_delay_hours). Было '—' с 2026-08-09.
+        ['Скринер сигналов', 'С задержкой 24 часа', 'Да', 'Да'],
       ],
     },
     {

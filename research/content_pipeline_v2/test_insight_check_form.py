@@ -44,3 +44,17 @@ def test_currency_theme_ignores_plain_rubles():
     assert not re.search(rx, "Фонды продадут бумаги на 1,2 млрд рублей и докупят другие", re.I)
     for t in ("Спекулянты уходят из валюты", "курс рубля к доллару", "рубль укрепился", "отток из юаневых фондов"):
         assert re.search(rx, t, re.I), t
+
+
+def test_self_reference_opener_and_stock_connector_r35_r36():
+    """#7662: Вадим вычеркнул зачин «17 ноября мы писали…» и связку «Но есть нюанс»."""
+    card = "40 млрд ₽; 17 ноября"
+    bad = ("Деньги паркуются в кэш 💰\n◽️ 17 ноября мы писали, что из фондов облигаций бегут. " + "слово " * 40 +
+           "\n◽️ Но есть нюанс. " + "слово " * 40 + "\n#деньгивфондах")
+    d = insight_check.check(bad, card)["defects"]
+    assert any("R35" in x for x in d), d
+    assert any("R36" in x for x in d), d
+    good = ("Деньги паркуются в кэш 💰\n◽️ С начала ноября в фонды денежного рынка пришло 40 млрд ₽. " + "слово " * 40 +
+            "\n◽️ Мы писали об этом 17 ноября. " + "слово " * 40 + "\n#деньгивфондах")
+    d = insight_check.check(good, card)["defects"]
+    assert not any("R35" in x or "R36" in x for x in d), d

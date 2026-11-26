@@ -31,9 +31,9 @@ def test_period_follows_prior_higher_point(monkeypatch):
     vals[-1] = 45.0
     monkeypatch.setattr(rc, "_series", lambda sec, mode: (*_series(vals), []))
     day = dt.date(2024, 1, 1) + dt.timedelta(days=699)
-    card = rc.build({"sec": "XX", "name": "Тест", "leg": "netl", "window": "за полгода"}, 45.0, day)
+    card = rc.build({"sec": "XX", "name": "Тест", "leg": "netl", "window": "за год"}, 45.0, day)
     assert card["meta"]["details"][1] == "1г"
-    assert card["signal"]["headline"] == "рекордный лонг за полгода"
+    assert card["signal"]["headline"] == "рекордный лонг за год"
     assert card["signal"]["peaks"][0]["value"] == 50.0
 
 
@@ -54,7 +54,7 @@ def test_record_point_not_duplicated(monkeypatch):
     vals[-1] = 45.0
     monkeypatch.setattr(rc, "_series", lambda sec, mode: (*_series(vals), []))
     day = dt.date(2024, 1, 1) + dt.timedelta(days=700)
-    card = rc.build({"sec": "XX", "name": "Тест", "leg": "netl", "window": "за полгода"}, 45.0, day)
+    card = rc.build({"sec": "XX", "name": "Тест", "leg": "netl", "window": "за год"}, 45.0, day)
     assert len(card["line"]) == len(card["price"]) and card["line"][-1]["value"] == 45.0
     assert card["meta"]["details"][1] == "1г"
 
@@ -69,8 +69,23 @@ def test_cases_widen_period_and_skip_out_of_range(monkeypatch):
     day = dt.date(2024, 1, 1) + dt.timedelta(days=1499)
     base = dt.date(2024, 1, 1)
     cases = [base - dt.timedelta(days=400), base + dt.timedelta(days=900), base + dt.timedelta(days=1300)]
-    card = rc.build({"sec": "XX", "name": "Тест", "leg": "netl", "window": "за полгода"}, 45.0, day, cases)
+    card = rc.build({"sec": "XX", "name": "Тест", "leg": "netl", "window": "за год"}, 45.0, day, cases)
     assert card["meta"]["details"][1] == "5л"
     got = [p["date"] for p in card["signal"]["peaks"]]
     assert got == [str(base + dt.timedelta(days=1300)), str(base + dt.timedelta(days=900))]
     assert card["signal"]["cases"] is True
+
+
+def test_short_window_marks_only_current_point(monkeypatch):
+    # рекорд за 3 месяца / полгода — без прежних кружков и пунктира, даже если есть случаи истории (Вадим 25.11)
+    vals = [10.0] * 700
+    vals[500] = 50.0
+    vals[-1] = 45.0
+    monkeypatch.setattr(rc, "_series", lambda sec, mode: (*_series(vals), []))
+    day = dt.date(2024, 1, 1) + dt.timedelta(days=699)
+    cases = [dt.date(2024, 1, 1) + dt.timedelta(days=300)]
+    for win, period in (("за 3 месяца", "6м"), ("за полгода", "1г")):
+        card = rc.build({"sec": "XX", "name": "Тест", "leg": "netl", "window": win}, 45.0, day, cases)
+        assert card["signal"]["peaks"] == [] and card["signal"]["cases"] is False
+        assert card["meta"]["details"][1] == period
+        assert card["signal"]["headline"] == f"рекордный лонг {win}"

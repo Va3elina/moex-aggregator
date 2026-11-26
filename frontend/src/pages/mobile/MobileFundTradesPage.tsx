@@ -20,14 +20,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  Wallet,
   Lock,
   Sparkles,
   TrendingUp,
   TrendingDown,
   Activity,
-  ArrowLeftRight,
-  Briefcase,
 } from 'lucide-react';
 import {
   listFundsWithHistory,
@@ -68,7 +65,7 @@ import CompanyFlowsTab, { COMPANY_ASSET_PARAM, type CompanyFlowsMobileSummary } 
 import DelayedDataBadge from '../../components/DelayedDataBadge';
 import LockedSnapshotTeaser from '../../components/fundtrades/LockedSnapshotTeaser';
 import MobileLayout from '../../components/mobile/MobileLayout';
-import MobilePageHeader from '../../components/mobile/MobilePageHeader';
+import { MobileModeStrip, MobileContextLine } from '../../components/mobile/MobileModeStrip';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
@@ -596,8 +593,8 @@ export default function MobileFundTradesPage() {
             месяц среза)
           </p>
           <p>
-            <strong>Опции</strong> — раздел и его настройки: сортировка, выбор
-            фондов, режим показа. Карточка фонда открывается тапом по плитке.
+            <strong>Опции</strong> — настройки раздела: сортировка, выбор
+            фондов, режим показа. Сам раздел — полоска наверху. Карточка фонда открывается тапом по плитке.
           </p>
         </>
       ),
@@ -723,35 +720,6 @@ export default function MobileFundTradesPage() {
     }
     return base;
   })();
-  // Переключатель разделов — начало sheet'а «Опции» на всех вкладках (на
-  // «По бумаге» sheet рисует CompanyFlowsTab, поэтому блок передаём туда).
-  const tabSwitcher = (
-    <div>
-      <div style={SHEET_SECTION_LABEL}>Режим</div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {([
-          // movers/snapshots скрыты с сайта (как на десктопе). Код рендера ниже
-          // оставлен — вернуть = дописать строки обратно.
-          { id: 'portfolio' as const, label: 'Портфель', icon: Briefcase },
-          { id: 'company' as const, label: 'По бумаге', icon: ArrowLeftRight },
-          { id: 'funds' as const, label: 'Витрина', icon: Wallet },
-        ]).map((t) => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.id}
-              className={`fm-chip ${tab === t.id ? 'active' : ''}`}
-              onClick={() => { setTab(t.id); setOptionsSheetOpen(false); }}
-              style={{ flex: 1, minWidth: 'calc(50% - 4px)', justifyContent: 'center', gap: 6 }}
-            >
-              <Icon size={14} />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
   const isCompany = tab === 'company';
   return (
     <MobileLayout
@@ -794,12 +762,23 @@ export default function MobileFundTradesPage() {
       }}
       loading={loadingFunds || loadingMovers || loadingPortfolio || loadingPortfolioMovers}
     >
-      <MobilePageHeader
-        Icon={Wallet}
-        title="Сделки фондов"
-        subtitle={isCompany ? companySummary?.subtitle : undefined}
+      {/* Раздел — полоской режимов наверху (MobileModeStrip), порядок как
+          у вкладок на ПК. Раньше раздел меняли только в «Опциях». */}
+      <MobileModeStrip<Tab>
+        ariaLabel="Сделки фондов"
+        items={[
+          { key: 'portfolio', label: 'Портфель', title: 'Общий портфель' },
+          { key: 'company', label: 'По бумаге' },
+          { key: 'funds', label: 'Витрина' },
+        ]}
+        value={tab}
+        onChange={setTab}
+        tourId="ft-tabs-strip"
+      />
+      <MobileContextLine
+        text={isCompany ? (companySummary?.subtitle ?? '') : (timeSummary ?? '')}
         helpLink="/methodology/funds-catalog"
-        sourceNote="Справки о СЧА (форма ЦБ № 0420502) · УК Первая, Т-Капитал, ВИМ, Альфа"
+        note="Справки о СЧА (форма ЦБ № 0420502) · УК Первая, Т-Капитал, ВИМ, Альфа"
       />
 
       {error && (
@@ -837,7 +816,6 @@ export default function MobileFundTradesPage() {
               else setOptionsSheetOpen(false);
             },
             onOpenAsset: () => setCompanyAssetOpen(true),
-            optionsHead: tabSwitcher,
             onSummary: setCompanySummary,
           }}
         />
@@ -1046,12 +1024,10 @@ export default function MobileFundTradesPage() {
         </div>
       </MobileSheet>
 
-      {/* ── ⚙️ Опции sheet — режимы + всё прочее (на «По бумаге» — в CompanyFlowsTab) ── */}
+      {/* ── ⚙️ Опции sheet — настройки раздела (на «По бумаге» — в CompanyFlowsTab) ── */}
       <MobileSheet open={optionsSheetOpen && !isCompany} onClose={() => setOptionsSheetOpen(false)} title="Опции">
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Переключатель режимов */}
-          {tabSwitcher}
-
+          {/* Раздел страницы — в полоске режимов наверху (MobileModeStrip). */}
           {/* Состав фондов: сортировка + УК */}
           {tab === 'funds' && (
             <>

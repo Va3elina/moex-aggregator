@@ -45,7 +45,9 @@ const easeOutCubic = ANIMATION.easing;
 // компании»: контекст, который тянет взгляд. Бары остаются в знаковой палитре
 // притоков/оттоков (зелёный/красный) — у них цвет несёт смысл.
 const INDEX_LINE_COLOR = 'var(--accent)';
-const FLOW_POS = 'var(--funds-flow-positive)';
+// Притоки — цвет покупок из «Открытых позиций» (--oi-green): в светлой теме это
+// зелёный #0A6B3B из палитры рисовки экспорта.
+const FLOW_POS = 'var(--oi-green, var(--funds-flow-positive))';
 const FLOW_NEG = 'var(--funds-flow-negative)';
 
 // Полоса подписей оси X внутри нижней секции, px.

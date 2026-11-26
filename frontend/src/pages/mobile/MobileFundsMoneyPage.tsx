@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Wallet, Lock, AlarmClock } from 'lucide-react';
+import { Lock, AlarmClock } from 'lucide-react';
 import { useTierAccess, useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import CreateFundAlertModal from '../../components/alerts/CreateFundAlertModal';
@@ -17,7 +17,7 @@ import { FUND_ALERTS_ENABLED } from '../../config/alertsConfig';
 import { handleTierError } from '../../utils/tierError';
 import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
-import MobilePageHeader from '../../components/mobile/MobilePageHeader';
+import { MobileModeStrip, MobileContextLine } from '../../components/mobile/MobileModeStrip';
 import MobileChart from '../../components/mobile/MobileChart';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import MobileFlowsHistogram from '../../components/mobile/MobileFlowsHistogram';
@@ -182,7 +182,7 @@ export default function MobileFundsMoneyPage() {
             <strong>Время</strong> — глубина истории
           </p>
           <p>
-            <strong>Опции</strong> — категория, режим, таймфрейм притоков,
+            <strong>Опции</strong> — режим, таймфрейм притоков,
             выбор конкретных фондов
           </p>
         </>
@@ -209,15 +209,15 @@ export default function MobileFundsMoneyPage() {
     },
     {
       selector: null,
-      title: 'Категория, режимы, фонды',
+      title: 'Режимы и фонды',
       align: 'top',
       body: (
         <>
           <p style={{ marginBottom: 4 }}>
-            Открыл кнопку <strong>«Опции»</strong>. Внутри:
+            <strong>Категория</strong> — полоска наверху: Деньги, Акции, Облигации, Золото, Юань.
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Категория:</strong> Деньги / Акции / Облигации / Золото
+            Открыл кнопку <strong>«Опции»</strong>. Внутри:
           </p>
           <p style={{ marginBottom: 4 }}>
             <strong>Режим:</strong> Притоки (зелёный = приток, красный = отток)
@@ -509,12 +509,18 @@ export default function MobileFundsMoneyPage() {
       onRefresh={loadData}
       loading={loading}
     >
-      <MobilePageHeader
-        Icon={Wallet}
-        title="Деньги в фондах"
-        subtitle={`${categoryLabel} · ${viewMode === 'aum' ? 'СЧА' : 'Притоки-Оттоки'} · ${periodLabel}`}
+      {/* Категория фондов — полоской режимов наверху (MobileModeStrip). */}
+      <MobileModeStrip<FundCategory>
+        ariaLabel="Категория фондов"
+        items={CATEGORIES.map((c) => ({ key: c.key, label: c.label, disabled: !!c.comingSoon, title: c.comingSoon ? 'Скоро' : undefined }))}
+        value={category}
+        onChange={selectCategory}
+        tourId="funds-categories-strip"
+      />
+      <MobileContextLine
+        text={`${viewMode === 'aum' ? 'СЧА' : 'Притоки-Оттоки'} · ${periodLabel}`}
         helpLink="/methodology/funds-money"
-        sourceNote="Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа"
+        note="Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа"
       />
 
       {/* Full-bleed chart area. Histogram (Притоки) и MobileChart (СЧА)
@@ -615,31 +621,7 @@ export default function MobileFundsMoneyPage() {
         title="Опции"
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Категория */}
-          <div>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-              Категория
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {CATEGORIES.map((cat) => {
-                const soon = !!cat.comingSoon;
-                return (
-                <button
-                  key={cat.key}
-                  className={`fm-chip ${category === cat.key ? 'active' : ''}`}
-                  onClick={() => {
-                    if (!soon) selectCategory(cat.key);
-                  }}
-                  disabled={soon}
-                  style={{ flex: 1, minWidth: 'calc(50% - 4px)', justifyContent: 'center', opacity: soon ? 0.5 : undefined, cursor: soon ? 'not-allowed' : undefined }}
-                >
-                  {soon ? `${cat.label} · Скоро` : cat.label}
-                </button>
-                );
-              })}
-            </div>
-          </div>
-
+          {/* Категория — в полоске режимов наверху страницы. */}
           {/* Режим */}
           <div>
             <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>

@@ -70,7 +70,13 @@ class Subscription(Base):
     period = Column(String(16), nullable=False)            # 'monthly' / 'yearly' — период оплаты
     plan_id = Column(String(32), nullable=False)           # 'pro_monthly' — связка tier+period (SKU)
     amount = Column(Numeric(10, 2), nullable=False)        # сумма в рублях (фактически списанная, уже со скидкой)
-    discount_pct = Column(Integer, nullable=False, default=0, server_default="0")  # retention-скидка %, к рекуррентному списанию (одноразовая)
+    discount_pct = Column(Integer, nullable=False, default=0, server_default="0")  # retention-скидка %, к ближайшему рекуррентному списанию
+    # Сколько продлений подряд ещё идут со скидкой discount_pct (миграция 117).
+    # 0 при discount_pct>0 — старые записи (до 117): трактуем как одно продление.
+    discount_periods_left = Column(Integer, nullable=False, default=0, server_default="0")
+    # Retention-скидка в рублях (годовой «месяц в подарок», миграция 118).
+    # Если > 0, списание = цена − discount_rub, discount_pct только для журнала.
+    discount_rub = Column(Numeric(10, 2), nullable=False, default=0, server_default="0")
     currency = Column(String(3), default="RUB", nullable=False)
 
     # === Lifecycle ===

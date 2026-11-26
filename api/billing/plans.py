@@ -129,6 +129,53 @@ def monthly_fallback(plan_id: str) -> Plan | None:
     return PLANS.get(f"{p.tier}_monthly")
 
 
+# === Retention-скидка (оффер в пути отмены подписки) ===
+# Месячный план: 25% на 2 следующих продления. Годовой: «месяц в подарок»,
+# из ближайшего годового продления вычитаем цену одного месяца того же тарифа
+# (≈10% года). 25% от года стоили бы в 2,4 раза дороже.
+# Годовая скидка хранится в рублях (subscriptions.discount_rub), pct у неё
+# приблизительный: нужен триггеру billing_events и уведомлению админу.
+RETENTION_PCT = 25
+RETENTION_MONTHS = 2
+
+
+def retention_terms(plan_id: str | None) -> dict | None:
+    """Условия retention-скидки для плана или None (invite/триал без пары и т.п.).
+
+    pct — % к каждому льготному списанию (в subscriptions.discount_pct),
+    periods — сколько продлений подряд идут со скидкой,
+    discount_rub — суммарная экономия; у годового это точная сумма вычета.
+    full_rub / final_rub — цена периода (месяца или года) без скидки и со скидкой.
+    """
+    p = PLANS.get(plan_id or "")
+    if not p:
+        return None
+    if p.period == "monthly":
+        return {
+            "period": "monthly",
+            "pct": RETENTION_PCT,
+            "periods": RETENTION_MONTHS,
+            "discount_rub": round(p.amount * RETENTION_PCT / 100 * RETENTION_MONTHS),
+            # цена одного месяца без скидки и со скидкой
+            "full_rub": round(p.amount),
+            "final_rub": round(p.amount * (100 - RETENTION_PCT) / 100),
+        }
+    if p.period == "yearly":
+        monthly = monthly_fallback(plan_id or "")
+        if not monthly:
+            return None
+        return {
+            "period": "yearly",
+            "pct": max(1, round(monthly.amount / p.amount * 100)),
+            "periods": 1,
+            "discount_rub": round(monthly.amount),
+            # цена следующего года без скидки и со скидкой (для зачёркнутой цены)
+            "full_rub": round(p.amount),
+            "final_rub": round(p.amount - monthly.amount),
+        }
+    return None
+
+
 def list_public_plans() -> list[Plan]:
     """Все планы для Pricing-страницы (в порядке tier → period)."""
     return list(PLANS.values())

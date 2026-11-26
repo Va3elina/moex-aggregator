@@ -6,7 +6,9 @@
  *   - Как watermark на графиках (SimpleChart)
  *
  * Глиф 32×32 — четыре L-образных угла, образующие рамку. Wordmark "FRAME"
- * пишется Archivo 800 рядом, размер пропорционален глифу.
+ * пишется Archivo 800 рядом, размер пропорционален глифу. С 25.11.2026 бренд —
+ * «FRAMEDATA»: одно слово заглавными, тем же кеглем, весом и цветом, что FRAME
+ * (вариант G из сравнения вариантов логотипа, 25.11.2026).
  *
  * Цвет: по умолчанию `currentColor` — наследует от родителя. Для accent-варианта
  * передавай `color="var(--accent)"`.
@@ -25,7 +27,15 @@ interface FrameLogoProps {
   weight?: 400 | 500 | 600 | 700 | 800;
   /** Дополнительный класс контейнера. */
   className?: string;
+  /** Писать ли «FRAMEDATA» (по умолчанию) или старое «FRAME». */
+  showData?: boolean;
 }
+
+// Замеры Archivo в Chrome (25.11.2026), fontSize 30, letterSpacing −0.5:
+// "FRAME" — 110 ед. при 800; "FRAMEDATA" — 190.2 при 800 и 183.75 при 700.
+// Для прочих толщин — пропорция от 800. +1 ед. запаса, чтобы не резать край.
+const WORD_W: Record<number, number> = { 700: 183.75, 800: 190.2 };
+const wordWidth = (weight: number) => (WORD_W[weight] ?? 190.2) + 1;
 
 export default function FrameLogo({
   size = 28,
@@ -33,6 +43,7 @@ export default function FrameLogo({
   showWordmark = true,
   weight = 800,
   className = '',
+  showData = true,
 }: FrameLogoProps) {
   // Single-SVG approach: glyph + text в одном SVG с явным y-positioning.
   // Раньше HTML inline-flex/inline-block — alignment зависел от font metrics
@@ -73,7 +84,7 @@ export default function FrameLogo({
   const GLYPH_LEFT_INSET = 3; // x, на котором начинается контент глифа
   const gap = GLYPH_LEFT_INSET - (32 - 29); // = 0: добиваем правый зазор до 3 ед
   const textStartX = 32 + gap;
-  const textWidth = 110; // bumped с 95 — fontSize 30 (вместо 26) занимает больше
+  const textWidth = showData ? wordWidth(weight) : 110;
   const totalWidth = textStartX + textWidth;
   const renderHeight = size;
   const renderWidth = (totalWidth / 32) * size;
@@ -86,7 +97,7 @@ export default function FrameLogo({
         viewBox={`0 0 ${totalWidth} 32`}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        aria-label="Frame"
+        aria-label={showData ? 'FRAMEDATA' : 'Frame'}
       >
         {/* Glyph corner brackets */}
         <path d="M3 3 H13 V8 H8 V13 H3 Z" fill={color} />
@@ -105,7 +116,7 @@ export default function FrameLogo({
           fill={color}
           dominantBaseline="central"
         >
-          FRAME
+          {showData ? 'FRAMEDATA' : 'FRAME'}
         </text>
       </svg>
     </span>

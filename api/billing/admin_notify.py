@@ -397,7 +397,10 @@ def _render_event(db: Session, ev) -> str | None:
     if kind == "retention":
         return "\n".join([
             "🤝 <b>Удержан скидкой</b>", _who(user, sub.user_id), "",
-            f"Хотел отменить {_plan_name(sub)}, принял скидку {sub.discount_pct}% на продление {_d(sub.expires_at)}",
+            f"Хотел отменить {_plan_name(sub)}, принял скидку "
+            + (f"{_rub(sub.discount_rub)} (месяц в подарок)" if (sub.discount_rub or 0) > 0 else f"{sub.discount_pct}%")
+            + (f" на {sub.discount_periods_left} продления с {_d(sub.expires_at)}"
+               if (sub.discount_periods_left or 0) > 1 else f" на продление {_d(sub.expires_at)}"),
         ])
     if kind == "autopay_bound":
         # Вебхук первой оплаты в одной транзакции активирует подписку и пишет карту:

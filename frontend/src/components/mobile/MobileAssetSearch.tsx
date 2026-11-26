@@ -22,6 +22,7 @@ import type { Instrument } from '../../types';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useInstrumentFilter } from '../../hooks/useInstrumentFilter';
 import { getLowActivityInfo } from '../../services/api';
+import { requestFavoriteAdd } from '../../utils/favoritesSignupNudge';
 
 interface MobileAssetSearchProps {
   open: boolean;
@@ -163,6 +164,8 @@ export default function MobileAssetSearch({
 
   const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const adding = !favorites.includes(sectype);
+    if (adding && !requestFavoriteAdd(favorites)) return; // лимит гостя → окно регистрации
     setFavorites((prev) =>
       prev.includes(sectype) ? prev.filter((t) => t !== sectype) : [...prev, sectype],
     );

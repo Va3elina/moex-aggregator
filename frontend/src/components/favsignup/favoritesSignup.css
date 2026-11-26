@@ -1,0 +1,357 @@
+/*
+ * Окно «Не потеряйте своё избранное» (FavoritesSignupModal).
+ * Анимация-превью: звёздочка у YDEX → актив уезжает в «Избранные» →
+ * на десктопе появляется телефон со списком, на мобиле — плашка.
+ * Геометрия превью фиксирована в px (строки 34px): курсор и кольцо
+ * спозиционированы по центру звёздочки, менять размеры строк — вместе с ними.
+ * Палитра превью фиксированная (фирменный оранжевый) в обеих темах;
+ * текст и кнопки окна — на переменных темы.
+ */
+
+.fsm-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 10, 10, 0.52);
+}
+.fsm-backdrop--sheet {
+  align-items: flex-end;
+  padding: 0;
+}
+
+.fsm-panel {
+  width: 100%;
+  max-width: 540px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 2px solid var(--text-primary);
+  border-radius: 16px;
+  box-shadow: 6px 6px 0 var(--text-primary);
+  padding: 12px 12px 26px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+.fsm-backdrop--sheet .fsm-panel {
+  max-width: none;
+  border-bottom: none;
+  border-radius: 22px 22px 0 0;
+  box-shadow: none;
+  padding: 10px 16px calc(28px + env(safe-area-inset-bottom, 0px));
+  max-height: 92vh;
+  animation: fsm-sheet-in 0.28s cubic-bezier(.2, .8, .2, 1) both;
+}
+.fsm-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-color, #CFCAC0);
+  margin: 0 auto 10px;
+}
+@keyframes fsm-sheet-in {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ── превью ── */
+.fsm-stage {
+  position: relative;
+  height: 256px;
+  border-radius: 10px;
+  overflow: hidden;
+  background-color: #FF5C2B;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.13) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: #0A0A0A;
+  font-family: Inter, system-ui, sans-serif;
+}
+.fsm-backdrop--sheet .fsm-stage { height: 272px; border-radius: 12px; }
+
+.fsm-anim {
+  animation-duration: 7s;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+.fsm-stage.is-paused .fsm-anim { animation-play-state: paused; }
+
+.fsm-scene { position: absolute; inset: 0; animation-name: fsm-scene; }
+
+.fsm-card {
+  position: absolute;
+  left: 18px;
+  top: 22px;
+  width: 280px;
+  background: #FFFFFF;
+  border: 2px solid #0A0A0A;
+  border-radius: 8px;
+  box-shadow: 4px 4px 0 #0A0A0A;
+  padding: 12px 14px;
+}
+/* Прижата влево: справа колонка кнопок (крестик/пауза). На экранах уже
+   ~370px крестик ложится на пустой правый верх карточки (строка заголовка). */
+.fsm-backdrop--sheet .fsm-card { left: 14px; top: 18px; }
+
+.fsm-label {
+  font-size: 10px;
+  line-height: 16px;
+  height: 16px;
+  margin-bottom: 4px;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  color: #6B6B6B;
+}
+.fsm-label--second { margin-top: 8px; }
+
+.fsm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 6px;
+  border-bottom: 1px solid #ECE8DF;
+  box-sizing: border-box;
+}
+.fsm-row--last { border-bottom: none; }
+.fsm-logo { display: flex; flex: none; }
+.fsm-ticker { font-weight: 700; font-size: 12px; }
+.fsm-name { font-size: 11px; color: #6B6B6B; }
+.fsm-star { margin-left: auto; position: relative; width: 14px; height: 14px; flex: none; }
+.fsm-star svg { position: absolute; inset: 0; }
+
+.fsm-row-in { overflow: hidden; max-height: 0; animation-name: fsm-row-in; }
+.fsm-row-out { overflow: hidden; max-height: 34px; animation-name: fsm-row-out; }
+.fsm-star-fill { animation-name: fsm-star-fill; }
+
+.fsm-ring {
+  position: absolute;
+  left: 239px;
+  top: 131px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid #FF5C2B;
+  animation-name: fsm-ring;
+}
+.fsm-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 3px 2px;
+  animation-name: fsm-cursor;
+}
+.fsm-tap {
+  position: absolute;
+  left: 240px;
+  top: 132px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(10, 10, 10, 0.32);
+  border: 2px solid #FFFFFF;
+  animation-name: fsm-tap;
+}
+
+.fsm-phone {
+  position: absolute;
+  left: 318px;
+  top: 18px;
+  width: 140px;
+  height: 220px;
+  background: #FFFFFF;
+  border: 3px solid #0A0A0A;
+  border-radius: 22px;
+  box-shadow: 4px 4px 0 #0A0A0A;
+  padding: 8px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  animation-name: fsm-phone;
+}
+.fsm-phone-notch { width: 38px; height: 5px; border-radius: 3px; background: #0A0A0A; align-self: center; margin-bottom: 10px; }
+.fsm-phone-title { font-family: var(--font-display, Archivo), Inter, sans-serif; font-weight: 800; font-size: 13px; margin: 0 4px 6px; }
+.fsm-phone .fsm-row { height: 28px; gap: 6px; padding: 0 4px; }
+.fsm-phone .fsm-ticker { font-size: 11px; }
+.fsm-phone-new { overflow: hidden; max-height: 0; animation-name: fsm-phone-new; }
+
+.fsm-saved {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #1A7A43;
+  background: #E6F4EC;
+  border-radius: 999px;
+  padding: 5px 6px;
+  animation-name: fsm-saved;
+}
+.fsm-phone .fsm-saved { margin-top: auto; font-size: 9px; padding: 5px 4px; gap: 3px; white-space: nowrap; }
+.fsm-chip-wrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 236px;
+  display: flex;
+  justify-content: center;
+}
+.fsm-chip-wrap .fsm-saved {
+  font-size: 11px;
+  color: #0A0A0A;
+  background: #FFFFFF;
+  border: 2px solid #0A0A0A;
+  padding: 4px 12px;
+  gap: 6px;
+}
+
+.fsm-icon-btn {
+  position: absolute;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(10, 10, 10, 0.82);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.fsm-icon-btn:hover { background: #0A0A0A; }
+.fsm-icon-btn:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+.fsm-close { top: 10px; }
+.fsm-pause { bottom: 10px; }
+
+/* ── текст и кнопки ── */
+.fsm-body { padding: 22px 16px 0; }
+.fsm-backdrop--sheet .fsm-body { padding: 20px 4px 0; }
+.fsm-title {
+  margin: 0;
+  font-family: var(--font-display, Archivo), Inter, sans-serif;
+  font-weight: 800;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+}
+.fsm-backdrop--sheet .fsm-title { font-size: 25px; letter-spacing: -0.4px; }
+.fsm-text {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.fsm-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-top: 24px;
+}
+.fsm-backdrop--sheet .fsm-actions { align-items: stretch; margin-top: 22px; }
+.fsm-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 0 34px;
+  border: none;
+  border-radius: 12px;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fsm-cta:hover { opacity: 0.9; }
+.fsm-cta:focus-visible { outline: 2px solid #FF5C2B; outline-offset: 2px; }
+.fsm-login {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.fsm-login button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* ── ключевые кадры (7 с, бесшовный цикл через затухание сцены) ── */
+@keyframes fsm-scene { 0% { opacity: 0; } 4% { opacity: 1; } 94% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fsm-cursor {
+  0% { transform: translate(320px, 240px); opacity: 0; }
+  8% { transform: translate(320px, 240px); opacity: 1; animation-timing-function: cubic-bezier(.45, 0, .2, 1); }
+  27% { transform: translate(250px, 143px) scale(1); }
+  30% { transform: translate(250px, 143px) scale(.82); }
+  33% { transform: translate(250px, 143px) scale(1); }
+  48% { transform: translate(250px, 143px); opacity: 1; }
+  56% { transform: translate(272px, 196px); opacity: 0; }
+  100% { transform: translate(272px, 196px); opacity: 0; }
+}
+@keyframes fsm-tap {
+  0%, 14% { opacity: 0; transform: scale(1.5); }
+  22% { opacity: 1; transform: scale(1); }
+  28% { opacity: 1; transform: scale(1); }
+  31% { opacity: 1; transform: scale(.72); }
+  35% { opacity: .8; transform: scale(.9); }
+  42% { opacity: 0; transform: scale(.9); }
+  100% { opacity: 0; transform: scale(.9); }
+}
+@keyframes fsm-ring {
+  0%, 30% { transform: scale(.3); opacity: 0; }
+  31% { transform: scale(.45); opacity: .9; }
+  43% { transform: scale(1.7); opacity: 0; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+@keyframes fsm-star-fill {
+  0%, 30% { opacity: 0; transform: scale(.5); }
+  34% { opacity: 1; transform: scale(1.35); }
+  38% { opacity: 1; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes fsm-row-out {
+  0%, 40% { max-height: 34px; opacity: 1; }
+  50% { max-height: 0; opacity: 0; }
+  100% { max-height: 0; opacity: 0; }
+}
+@keyframes fsm-row-in {
+  0%, 40% { max-height: 0; opacity: 0; background-color: rgba(255, 92, 43, 0); }
+  50% { max-height: 34px; opacity: 1; background-color: rgba(255, 92, 43, .16); }
+  76% { background-color: rgba(255, 92, 43, .16); }
+  88% { background-color: rgba(255, 92, 43, 0); }
+  100% { max-height: 34px; opacity: 1; background-color: rgba(255, 92, 43, 0); }
+}
+@keyframes fsm-phone {
+  0%, 54% { opacity: 0; transform: translateY(22px); }
+  62% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes fsm-phone-new {
+  0%, 62% { max-height: 0; opacity: 0; background-color: rgba(255, 92, 43, 0); }
+  69% { max-height: 28px; opacity: 1; background-color: rgba(255, 92, 43, .16); }
+  86% { background-color: rgba(255, 92, 43, .16); }
+  94% { background-color: rgba(255, 92, 43, 0); }
+  100% { max-height: 28px; opacity: 1; }
+}
+@keyframes fsm-saved {
+  0%, 60% { opacity: 0; transform: translateY(8px) scale(.9); }
+  68% { opacity: 1; transform: translateY(0) scale(1.05); }
+  72% { opacity: 1; transform: none; }
+  100% { opacity: 1; transform: none; }
+}
+
+/* prefers-reduced-motion НЕ глушит анимацию намеренно: в Windows флаг ставит
+   «Эффекты анимации: выкл» (часто выключено ради скорости), и на ПК окно
+   теряло весь смысл — показывало статичный кадр. Анимация мягкая, без
+   вспышек, и её всегда можно остановить кнопкой паузы (WCAG 2.2.2). */

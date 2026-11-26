@@ -41,7 +41,7 @@ import MonthRangePicker, { monthRangeLabel, type MonthRange } from '../fundtrade
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import CompanyFlowsHistogram from '../fundtrades/CompanyFlowsHistogram';
 import { scaleOf, fmtSignedNum } from '../fundtrades/PortfolioMoversPanel';
-import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor, resolveFundIconTicker } from '../../config/fundConfig';
+import { DONUT_COLORS, assetColor, fundAssetName, fundAssetColor, resolveFundIconTicker, fundAssetCode } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import Donut from './Donut';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
@@ -731,7 +731,7 @@ export default function FundDetailModal({
                                                                     ) : (
                                                                         <>
                                                                             {(() => {
-                                                                                const tk = resolveFundTicker(h!.asset_name, h!.isin);
+                                                                                const tk = fundAssetCode(h!.asset_name, h!.isin);
                                                                                 return tk ? (
                                                                                     <p style={{ margin: '0 0 6px', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 10, letterSpacing: '0.1em', fontWeight: 700, color: 'var(--text-muted)' }}>
                                                                                         {tk}

@@ -286,21 +286,29 @@ async def _warmup_cache():
 
 
 def _warm_screener_cache():
-    """Прогрев кеша скринера ОИ по всем 4 комбинациям clgroup × horizon.
+    """Прогрев кеша скринера ОИ: clgroup × horizon × (без задержки | с задержкой).
 
     Синхронная (SQLAlchemy-сессия) — вызывается через asyncio.to_thread.
     Своя сессия, а не Depends(get_db): прогрев живёт вне цикла запросов.
     """
     from api.database import SessionLocal
     from api.routers.open_interest import build_oi_screener
+    from api.security.access_control import get_effective_end_date
+    # Два варианта ключа на комбинацию: без задержки (платные) и с потолком
+    # «вчера» (гость/free, oi_screener.data_delay_hours — 2026-11-22). Потолок
+    # берём той же функцией, что и роут (user=None → гость), иначе ключи
+    # разъедутся и прогрев будет греть мимо.
+    delayed_end = get_effective_end_date(None, "oi_screener")
+    ends = [None] + ([delayed_end] if delayed_end else [])
     db = SessionLocal()
     try:
         for clgroup in ("FIZ", "YUR"):
             for horizon in ("short", "medium"):
-                try:
-                    build_oi_screener(db, clgroup, horizon)
-                except Exception as e:
-                    logger.warning(f"OI screener warm failed ({clgroup}/{horizon}): {e}")
+                for end_date in ends:
+                    try:
+                        build_oi_screener(db, clgroup, horizon, end_date=end_date)
+                    except Exception as e:
+                        logger.warning(f"OI screener warm failed ({clgroup}/{horizon}/{end_date}): {e}")
     finally:
         db.close()
 

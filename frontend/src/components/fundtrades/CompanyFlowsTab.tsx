@@ -39,7 +39,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { CalendarRange, CandlestickChart, ChevronDown, Coins, Hourglass, Percent, TrendingUp } from 'lucide-react';
-import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, resolveFundIconTicker } from '../../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, resolveFundIconTicker, fundAssetCode } from '../../config/fundConfig';
 import {
     listFundTradeAssets,
     listFundsWithHistory,
@@ -217,14 +217,14 @@ export const COMPANY_ASSET_PARAM = 'asset';
 
 /** Значение ?asset= для бумаги: тикер, если он есть (читаемая ссылка), иначе ISIN/ключ. */
 function assetUrlValue(a: FundTradeAsset): string {
-    return resolveFundTicker(a.asset_name, a.isin) ?? a.isin ?? a.key;
+    return fundAssetCode(a.asset_name, a.isin) ?? a.isin ?? a.key;
 }
 
 /** Бумага по значению ?asset=: тикер (без учёта регистра), ISIN или ключ. */
 function findAssetByUrl(assets: FundTradeAsset[], q: string): FundTradeAsset | undefined {
     const up = q.toUpperCase();
     return assets.find(a => a.key === q || a.isin?.toUpperCase() === up)
-        ?? assets.find(a => resolveFundTicker(a.asset_name, a.isin)?.toUpperCase() === up);
+        ?? assets.find(a => fundAssetCode(a.asset_name, a.isin)?.toUpperCase() === up);
 }
 
 /** Сводка выбора для рейла и шапки мобильной страницы (MobileLayout). */
@@ -500,6 +500,12 @@ export default function CompanyFlowsTab({
     // undefined, и подпись падает на счётчик фондов.
     const selectedTicker = useMemo(
         () => (selectedAsset ? resolveFundTicker(selectedAsset.asset_name, selectedAsset.isin) : undefined),
+        [selectedAsset],
+    );
+    // Подпись бумаги (таблетка, шапка, экспорт): тикер акции или биржевой код
+    // облигации. Для цены/графика — только selectedTicker выше.
+    const selectedCode = useMemo(
+        () => (selectedAsset ? fundAssetCode(selectedAsset.asset_name, selectedAsset.isin) : undefined),
         [selectedAsset],
     );
 
@@ -898,12 +904,12 @@ export default function CompanyFlowsTab({
         if (!onMobileSummary) return;
         onMobileSummary({
             assetName: mobileAssetName,
-            ticker: selectedTicker,
+            ticker: selectedCode,
             time: t(PERIOD_LABELS[period]),
             options: `${t(MODE_LABELS[effectiveMode])} · ${mobileFundsShort}`,
             subtitle: `${mobileAssetName ?? t('Бумага')} · ${t(MODE_LABELS[effectiveMode])} · ${t(PERIOD_LABELS[period])}`,
         });
-    }, [onMobileSummary, mobileAssetName, selectedTicker, period, effectiveMode, mobileFundsShort, t]);
+    }, [onMobileSummary, mobileAssetName, selectedCode, period, effectiveMode, mobileFundsShort, t]);
 
     // ── Мобильный рендер: график на всю площадь + sheet'ы рейла ──
     if (mobile) {
@@ -1023,7 +1029,7 @@ export default function CompanyFlowsTab({
                                     </span>
                                 </span>
                                 <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', flexShrink: 0 }}>
-                                    {selectedTicker ?? (selectedAsset ? `${selectedAsset.funds_count} ${t(pluralFunds(selectedAsset.funds_count))}` : '')} ▾
+                                    {selectedCode ?? (selectedAsset ? `${selectedAsset.funds_count} ${t(pluralFunds(selectedAsset.funds_count))}` : '')} ▾
                                 </span>
                             </button>
                         </div>
@@ -1169,7 +1175,7 @@ export default function CompanyFlowsTab({
                         </div>
                         {selectedAsset && !embedded && (
                             <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
-                                {selectedTicker ?? `${selectedAsset.funds_count} ${t(pluralFunds(selectedAsset.funds_count))}`}
+                                {selectedCode ?? `${selectedAsset.funds_count} ${t(pluralFunds(selectedAsset.funds_count))}`}
                             </div>
                         )}
                     </div>
@@ -1264,11 +1270,11 @@ export default function CompanyFlowsTab({
                     <ChartActionsMenu containerRef={chartAnchorRef}>
                         <ChartCaptureButton
                             getTargetElement={() => chartAnchorRef.current}
-                            filename={`frame-company-flows-${effectiveMode}-${selectedTicker ?? selectedAsset?.key ?? 'asset'}-${period}`}
+                            filename={`frame-company-flows-${effectiveMode}-${selectedCode ?? selectedAsset?.key ?? 'asset'}-${period}`}
                             metadata={{
                                 title: t('Сделки фондов'),
                                 asset: selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined,
-                                ticker: selectedTicker,
+                                ticker: selectedCode,
                                 details: [
                                     // ⚠️ Режим ОБЯЗАТЕЛЕН в подписи. Вадим 01.09: на
                                     // экспорте «Сделки фондов · 3 года · 3 фонда» —

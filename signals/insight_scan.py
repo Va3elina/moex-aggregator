@@ -407,8 +407,9 @@ def build(job: dict, now_iso: str) -> dict:
     if job["repeat"]:
         r = job["repeat"]
         ctx["повтор темы - подай как продолжение"] = [
-            f"{cards.d_ru(r['date'], card['as_of'])} канал уже писал об этом: «{r['title']}». Начни со ссылки на "
-            f"тот пост и скажи, что изменилось с тех пор; не пересказывай его заново"]
+            f"{cards.d_ru(r['date'], card['as_of'])} канал уже писал об этом: «{r['title']}». Пост начни с "
+            f"факта находки, не со ссылки на тот пост; сослаться можно дальше одной фразой, если она добавляет смысл "
+            f"(R35); не пересказывай его заново"]
     brief = cards.brief_text(card, focus=True, context=ctx)
     return {"card": card, "brief": brief}
 

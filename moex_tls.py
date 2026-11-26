@@ -7,8 +7,14 @@ TLS-контекст для API Московской биржи (цепочка 
     ни в системном store Debian, поэтому запросы к Algopack легли с
     CERTIFICATE_VERIFY_FAILED:
 
-        apim.moex.com  → issuer Russian Trusted Sub CA   (уже переключён)
-        iss.moex.com   → issuer ZeroSSL RSA DV SSL CA 2  (пока международный)
+        apim.moex.com  → issuer Russian Trusted Sub CA   (с 24.08.2026)
+        iss.moex.com   → issuer Russian Trusted Sub CA   (с ночи на 24.11.2026)
+        web.moex.com   → issuer Russian Trusted Sub CA   (с ночи на 24.11.2026)
+
+    24.11.2026 переключение iss/web уронило всё, что ходило к ним с обычным
+    доверием: futures_turnover, indices_daily, moex_sitenews_scan,
+    moex_calendar_scan. Любой новый запрос к *.moex.com — только через
+    moex_ssl_context() (urllib/aiohttp) или moex_ca_bundle() (requests).
 
     Контекст ниже = certifi + корень Минцифры, то есть надмножество обычного
     доверия. Старые сертификаты продолжают проходить, поэтому его безопасно
@@ -97,3 +103,38 @@ def moex_ssl_context() -> ssl.SSLContext:
 
     log.info("MOEX TLS: бандл не найден, доверие собрано из %s", root)
     return ctx
+
+
+@functools.lru_cache(maxsize=1)
+def moex_ca_bundle() -> str:
+    """Путь к PEM-бандлу (certifi + корень Минцифры) для ``requests``.
+
+    requests не принимает SSLContext — ему нужен ``verify=<путь к файлу>``.
+    В контейнере это готовый бандл из Dockerfile. Вне контейнера (host-side
+    сканеры в signals/) бандл склеиваем один раз во временный файл.
+
+    Raises:
+        FileNotFoundError: как у moex_ssl_context — без корня не откатываемся
+            на verify=False.
+    """
+    if _BUNDLE_PATH.is_file():
+        return str(_BUNDLE_PATH)
+
+    root = next((p for p in _ROOT_PEMS if p.is_file()), None)
+    if root is None:
+        raise FileNotFoundError(
+            f"Нет корня Минцифры для MOEX: ни {_BUNDLE_PATH}, ни "
+            f"{[str(p) for p in _ROOT_PEMS]} не найдены."
+        )
+
+    import certifi
+    import tempfile
+
+    out = Path(tempfile.gettempdir()) / "frame-moex-ca-bundle.pem"
+    data = Path(certifi.where()).read_bytes() + b"\n" + root.read_bytes()
+    if not out.is_file() or out.read_bytes() != data:
+        tmp = out.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, out)  # атомарно: параллельные сканеры не увидят полфайла
+    log.info("MOEX TLS: бандл для requests собран в %s", out)
+    return str(out)

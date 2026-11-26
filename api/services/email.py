@@ -228,6 +228,79 @@ def send_trial_ending_email(
     return _send(to_email, subject, text_body, html_body)
 
 
+def send_renewal_notice_email(
+    to_email: str,
+    tier_ru: str,
+    period: str,
+    amount: float,
+    charge_date: str,
+    paid_until: str,
+    payment_label: str,
+    display_name: str | None = None,
+) -> bool:
+    """Уведомление за 3 дня до автосписания платной подписки (Единые правила, ст. 43).
+
+    Обязательное содержание: дата и сумма списания, за что, способ оплаты и как
+    отказаться. charge_date / paid_until — уже отформатированные даты («26 ноября»).
+    """
+    amount_str = "{:,.0f}".format(amount).replace(",", " ")
+    period_ru = "год" if period == "yearly" else "месяц"
+    greeting = f"Здравствуйте, {display_name}!" if display_name else "Здравствуйте!"
+    subject = f"Подписка {tier_ru} продлится {charge_date} — спишем {amount_str} ₽"
+    profile_url = f"{SITE_URL}/profile"
+
+    text_body = (
+        f"{greeting}\n\n"
+        f"Подписка FRAME {tier_ru} оплачена до {paid_until} и продлевается автоматически.\n"
+        f"{charge_date} мы спишем {amount_str} ₽ за следующий {period_ru} "
+        f"({payment_label}).\n\n"
+        f"Если не хотите продлевать — отключите автопродление в профиле до {charge_date}, "
+        f"тогда списания не будет, а доступ сохранится до {paid_until}:\n{profile_url}\n\n"
+        f"— FRAME\n{SITE_URL}\n"
+    )
+
+    html_body = f"""\
+<!doctype html>
+<html lang="ru"><body style="margin:0;padding:0;background:#0B0D12;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0B0D12;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+             style="max-width:480px;background:#F4F1EA;border-radius:16px;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+{EMAIL_HEADER}
+        <tr><td style="padding:8px 32px 0;">
+          <p style="font-size:15px;color:#2A241B;margin:16px 0 4px;">{greeting}</p>
+          <p style="font-size:15px;color:#2A241B;margin:0 0 12px;line-height:1.5;">
+            Подписка <b>{tier_ru}</b> оплачена до <b>{paid_until}</b> и продлевается
+            автоматически. <b>{charge_date}</b> мы спишем <b>{amount_str}&nbsp;₽</b>
+            за следующий {period_ru}.
+          </p>
+        </td></tr>
+        <tr><td style="padding:0 32px;">
+          <div style="background:#15110B;border-radius:12px;padding:18px 20px;">
+            <span style="font-size:15px;color:#F4F1EA;">Списание {charge_date}:</span>
+            <span style="font-size:22px;font-weight:700;color:#FF5C2B;float:right;">{amount_str}&nbsp;₽</span>
+            <div style="font-size:13px;color:#B9B1A3;margin-top:6px;">{payment_label}</div>
+          </div>
+        </td></tr>
+        <tr><td style="padding:18px 32px 0;">
+          <p style="font-size:13px;color:#6B6357;margin:0 0 16px;line-height:1.5;">
+            Не хотите продлевать? Отключите автопродление в профиле до {charge_date} —
+            списания не будет, а доступ сохранится до {paid_until}.
+          </p>
+          <a href="{profile_url}" style="display:inline-block;background:#FF5C2B;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 22px;border-radius:10px;">Управление подпиской</a>
+        </td></tr>
+        <tr><td style="padding:24px 32px 32px;">
+          <hr style="border:none;border-top:1px solid #DAD3C6;margin:0 0 16px;">
+          <a href="{SITE_URL}" style="font-size:13px;color:#FF5C2B;text-decoration:none;">framedata.ru</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+    return _send(to_email, subject, text_body, html_body)
+
+
 def send_password_reset_email(to_email: str, code: str, display_name: str | None = None) -> bool:
     """Письмо с 6-значным кодом для восстановления пароля.
 

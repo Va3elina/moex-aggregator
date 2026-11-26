@@ -54,8 +54,13 @@ _OI_TYPES = ("oi_move", "oi_zscore", "oi_participants")
 def _oi_feed_allowed(tier: str) -> bool:
     """Пускать ли OI-аномалии в ленту. Один ключ со скринером (см. шапку модуля):
     лента и скринер показывают одно и то же событие, разводить их гейты — значит
-    почти наверняка забыть один из них при следующей правке тарифов."""
-    return bool(get_indicator_limits(tier, "oi_screener").get("open"))
+    почти наверняка забыть один из них при следующей правке тарифов.
+
+    2026-11-22: скринер открыт free/гостю С ЗАДЕРЖКОЙ в день. Лента аномалий —
+    это сегодняшние события в реальном времени, задержать её нечем, поэтому
+    пускаем только тиры без задержки (иначе колокол обходил бы задержку скринера)."""
+    limits = get_indicator_limits(tier, "oi_screener")
+    return bool(limits.get("open")) and not limits.get("data_delay_hours")
 
 
 def _link_required_tier(tier: str, atype: str, asset_id: str) -> Optional[str]:

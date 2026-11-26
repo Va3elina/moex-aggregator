@@ -39,6 +39,8 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+# *.moex.com с 24.11.2026 на цепочке Минцифры — см. moex_tls.py.
+from moex_tls import moex_ssl_context  # noqa: E402
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 DB_URL = os.getenv("DB_URL")
@@ -177,7 +179,7 @@ async def run_once(force: bool = False) -> int:
     engine = get_engine()
     written = 0
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=moex_ssl_context())) as session:
             for secid, board in INDICES.items():
                 # IMOEX2 в будни продолжает считаться в вечерней сессии: после
                 # 19:05 его текущее значение — уже вечерняя цена. Нужен он только

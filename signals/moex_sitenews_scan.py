@@ -62,6 +62,7 @@ if "@db:" in _db:
     os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
 import pipeline_heartbeat                  # noqa: E402
+from moex_tls import moex_ca_bundle        # noqa: E402  (iss.moex.com на Минцифры)
 from api.database import SessionLocal      # noqa: E402
 
 СПИСОК = "https://iss.moex.com/iss/sitenews.json"
@@ -130,7 +131,7 @@ def _запрос(url: str, params: dict = None) -> dict:
     последняя = None
     for попытка in range(ПОВТОРОВ):
         try:
-            r = requests.get(url, params=params, timeout=ТАЙМАУТ)
+            r = requests.get(url, params=params, timeout=ТАЙМАУТ, verify=moex_ca_bundle())
             r.raise_for_status()
             return r.json()
         except (requests.ConnectionError, requests.Timeout, ValueError) as e:
