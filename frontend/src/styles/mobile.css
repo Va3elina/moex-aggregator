@@ -514,14 +514,26 @@
    Тонкая accent-полоска под TopBar — индикатор загрузки страницы.
    Indeterminate keyframe анимация: gradient бегает слева-направо, как
    у Safari address bar при подгрузке. Не блокирует UI, юзер видит
-   что данные обновляются. */
-.fm-loading-bar {
+   что данные обновляются.
+   ⚠️ Слот нулевой высоты в потоке всегда, полоска внутри — absolute поверх
+   контента. Раньше полоска 2px стояла в потоке и появлялась/исчезала на
+   каждую загрузку → весь интерфейс дёргался вниз-вверх. */
+.fm-loading-slot {
   position: relative;
-  width: 100%;
+  height: 0;
+  flex-shrink: 0;
+  z-index: 31;
+}
+
+.fm-loading-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 2px;
   overflow: hidden;
   background: color-mix(in srgb, var(--accent) 15%, transparent);
-  flex-shrink: 0;
+  pointer-events: none;
 }
 
 .fm-loading-bar::before {
