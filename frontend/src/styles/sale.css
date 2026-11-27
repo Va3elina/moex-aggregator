@@ -161,6 +161,7 @@
   margin-top: 22px; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(36px, 3.6vw, 46px);
   letter-spacing: -0.03em; line-height: 1; color: var(--accent); white-space: nowrap;
 }
+.bf-plan .bf-price .bf-unit { margin-left: 6px; font-family: 'Inter', sans-serif; font-size: 0.4em; font-weight: 600; letter-spacing: 0; color: var(--bf-muted); }
 .bf-plan .bf-per { margin-top: 10px; font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--bf-muted); }
 .bf-plan .bf-cta { margin-top: 26px; font-size: 14px; letter-spacing: 0.12em; padding: 16px 20px; }
 .bf-plan .bf-mine { margin-top: 12px; font-size: 14px; line-height: 1.5; font-weight: 500; color: var(--bf-muted); }
