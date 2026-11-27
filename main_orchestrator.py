@@ -635,6 +635,10 @@ class MainOrchestrator:
         self.last_funds_early_update = None  # ранний funds-only прогон в 14:30
         self.last_funds_morning_update = None  # утренний funds-only прогон в 09:30 (догон прошлого дня)
         self.last_indices_early_update = None  # ранний indices-прогон в 09:00 (T+1-публикации ISS)
+        # Цены облигаций — свой флаг дня, его НЕ ставит стартовая синхронизация
+        # (сам шаг в неё не входит). Иначе после любой выкатки до 19:10 шаг
+        # пропускал день: 16–18.11 не было ни одного прогона.
+        self.last_bond_prices_update = None
         self.last_commodity_update = None
         # Карточки и граф владения ведут свои отметки: у них своё расписание,
         # не привязанное к торговому дню.
@@ -2005,6 +2009,7 @@ class MainOrchestrator:
                     await self.run_stock_splits_update()
                     await self.run_bond_maturity_update()
                     await self.run_bond_prices_update()
+                    self.last_bond_prices_update = slot_day
                     await self.run_index_composition_update()
                     await self.run_breadth_update()
                     await self.run_dividends_update()
@@ -2013,6 +2018,17 @@ class MainOrchestrator:
                     send_data_notify("daily")
                     self.last_daily_update = slot_day
                     self.print_stats()
+
+                # === Цены облигаций — догон, если блок 19:10 сегодня их не прогнал ===
+                # Блок выше пропускается в день выкатки (стартовая синхронизация
+                # ставит last_daily_update), а выкатка позже 19:10 может оборвать
+                # шаг на середине. Окно скрипта — от последней даты в bond_history,
+                # так что лишний прогон ничего не дублирует.
+                if (slot_day != self.last_bond_prices_update and
+                        (now.hour, now.minute) >= (DAILY_UPDATE_HOUR, DAILY_UPDATE_MINUTE)):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Цены облигаций (вне блока 19:10)...")
+                    await self.run_bond_prices_update()
+                    self.last_bond_prices_update = slot_day
 
                 await asyncio.sleep(1)
 
