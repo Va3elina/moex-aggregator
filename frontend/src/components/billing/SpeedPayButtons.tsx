@@ -34,14 +34,21 @@ interface Props {
   terminalKey: string | null | undefined;
   /** plan_id для checkout. Если null — кнопки скрыты. */
   planId: string | null;
+  /**
+   * Галочка согласия на автосписание из окна оплаты. Кнопки создают платёж с
+   * автопродлением, поэтому без неё платёж не начинаем: бэкенд всё равно
+   * откажет (POST /api/billing/checkout требует consent при recurrent).
+   */
+  consent: boolean;
   /** Опционально: callback для аналитики/UX. */
   onStart?: () => void;
 }
 
-export default function SpeedPayButtons({ terminalKey, planId, onStart }: Props) {
+export default function SpeedPayButtons({ terminalKey, planId, consent, onStart }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetRef = useRef<TBankPaymentsApi | null>(null);
   const planIdRef = useRef<string | null>(planId);
+  const consentRef = useRef<boolean>(consent);
   const onStartRef = useRef<typeof onStart>(onStart);
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
@@ -52,6 +59,9 @@ export default function SpeedPayButtons({ terminalKey, planId, onStart }: Props)
   useEffect(() => {
     planIdRef.current = planId;
   }, [planId]);
+  useEffect(() => {
+    consentRef.current = consent;
+  }, [consent]);
   useEffect(() => {
     onStartRef.current = onStart;
   }, [onStart]);
@@ -79,6 +89,9 @@ export default function SpeedPayButtons({ terminalKey, planId, onStart }: Props)
         if (!pid) {
           throw new Error('No plan selected');
         }
+        if (!consentRef.current) {
+          throw new Error('Autopay consent required');
+        }
         onStartRef.current?.();
         const resp = await apiFetch('/api/billing/checkout', {
           method: 'POST',
@@ -88,6 +101,7 @@ export default function SpeedPayButtons({ terminalKey, planId, onStart }: Props)
             return_url: `${window.location.origin}/billing/success`,
             widget_mode: true,
             recurrent: true, // подписка ВСЕГДА с авто-продлением — паритет с картой
+            consent: consentRef.current,
             ...purchaseSourcePayload(),
           }),
         });

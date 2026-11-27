@@ -165,3 +165,19 @@ class Subscription(Base):
 
     def __repr__(self):
         return f"<Subscription id={self.id} user={self.user_id} plan={self.plan_id} status={self.status}>"
+
+
+# === Согласие на автосписание при обычной оплате (120_autopay_consent.sql) ===
+# Момент, версия текста и IP, с которого поставили галочку в окне оплаты.
+# У триала своя пара trial_consent_*; у продлений и инвайтов NULL.
+# version='legacy' при пустом autopay_consent_at — платёж создала старая сборка
+# фронта, согласие сервер не видел (api/billing/plans.py).
+#
+# Колонки есть в таблице, но НЕ в ORM-маппинге (добавлены после объявления
+# класса): ORM перечисляет в SELECT и INSERT все свои колонки, и модель с новой
+# колонкой уронила бы весь биллинг, окажись код на проде раньше миграции.
+# Пишет и читает их только service._save_autopay_consent / прямой SQL.
+AUTOPAY_CONSENT_COLUMNS = ("autopay_consent_at", "autopay_consent_version", "autopay_consent_ip")
+Subscription.__table__.append_column(Column("autopay_consent_at", DateTime(timezone=True), nullable=True))
+Subscription.__table__.append_column(Column("autopay_consent_version", String(16), nullable=True))
+Subscription.__table__.append_column(Column("autopay_consent_ip", String(45), nullable=True))

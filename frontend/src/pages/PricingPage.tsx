@@ -358,7 +358,14 @@ export default function PricingPage() {
         headers: { 'Content-Type': 'application/json' },
         // Телефон — ссылка (откроем банк прямо), десктоп — картинка QR от
         // банка. Одна заявка = одна форма: вторая перебила бы первую.
-        body: JSON.stringify({ plan_id: planId, data_type: isPhone ? 'PAYLOAD' : 'IMAGE', ...src }),
+        // consent — та самая галочка автосписания: бэкенд без неё заявку не примет
+        // и запишет момент согласия на подписку.
+        body: JSON.stringify({
+          plan_id: planId,
+          data_type: isPhone ? 'PAYLOAD' : 'IMAGE',
+          consent: agreementConsent,
+          ...src,
+        }),
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok || !body.payload) {
@@ -404,6 +411,9 @@ export default function PricingPage() {
           plan_id: planId,
           return_url: `${window.location.origin}/billing/success`,
           recurrent: true,  // подписка ВСЕГДА с авто-продлением (toggle убран)
+          // Галочка автосписания из окна оплаты: бэкенд отклонит recurrent без
+          // неё и запишет момент согласия, версию текста и IP на подписку.
+          consent: agreementConsent,
           rail,
           ...src,
         }),

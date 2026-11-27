@@ -12,6 +12,10 @@
 Строки забираются FOR UPDATE SKIP LOCKED: три воркера API и оркестратор могут
 звать одновременно, одно событие уйдёт один раз. Если Телеграм не ответил,
 notified_at не ставится и событие уйдёт следующим проходом.
+
+  flag_paid_without_method — найти оплаты на форме, у которых через 15 минут
+                      так и нет способа оплаты, и завести по каждой событие
+                      paid_no_method (одно на подписку). Зовёт оркестратор.
 """
 import html
 import logging
@@ -41,6 +45,14 @@ MAX_EVENT_AGE_HOURS = 48
 # любой паузы — в чат уходит каждая попытка («попытка N из 3»), а дубли одной
 # попытки (отказ + поздний webhook) глушатся.
 RENEW_FAIL_QUIET_MINUTES = 30
+
+# «Оплата без карты»: сколько ждём привязку после активации и как далеко назад
+# смотрим. Привязку приносит только вебхук банка, обычно в ту же минуту; /sync
+# со страницы «Оплата прошла» включает подписку без неё. Окно назад — чтобы
+# первый запуск после выкладки не поднял всю историю разовых оплат.
+NO_METHOD_GRACE_MINUTES = 15
+NO_METHOD_LOOKBACK_HOURS = 24
+KIND_PAID_NO_METHOD = "paid_no_method"
 
 TIER_NAMES = {"basic": "Basic", "pro": "Pro", "premium": "Premium"}
 PERIOD_NAMES = {"monthly": "месяц", "yearly": "год", "trial": "пробный период"}
@@ -330,6 +342,60 @@ def _render_double_charge(db: Session, sub: Subscription, user) -> str | None:
     ])
 
 
+def _webhook_trail(db: Session, payment_id: str | None) -> str | None:
+    """Что банк присылал по платежу (bank_webhook_log). None — журнал недоступен."""
+    if not payment_id:
+        return None
+    try:
+        with db.begin_nested():   # нет таблицы → не ломаем транзакцию рассылки
+            rows = db.execute(text("""
+                SELECT status, has_rebill_id, has_account_token, result
+                FROM bank_webhook_log
+                WHERE payment_id = :pid
+                ORDER BY id DESC LIMIT 4
+            """), {"pid": payment_id}).mappings().all()
+    except Exception:
+        return None
+    if not rows:
+        return "Вебхуки банка: по этому платежу не приходили"
+    parts = []
+    for r in reversed(rows):
+        has_key = r["has_rebill_id"] or r["has_account_token"]
+        parts.append(
+            f"{html.escape(r['status'] or '?')} "
+            f"({'с привязкой' if has_key else 'без привязки'}, {html.escape(r['result'])})"
+        )
+    return "Вебхуки банка: " + " → ".join(parts)
+
+
+def _render_paid_no_method(db: Session, sub: Subscription, user, pm) -> str | None:
+    """Оплата на форме прошла, а способ оплаты за NO_METHOD_GRACE_MINUTES не привязался."""
+    if pm is not None or sub.payment_method_id is not None:
+        return None  # привязка доехала, пока событие ждало отправки
+    if sub.status != "active" or sub.cancelled_at is not None:
+        return None  # вернули деньги или автопродление уже не нужно
+    paid_at = sub.started_at or sub.created_at
+    lines = [
+        "🚨 <b>Оплата прошла, способ оплаты не привязан</b>",
+        _who(user, sub.user_id),
+        "",
+        f"Тариф: {_plan_name(sub)}, <b>{_rub(sub.amount)}</b>",
+        f"Оплачено {paid_at.astimezone(MSK):%d.%m %H:%M} МСК, "
+        f"sub #{sub.id}, платёж {html.escape(str(sub.yk_payment_id))}",
+        "Способ: " + ("СБП" if sub.yk_method == "sbp" else html.escape(sub.yk_method or "карта")),
+    ]
+    trail = _webhook_trail(db, sub.yk_payment_id)
+    if trail:
+        lines.append(trail)
+    lines += [
+        "",
+        f"За {NO_METHOD_GRACE_MINUTES} минут после оплаты привязка от банка не сохранилась: "
+        f"автопродления нет, доступ кончится {_d(sub.expires_at)}.",
+        "Проверьте платёж в кабинете T-Bank: есть ли у него привязка (RebillId / счёт СБП).",
+    ]
+    return "\n".join(lines)
+
+
 def _render_autorenew_off(db: Session, sub: Subscription, user, pm) -> str | None:
     if sub.is_trial:
         return None  # триал гасится покупкой/конверсией
@@ -420,6 +486,8 @@ def _render_event(db: Session, ev) -> str | None:
         return _render_payment(db, sub, user, pm)
     if kind == "double_charge":
         return _render_double_charge(db, sub, user)
+    if kind == KIND_PAID_NO_METHOD:
+        return _render_paid_no_method(db, sub, user, pm)
     if kind == "payment_failed":
         return _render_payment_failed(db, ev, sub, user, pm)
     if kind == "autorenew_off":
@@ -530,3 +598,61 @@ def dispatch_pending(db: Session, limit: int = 50) -> dict:
     if summary["sent"] or summary["failed"]:
         log.info("billing admin notify: %s", summary)
     return summary
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Алерт «оплата без карты»
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def flag_paid_without_method(db: Session, now: datetime | None = None) -> dict:
+    """
+    Оплаченные на форме подписки, у которых через NO_METHOD_GRACE_MINUTES после
+    активации нет payment_method_id → событие paid_no_method в billing_events
+    (дальше обычная доставка dispatch_pending). Одно событие на подписку.
+
+    Кого берём: active, не триал, не инвайт (есть платёж), amount > 0,
+    автопродление не выключено. Продления крона сюда не попадают — их строка
+    создаётся уже с payment_method_id. СБП с незакрытой привязкой
+    (sbp_request_key) ждём: её ещё дотягивает resolve_sbp_bindings.
+
+    С мая по сентябрь 2026 таких оплат было 7, и ни одну не заметили.
+    """
+    now = now or datetime.now(timezone.utc)
+    subs = db.query(Subscription).filter(
+        Subscription.status == "active",
+        Subscription.is_trial.is_(False),
+        Subscription.yk_payment_id.isnot(None),
+        Subscription.amount > 0,
+        Subscription.payment_method_id.is_(None),
+        Subscription.cancelled_at.is_(None),
+        Subscription.sbp_request_key.is_(None),
+        Subscription.started_at <= now - timedelta(minutes=NO_METHOD_GRACE_MINUTES),
+        Subscription.started_at > now - timedelta(hours=NO_METHOD_LOOKBACK_HOURS),
+    ).order_by(Subscription.id).all()
+
+    flagged = 0
+    for sub in subs:
+        seen = db.execute(text(
+            "SELECT 1 FROM billing_events WHERE kind = :k AND subscription_id = :sid LIMIT 1"
+        ), {"k": KIND_PAID_NO_METHOD, "sid": sub.id}).first()
+        if seen is not None:
+            continue
+        # ON CONFLICT — на случай параллельного прохода: в миграции 122 на
+        # (subscription_id) WHERE kind='paid_no_method' стоит уникальный индекс.
+        res = db.execute(text("""
+            INSERT INTO billing_events (kind, user_id, subscription_id, new_status, amount)
+            VALUES (:k, :uid, :sid, 'active', :amount)
+            ON CONFLICT DO NOTHING
+        """), {"k": KIND_PAID_NO_METHOD, "uid": sub.user_id, "sid": sub.id,
+              "amount": float(sub.amount) if sub.amount is not None else None})
+        if res.rowcount:
+            flagged += 1
+            log.warning(
+                "paid_no_method: sub=%s user=%s оплачена %s, способ оплаты не привязан",
+                sub.id, sub.user_id, sub.started_at,
+            )
+    if flagged and db.get_bind().dialect.name == "postgresql":
+        # Будим листенер API (как триггер миграции 106) — сообщение уйдёт сразу.
+        db.execute(text("SELECT pg_notify('billing_event', :p)"), {"p": KIND_PAID_NO_METHOD})
+    db.commit()
+    return {"checked": len(subs), "flagged": flagged}

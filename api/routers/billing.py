@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from api.billing import service as billing_service
 from api.billing import invites as invite_service
 from api.billing import trial as trial_service
+from api.billing import webhook_log
 from api.billing.factory import (
     get_payment_provider,
     get_provider_for,
@@ -56,6 +57,11 @@ class CheckoutRequest(BaseModel):
     rail: str = "card"            # 'card' (redirect) | 'sbp' (QR, рекуррентный СБП)
     source: str | None = None     # откуда пришли к оплате: paywall / delay_banner / header / ... / pricing
     source_feature: str | None = None  # что упёрлось в замок (для paywall / delay_banner)
+    # Согласие на автосписание (галочка в окне оплаты). Обязательно при
+    # recurrent=true и при rail='sbp'. None = поле не прислали: старая сборка
+    # фронта из кеша — пропускаем, пока не включён BILLING_CONSENT_STRICT
+    # (service.check_autopay_consent). Явный false отклоняется всегда.
+    consent: bool | None = None
 
 
 class CheckoutResponse(BaseModel):
@@ -269,11 +275,15 @@ class SbpBindRequest(BaseModel):
     data_type: str = "PAYLOAD"
     source: str | None = None
     source_feature: str | None = None
+    # Согласие на автосписание — как в CheckoutRequest: привязка счёта всегда
+    # с автопродлением, поэтому нужно всегда.
+    consent: bool | None = None
 
 
 @router.post("/sbp/bind")
 async def sbp_bind_start(
     body: SbpBindRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -288,6 +298,8 @@ async def sbp_bind_start(
         return billing_service.start_sbp_binding(
             db=db, user=user, plan_id=body.plan_id, data_type=body.data_type,
             source=clean_source(body.source, body.source_feature),
+            consent=body.consent,
+            consent_ip=request.client.host if request.client else None,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -351,6 +363,8 @@ async def checkout(
             recurrent=body.recurrent,
             rail=body.rail,
             source=clean_source(body.source, body.source_feature),
+            consent=body.consent,
+            consent_ip=request.client.host if request.client else None,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -365,6 +379,57 @@ async def checkout(
 #  4. POST /webhook — callback от провайдера
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _unparsed_webhook_result(raw_body: bytes) -> str:
+    """Почему parse_webhook вернул None — для журнала (подпись тут не проверяем)."""
+    from api.billing.tbank import _STATUS_MAP
+    fields = webhook_log.safe_fields(raw_body)
+    if fields is None:
+        return "bad_body"
+    st = (fields.get("status") or "").upper()
+    if st and st not in _STATUS_MAP:
+        return "skipped_status"   # AUTHORIZED и прочие промежуточные
+    return "rejected"             # подпись / чужой терминал / нет PaymentId
+
+
+def _apply_webhook_event(db: Session, event) -> tuple[str, int | None]:
+    """
+    Обработка события банка. Возвращает (итог для журнала, id подписки).
+    Что именно произошло, определяем по подписке до и после вызова сервиса.
+    """
+    sub = db.query(Subscription).filter(Subscription.yk_payment_id == event.payment_id).first()
+    sub_id = sub.id if sub is not None else None
+    was_status = sub.status if sub is not None else None
+    was_pm = sub.payment_method_id if sub is not None else None
+
+    if event.event_type == "payment.succeeded":
+        # Триал: 1₽-привязка принадлежит is_trial-строке → активируем ТРИАЛ
+        # (N дней, 0₽) + сохраняем карту + возврат 1₽, а не платную подписку.
+        if sub is not None and getattr(sub, "is_trial", False):
+            trial_service.complete_trial_binding(db, sub, event)
+            return ("trial_bound" if sub.status == "active" else "not_activated"), sub_id
+        billing_service.activate_from_webhook(db, event)
+        if sub is None:
+            return "no_subscription", None
+        if sub.status != "active":
+            return "not_activated", sub_id
+        if was_status != "active":
+            return "activated", sub_id
+        if was_pm is None and sub.payment_method_id is not None:
+            return "binding_saved", sub_id
+        return "duplicate", sub_id
+
+    if event.event_type in ("payment.canceled", "refund.succeeded"):
+        billing_service.cancel_by_webhook(db, event)
+        if sub is None:
+            return "no_subscription", None
+        if sub.status == was_status:
+            return "noop", sub_id
+        return ("refunded" if sub.status == "refunded" else "cancelled"), sub_id
+
+    log.info("Webhook: unknown event type, ignoring: %s", event.event_type)
+    return "noop", sub_id
+
+
 @router.post("/webhook", status_code=status.HTTP_200_OK)
 async def webhook(request: Request, db: Session = Depends(get_db)):
     """
@@ -376,40 +441,45 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
     если webhook подделают, активация не произойдёт.
 
     Возвращаем 200 + plain text "OK" всегда — это формат T-Bank.
+
+    Каждое уведомление (в том числе отбитое) пишется в bank_webhook_log —
+    api/billing/webhook_log.py: логи API теряются при деплое, а тут остаётся,
+    что прислал банк и чем кончилась обработка. Запись идёт после обработки и
+    уронить её не может.
     """
     raw_body = await request.body()
     headers = dict(request.headers)
 
     provider = get_payment_provider()
-    event = provider.parse_webhook(raw_body, headers)
+    try:
+        event = provider.parse_webhook(raw_body, headers)
+    except Exception as e:
+        # Валидный JSON, но не объект (список, число): разбор падал и ручка
+        # отвечала 500. Это мусор, не уведомление банка — в журнал и OK.
+        log.warning("Webhook: parse failed: %s", type(e).__name__)
+        event = None
 
     # T-Bank ожидает plain text "OK" (иначе ретраит exponential backoff).
     ok_response = PlainTextResponse("OK", status_code=200)
 
     if not event:
         log.warning("Webhook: unparseable body or bad signature (%d bytes)", len(raw_body))
+        webhook_log.record(db, raw_body, _unparsed_webhook_result(raw_body))
         return ok_response
 
     log.info("Webhook event=%s payment_id=%s", event.event_type, event.payment_id)
 
+    outcome, detail, sub_id = "error", None, None
     try:
-        if event.event_type == "payment.succeeded":
-            # Триал: 1₽-привязка принадлежит is_trial-строке → активируем ТРИАЛ
-            # (N дней, 0₽) + сохраняем карту + возврат 1₽, а не платную подписку.
-            from api.models.subscription import Subscription as _Sub
-            sub = db.query(_Sub).filter(_Sub.yk_payment_id == event.payment_id).first()
-            if sub is not None and getattr(sub, "is_trial", False):
-                trial_service.complete_trial_binding(db, sub, event)
-            else:
-                billing_service.activate_from_webhook(db, event)
-        elif event.event_type in ("payment.canceled", "refund.succeeded"):
-            billing_service.cancel_by_webhook(db, event)
-        else:
-            log.info("Webhook: unknown event type, ignoring: %s", event.event_type)
+        outcome, sub_id = _apply_webhook_event(db, event)
     except Exception as e:
         log.error("Webhook processing error: %s", e, exc_info=True)
         # НЕ пробрасываем — чтобы провайдер не ретраил. Ошибки смотрим в логах.
+        # В журнал — только класс исключения: в тексте ошибки БД могут оказаться
+        # параметры запроса, а среди них RebillId.
+        detail = type(e).__name__
 
+    webhook_log.record(db, raw_body, outcome, detail=detail, subscription_id=sub_id)
     return ok_response
 
 

@@ -1011,6 +1011,25 @@ class MainOrchestrator:
         except Exception as e:
             log.error("sbp-reconcile failed: %s", e, exc_info=True)
 
+        # Оплата без карты: подписка оплачена на форме, а способ оплаты за 15 минут
+        # не привязался (вебхук с RebillId не дошёл / не обработался) — событие
+        # paid_no_method в billing_events, одно на подписку. Стоит ДО рассылки
+        # ниже, чтобы сообщение ушло этим же проходом.
+        def _paid_no_method():
+            from api.billing.admin_notify import flag_paid_without_method
+            db = SessionLocal()
+            try:
+                return flag_paid_without_method(db)
+            finally:
+                db.close()
+        try:
+            pn = await asyncio.to_thread(_paid_no_method)
+            if pn.get("flagged"):
+                log.warning("  💳 оплата без карты: новых %d (проверено %d)",
+                            pn["flagged"], pn.get("checked", 0))
+        except Exception as e:
+            log.error("paid-no-method check failed: %s", e, exc_info=True)
+
         # Уведомления о биллинге в @frameadminbot: страховочный проход (основной
         # путь — NOTIFY-листенер API сразу после коммита). Сводок нет, только
         # события по факту.
