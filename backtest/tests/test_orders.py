@@ -298,3 +298,44 @@ def on_bar(i, b, s, p):
     E = pd.DataFrame(r['orders']['equity'])
     assert abs(E.equity.iloc[0] - 2_000_000) < 30_000                      # две доли по 1 млн
     assert {t['st'] for t in r['trades']} == {'CNYRUBF', 'USDRUBF'}
+
+
+def two_days():
+    a = bars([(10, 10, 10, 10)] * 3, day='2026-06-01')
+    b2 = bars([(10, 10, 10, 10)] * 3, day='2026-06-04')          # через 3 календарных дня
+    df = pd.DataFrame({'open': np.r_[a.open, b2.open], 'high': np.r_[a.high, b2.high], 'low': np.r_[a.low, b2.low],
+                       'close': np.r_[a.close, b2.close], 'volume': 1.0, 'secid': 'CNYRUBF', 'lsttrade': pd.Timestamp('2100-01-01'),
+                       't': np.r_[a.t, b2.t].astype('datetime64[ns]')})
+    df['d'] = df.t.dt.normalize(); df['m'] = (df.t.dt.hour * 60 + df.t.dt.minute).astype('int16')
+    return pyengine.Bars(df)
+
+
+def test_ext_series_only_before_day():
+    # «Сила рынка» за день готова вечером: на свечах дня d — значение строго за день до d; в head() будущего нет
+    b = two_days()
+    b.ext = {'breadth200': pd.Series([11.0, 22.0, 33.0], index=pd.to_datetime(['2026-05-29', '2026-06-01', '2026-06-04']))}
+    v = pyengine.ext_before_day(b, 'breadth200')
+    assert list(v) == [11.0] * 3 + [22.0] * 3
+    assert list(b.head(4).ext['breadth200'].index) == list(pd.to_datetime(['2026-05-29', '2026-06-01']))
+    assert np.isnan(pyengine.ext_before_day(b, 'нет_такого')).all()
+
+
+def test_cash_yield_only_when_asked(monkeypatch):
+    from backtest import store
+    monkeypatch.setattr(store, 'series', lambda: {'key_rate': pd.Series([18.5], index=pd.to_datetime(['2026-01-01']))})
+    flat = 'MODE = "orders"\ndef on_bar(i, b, s, p):\n    pass\n'
+    _, eq, summ = run(flat, two_days())
+    assert eq[-1]['equity'] == 1_000_000 and 'доход_на_деньги_руб' not in summ
+    _, eq, summ = run('CASH_YIELD = 0.5\n' + flat, two_days())
+    want = 1_000_000 * 0.18 / 365 * 3                                  # (18.5 − 0.5) % за 3 календарных дня
+    assert abs(eq[-1]['equity'] - 1_000_000 - want) < 1e-6 and summ['доход_на_деньги_руб'] == round(want)
+
+
+def test_strength_template_runs():
+    b = two_days()
+    b.ext = {'breadth200': pd.Series([20.0, 20.0], index=pd.to_datetime(['2026-05-29', '2026-06-01'])),
+             'IMOEX': pd.Series([2500.0, 2500.0], index=pd.to_datetime(['2026-05-29', '2026-06-01']))}
+    ns = pyengine.load(orders.STRENGTH_TEMPLATE)
+    rows, eq, summ = orders.run(ns, b, ns['PARAMS'], 'CNYRUBF', ACCT)
+    assert list(b.want) == [1.0] * 6                                    # ширина 20 ≤ 25 → лонг с первого дня
+    assert summ['капитал'] == 1_000_000

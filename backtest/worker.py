@@ -52,6 +52,10 @@ def _insert(con, table, rows):
 
 
 def ensure_data(force=False):
+    try:
+        if store.refresh_series(force): log('дневные ряды (Сила рынка, ставка, индексы) обновлены')
+    except Exception as e:                                  # ряды — дополнение: без них прогон всё равно идёт
+        log(f'дневные ряды не обновились: {e}')
     st = store.status()
     stamp = store.DATA / 'refreshed_at'
     fresh = stamp.exists() and time.time() - stamp.stat().st_mtime < REFRESH_EVERY_SEC

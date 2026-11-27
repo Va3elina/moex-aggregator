@@ -67,7 +67,7 @@ def _stock_file(st):
     return f
 
 
-def _fetch(st, since, sql=None):
+def _fetch(st, since, sql=None, names=COLS):
     sql = sql or _sql
     if os.environ.get('DB_URL'):
         from sqlalchemy import create_engine
@@ -83,13 +83,13 @@ def _fetch(st, since, sql=None):
         finally:
             raw.close()
         buf.seek(0)
-        return pd.read_csv(buf, header=None, names=COLS)
+        return pd.read_csv(buf, header=None, names=names)
     inner = f"docker exec frame-db-1 psql -U postgres -d moex_db -c {json.dumps('COPY (' + ' '.join(sql(st, since).split()) + ') TO STDOUT WITH CSV')}"
     cmd = ["bash", "-c", inner] if pathlib.Path('/opt/frame').exists() else SSH + [inner]
     r = subprocess.run(cmd, capture_output=True, timeout=1800, stdin=subprocess.DEVNULL)
     if r.returncode:
         raise RuntimeError(r.stderr.decode()[:400])
-    return pd.read_csv(io.BytesIO(r.stdout), header=None, names=COLS)
+    return pd.read_csv(io.BytesIO(r.stdout), header=None, names=names)
 
 
 def _typed(df):
@@ -192,3 +192,38 @@ def contracts(st):
     if k not in _CACHE:
         _CACHE[k] = bars(st).groupby('secid').lsttrade.first()
     return _CACHE[k]
+
+
+# ── Дневные ряды для стратегий (b.ext): «Сила рынка», ключевая ставка, индексы ─────────────────────────────────────
+SERIES = DATA / 'series.pkl'
+SERIES_TTL = 3600        # перечитываются воркером не чаще раза в час; песочница только читает файл (сети и БД у неё нет)
+
+
+def _sql_series(_st, _since):
+    return """SELECT 'breadth' || ema_period || CASE WHEN universe = 'imoex' THEN '' ELSE '_all' END, trade_date, percent_above
+        FROM breadth_history WHERE universe IN ('imoex', 'all')
+      UNION ALL SELECT 'key_rate', period_date, value FROM macro_data WHERE indicator = 'KEY_RATE'
+      UNION ALL SELECT secid, trade_date, close FROM index_data WHERE secid IN ('IMOEX', 'MCFTR') AND trade_date >= '2007-01-01'"""
+
+
+def refresh_series(force=False):
+    """Дневные ряды из БД → series.pkl: breadth20/50/100/200 — доля акций IMOEX выше EMA (%, «Сила рынка», значение дня
+    готово ВЕЧЕРОМ после закрытия), breadth*_all — то же по всем акциям, key_rate — ключевая ставка ЦБ, IMOEX и MCFTR —
+    закрытия индексов. Только у воркера (у него есть DB_URL)."""
+    import time
+    if SERIES.exists() and not force and time.time() - SERIES.stat().st_mtime < SERIES_TTL:
+        return False
+    df = _fetch(None, None, sql=_sql_series, names=['name', 'd', 'v'])
+    df['d'] = pd.to_datetime(df.d); df['v'] = pd.to_numeric(df.v, errors='coerce').astype(float)
+    out = {k: g.set_index('d').v.sort_index() for k, g in df.dropna().groupby('name')}
+    DATA.mkdir(parents=True, exist_ok=True)
+    tmp = SERIES.with_suffix('.tmp'); pd.to_pickle(out, tmp); tmp.replace(SERIES)
+    _CACHE.pop('series', None)
+    return True
+
+
+def series():
+    """{имя: Series[дата → значение]} — см. refresh_series. Нет файла — пустой словарь."""
+    if 'series' not in _CACHE:
+        _CACHE['series'] = pd.read_pickle(SERIES) if SERIES.exists() else {}
+    return _CACHE['series']
