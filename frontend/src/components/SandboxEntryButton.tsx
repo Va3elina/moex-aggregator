@@ -76,7 +76,7 @@ export default function SandboxEntryButton({ variant = 'icon' }: SandboxEntryBut
             openTerminalWindow();
             return;
         }
-        showUpgrade({ tier: 'pro', featureName: t('Терминал — рабочий стол с индикаторами') });
+        showUpgrade({ tier: 'pro', featureName: t('Терминал — рабочий стол с индикаторами'), preview: 'terminal' });
     };
 
     if (variant === 'pill') {

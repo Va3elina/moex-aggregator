@@ -1,29 +1,38 @@
 /**
- * UpgradeModal — модалка «Доступно на тарифе X», открывается при попытке
- * взаимодействия с заблокированной фичей.
+ * UpgradeModal — окно апселла, открывается при попытке взаимодействия с
+ * заблокированной фичей.
  *
  * Контролируется через хук useUpgradePrompt():
  *
  *   const { showUpgrade } = useUpgradePrompt();
- *   onClick={() => showUpgrade({ tier: 'basic', featureName: 'актив CC' })}
+ *   onClick={() => showUpgrade({ tier: 'basic', featureName: 'актив CC', indicator: 'open_interest' })}
+ *
+ * Вид окна (2026-11, по образцу TradingView): сверху короткая анимация самой
+ * функции (PreviewScene), ниже — что это, одна фраза о пользе, спокойное
+ * сравнение «ваш тариф ✕ → нужный ✓» без цены и кнопка-решение. Сцену и тексты
+ * подбирает resolvePreview() по indicator + featureName, поэтому места вызова
+ * менять не нужно — достаточно передавать indicator и featureName.
  */
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Lock } from 'lucide-react';
-import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../../config/features';
+import { Check, Pause, Play, X } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { useTierPrices, fmtRubMonthly } from '../../hooks/useTierPrices';
 import { MODAL_LAYER_Z } from '../../utils/modalHost';
 import { pricingUrlFrom } from '../../utils/purchaseSource';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
 import TrialOfferCard from './TrialOfferCard';
+import PreviewScene from './PreviewScene';
+import { resolvePreview, type FeaturePreviewKey } from './featurePreviews';
 import { useTranslation } from 'react-i18next';
 
 
 interface UpgradePromptProps {
     tier: 'basic' | 'pro';
     featureName?: string;        // "5-минутный таймфрейм", "актив CC", etc.
-    indicator?: string;          // 'open_interest', 'seasonality', etc. — для контекста
+    indicator?: string;          // 'open_interest', 'seasonality', etc. — по нему выбирается сцена
+    /** Явная сцена, когда по indicator её не угадать (Терминал — не индикатор). */
+    preview?: FeaturePreviewKey;
 }
 
 interface UpgradeContextValue {
@@ -32,36 +41,7 @@ interface UpgradeContextValue {
 
 const UpgradeContext = createContext<UpgradeContextValue | null>(null);
 
-
-// Цена НЕ хардкодится: показываем годовую в пересчёте на месяц (yearly / 12),
-// как на карточках PricingPage — тянется из /api/billing/plans (useTierPrices).
-// desc — русские ключи, переводятся через t() в рендере (не на верхнем уровне модуля).
-const TIER_LABELS: Record<string, { ru: string; desc: string }> = {
-    basic: {
-        ru: 'Basic',
-        // История/таймфреймы открыты всем с 2026-08-10 — продаём то, что
-        // реально за Basic: realtime, юрлица + число трейдеров, скринер, пикеры.
-        desc: 'Открытые позиции и скринер сигналов без задержки, юрлица и число трейдеров в ОИ, выбор фондов.',
-    },
-    pro: {
-        ru: 'Pro',
-        desc: '',
-    },
-};
-
-// Описание тарифа для модалки. Считается в рендере, чтобы t() брал текущий язык.
-// API + экспорт CSV скрыты до запуска (см. config/features.ts) — не упоминаем в тексте замочка.
-// TradingView убран из обеих строк (2026-08-10): интеграции нет, а в модалке
-// замочка это читалось как обещание функции, которой у нас не существует.
-function tierDesc(t: (k: string) => string, tier: 'basic' | 'pro'): string {
-    if (tier === 'basic') return t(TIER_LABELS.basic.desc);
-    return t('Всё из Basic + ') + [
-        PUBLIC_API_ENABLED ? 'API' : null,
-        CSV_EXPORT_ENABLED ? t('экспорт CSV') : null,
-        t('индикаторы Т-терминала'),
-        t('безлимитные уведомления'),
-    ].filter(Boolean).join(', ') + '.';
-}
+const TIER_LABEL: Record<UpgradePromptProps['tier'], string> = { basic: 'Basic', pro: 'Pro' };
 
 
 export function UpgradePromptProvider({ children }: { children: ReactNode }) {
@@ -99,192 +79,164 @@ export function useUpgradePrompt(): UpgradeContextValue {
 }
 
 
-function UpgradeDialog({ tier, featureName, indicator, onClose }: UpgradePromptProps & { onClose: () => void }) {
-    const label = TIER_LABELS[tier];
+/**
+ * Закрытие — крестик на превью, клик по фону, Esc (отдельной кнопки «Закрыть» нет).
+ */
+function UpgradeDialog({ tier, featureName, indicator, preview, onClose }:
+    UpgradePromptProps & { onClose: () => void }) {
     const { t } = useTranslation();
     const { track } = useAnalytics();
+    const width = useViewportWidth();
+    const isMobile = width < 768;
+    const [paused, setPaused] = useState(false);
+    const { user } = useAuth();
     // Что именно упёрлось в замок: название функции понятнее ключа индикатора.
-    const feature = featureName || indicator || null;
+    const feature = featureName || indicator || preview || null;
+    const cfg = useMemo(
+        () => resolvePreview({ featureName, indicator, preview }, t),
+        [featureName, indicator, preview, t],
+    );
+    const currentLabel = !user ? t('Без входа')
+        : user.role === 'basic' ? 'Basic'
+        : user.role === 'pro' || user.role === 'admin' ? 'Pro'
+        : 'Free';
 
     // Показ окна — знаменатель конверсии «показали → перешли → купили».
     useEffect(() => {
-        track('paywall_show', { tier, feature, indicator });
+        track('paywall_show', { tier, feature, indicator, preview: cfg.spec.kind });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    const prices = useTierPrices();
-    const width = useViewportWidth();
-    const isMobile = width < 768;
 
-    // Mobile = bottom-sheet (slide up, 100% width, rounded top).
-    // Desktop = centered modal.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+
+    const heroBtn = {
+        position: 'absolute' as const,
+        width: 32, height: 32, borderRadius: 8,
+        border: 'none', cursor: 'pointer',
+        background: 'rgba(18,20,25,0.55)',
+        color: '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        backdropFilter: 'blur(4px)',
+    };
+
+    // Mobile = bottom-sheet (slide up, 100% width, rounded top). Desktop = centered modal.
     return (
         <div
             onClick={onClose}
             style={{
-                position: 'fixed',
-                inset: 0,
+                position: 'fixed', inset: 0,
                 background: 'rgba(0,0,0,0.5)',
                 display: 'flex',
                 alignItems: isMobile ? 'flex-end' : 'center',
                 justifyContent: 'center',
                 // Выше ВСЕХ модалок-пикеров: апселл открывается ИЗ них по
-                // попытке действия и обязан лечь поверх. Пикеры «Денег в
-                // фондах» живут на z-[100000], пикеры «Сделок фондов» и поиск
-                // активов — на MODAL_LAYER_Z (100100), поэтому считаем от него,
-                // а не от захардкоженного числа.
+                // попытке действия и обязан лечь поверх (пикеры «Сделок фондов»
+                // и поиск активов живут на MODAL_LAYER_Z).
                 zIndex: MODAL_LAYER_Z + 1,
                 animation: 'fadeIn 0.2s ease-out',
             }}
         >
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={cfg.title}
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                    // bg-secondary — panel/card в editorial: белый light / тёмный dark.
-                    // text-primary автоматически contrast: чёрный light / cream dark.
                     background: 'var(--bg-secondary, #fff)',
                     color: 'var(--text-primary, #1a1a1a)',
-                    borderRadius: isMobile ? '20px 20px 0 0' : 16,
-                    padding: isMobile ? 24 : 32,
-                    maxWidth: isMobile ? '100%' : 480,
-                    width: isMobile ? '100%' : '90%',
+                    borderRadius: isMobile ? '20px 20px 0 0' : 18,
+                    padding: isMobile ? 12 : 14,
+                    maxWidth: isMobile ? '100%' : 520,
+                    width: isMobile ? '100%' : '92%',
                     border: '1px solid var(--border-color, #ddd)',
-                    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-                    paddingBottom: isMobile ? 'max(24px, env(safe-area-inset-bottom))' : 32,
-                    maxHeight: '90vh',
+                    boxShadow: '0 24px 70px rgba(0,0,0,0.32)',
+                    paddingBottom: isMobile ? 'max(16px, env(safe-area-inset-bottom))' : 22,
+                    maxHeight: '92vh',
                     overflowY: 'auto',
                 }}
             >
-                {/* Mobile drag handle */}
-                {isMobile && (
-                    <div
-                        style={{
-                            width: 40, height: 4, borderRadius: 2,
-                            background: 'var(--text-muted, #ddd)',
-                            opacity: 0.4,
-                            margin: '0 auto 16px',
-                        }}
-                    />
-                )}
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
-                    {/* Editorial-стиль: solid accent square с outline + hard shadow
-                        + белая иконка. Тот же визуал что у .page-header-icon в
-                        editorial-light/dark, но через inline styles (модалка
-                        живёт в portal — class может не сматчиться). */}
-                    <div
-                        style={{
-                            width: isMobile ? 44 : 48,
-                            height: isMobile ? 44 : 48,
-                            borderRadius: 12,
-                            background: 'var(--accent, #FF5C2B)',
-                            border: '2px solid var(--text-primary, #0A0A0A)',
-                            boxShadow: 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary, #0A0A0A))',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                        }}
-                    >
-                        <Lock
-                            size={isMobile ? 22 : 26}
-                            strokeWidth={2.4}
-                            color="#FFFFFF"
-                        />
-                    </div>
-                    <h2 style={{
-                        fontSize: 'var(--fs-xl)',
-                        fontWeight: 700, margin: 0,
-                    }}>
-                        {t('Доступно на тарифе {{tier}}', { tier: label.ru })}
-                    </h2>
-                </div>
-
-                {featureName && (
-                    <p style={{
-                        color: 'var(--text-secondary, #666)',
-                        marginBottom: 12,
-                        fontSize: 'var(--fs-base)',
-                    }}>
-                        {t('Чтобы использовать «{{feature}}», нужен тариф {{tier}}.', { feature: featureName, tier: tier === 'basic' ? t('Basic или Pro') : 'Pro' })}
-                    </p>
-                )}
-
-                {/* Trial-оффер: TrialOfferCard сам гейтит по trial_eligible. */}
-                <TrialOfferCard lockedTier={tier} feature={feature} />
-
+                {/* Превью: подложка — мягкое свечение акцента, «экран» уходит за край. */}
                 <div
+                    className={paused ? 'fp-paused' : undefined}
                     style={{
-                        // Inner panel — отличается от main bg, в editorial
-                        // light/dark получает соответствующий контраст.
-                        background: 'var(--bg-tertiary, #f5f1e8)',
-                        border: '1px solid var(--border-color, #e5e5e5)',
-                        borderRadius: 10,
-                        padding: 16,
-                        marginBottom: 20,
+                        position: 'relative',
+                        borderRadius: 12,
+                        overflow: 'hidden',
+                        background: 'radial-gradient(110% 130% at 0% 0%, color-mix(in srgb, var(--accent, #FF5C2B) 55%, transparent) 0%, transparent 62%), radial-gradient(120% 140% at 100% 100%, rgba(107,92,255,0.45) 0%, transparent 65%), var(--bg-tertiary, #f5f1e8)',
                     }}
                 >
-                    <div style={{
-                        fontWeight: 700, fontSize: 'var(--fs-xl)',
-                        color: 'var(--accent, #FF5C2B)', marginBottom: 2,
-                    }}>
-                        {fmtRubMonthly(prices[tier].monthlyEquivalent)}
-                    </div>
-                    <div style={{
-                        color: 'var(--text-muted, #999)',
-                        fontSize: 'var(--fs-xs)', marginBottom: 6,
-                    }}>
-                        {t('при оплате за год')}
-                    </div>
-                    <div style={{
-                        color: 'var(--text-secondary, #666)',
-                        fontSize: 'var(--fs-base)', lineHeight: 1.5,
-                    }}>
-                        {tierDesc(t, tier)}
-                    </div>
+                    <PreviewScene spec={cfg.spec} />
+                    <button type="button" onClick={onClose} aria-label={t('Закрыть')}
+                        style={{ ...heroBtn, top: 10, right: 10 }}>
+                        <X size={18} strokeWidth={2.4} />
+                    </button>
+                    <button type="button" onClick={() => setPaused((p) => !p)}
+                        aria-label={paused ? t('Продолжить') : t('Пауза')}
+                        style={{ ...heroBtn, bottom: 10, right: 10, width: 28, height: 28 }}>
+                        {paused ? <Play size={14} /> : <Pause size={14} />}
+                    </button>
                 </div>
 
-                <div style={{
-                    display: 'flex',
-                    flexDirection: isMobile ? 'column-reverse' : 'row',
-                    gap: 12,
-                    justifyContent: 'flex-end',
-                }}>
-                    <button
-                        onClick={onClose}
-                        className="editorial-press"
-                        style={{
-                            padding: '12px 20px',
-                            borderRadius: 8,
-                            border: '1px solid var(--border-color, #ddd)',
-                            background: 'transparent',
-                            color: 'var(--text-primary, #1a1a1a)',
-                            cursor: 'pointer',
-                            fontSize: 'var(--fs-base)',
-                            fontWeight: 600,
-                            minHeight: 44,  // mobile touch target
-                        }}
-                    >
-                        {t('Закрыть')}
-                    </button>
+                <div style={{ padding: isMobile ? '18px 8px 0' : '22px 12px 0' }}>
+                    <h2 style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, margin: '0 0 8px', lineHeight: 1.25 }}>
+                        {cfg.title}
+                    </h2>
+                    <p style={{ color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-base)', lineHeight: 1.5, margin: '0 0 16px' }}>
+                        {cfg.text}
+                    </p>
+
+                    {/* Сравнение «сейчас ✕ → нужен ✓», как у TradingView: статус
+                        юзера серой плашкой, нужный тариф — обводкой акцента. Без цены. */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+                        <div style={{
+                            background: 'var(--bg-tertiary, #f2f2f2)',
+                            borderRadius: 12, padding: '12px 14px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                        }}>
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ color: 'var(--text-muted, #999)', fontSize: 'var(--fs-xs)', marginBottom: 2 }}>{t('Ваш тариф')}</div>
+                                <div style={{ fontWeight: 700, fontSize: 'var(--fs-base)' }}>{currentLabel}</div>
+                            </div>
+                            <X size={20} strokeWidth={2.2} color="var(--text-muted, #999)" style={{ flexShrink: 0 }} />
+                        </div>
+                        <div style={{
+                            border: '1.5px solid var(--accent, #FF5C2B)',
+                            borderRadius: 12, padding: '12px 14px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                        }}>
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ color: 'var(--text-muted, #999)', fontSize: 'var(--fs-xs)', marginBottom: 2 }}>{t('Нужен тариф')}</div>
+                                <div style={{ fontWeight: 700, fontSize: 'var(--fs-base)' }}>
+                                    {tier === 'basic' ? t('Basic или Pro') : TIER_LABEL[tier]}
+                                </div>
+                            </div>
+                            <Check size={20} strokeWidth={2.6} color="var(--accent, #FF5C2B)" style={{ flexShrink: 0 }} />
+                        </div>
+                    </div>
+
+                    {/* Trial-оффер: TrialOfferCard сам гейтит по trial_eligible. */}
+                    <TrialOfferCard lockedTier={tier} feature={feature} />
+
                     <Link
                         to={pricingUrlFrom('paywall', feature)}
                         onClick={onClose}
                         className="editorial-press"
                         style={{
-                            padding: '12px 20px',
-                            borderRadius: 8,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: '100%', minHeight: 52,
+                            borderRadius: 12,
                             background: 'var(--accent, #FF5C2B)',
-                            color: 'white',
+                            color: '#fff',
                             textDecoration: 'none',
-                            fontSize: 'var(--fs-base)',
-                            fontWeight: 600,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            minHeight: 44,
+                            fontSize: 'var(--fs-base)', fontWeight: 700,
+                            padding: '0 16px', textAlign: 'center',
                         }}
                     >
-                        {t('Перейти на {{tier}} →', { tier: label.ru })}
+                        {cfg.cta}
                     </Link>
                 </div>
             </div>
