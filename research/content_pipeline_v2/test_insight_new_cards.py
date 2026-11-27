@@ -460,6 +460,19 @@ def test_trigger_picks_surge_and_skips_taken_stock():
     assert x["title"] == "покупки +20%" and x["instrument"] == "RL"
 
 
+def test_trigger_skips_sibling_contract_of_taken_underlying():
+    d = pd.Timestamp("2026-11-04")
+    surges = [{"sec": "BR", "leg": "long", "k": 11.2, "pct": 0.43, "date": d, "t": "20:20"},
+              {"sec": "RL", "leg": "long", "k": 9.0, "pct": 0.2, "date": d, "t": "20:20"}]
+    angles = {"BR": [{"type": "рывок", "strength": 11.2, "live": True, "line": "рывок по ходу дня: Brent +43%"}],
+              "RL": [{"type": "рывок", "strength": 9.0, "live": True, "line": "рывок по ходу дня: покупки +20%"}]}
+    build = lambda spec, dt: {"angles": angles[spec["sec"]]}  # noqa: E731
+    x, spec, a = trigger_scan.best_trigger([], surges, build=build, taken={"BM"})
+    assert spec["sec"] == "RL", "по мини-Brent сегодня уже был рывок — Brent тот же актив (04.11, #6063/#6065)"
+    assert trigger_scan.best_trigger([], surges[:1], build=build, taken={"BM"}) is None
+    assert trigger_scan.underlying("MM") == trigger_scan.underlying("MX") and trigger_scan.underlying("RL") == "RL"
+
+
 def test_intraday_event_is_not_a_repeat_of_unpublished_trend_draft():
     from types import SimpleNamespace
 
