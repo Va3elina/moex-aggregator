@@ -29,7 +29,13 @@ from api.billing.factory import (
     get_provider_for,
     get_provider_for_user,
 )
-from api.billing.plans import TIER_LEVELS, get_plan, monthly_fallback
+from api.billing.plans import (
+    AUTOPAY_CONSENT_LEGACY,
+    AUTOPAY_CONSENT_VERSION,
+    TIER_LEVELS,
+    get_plan,
+    monthly_fallback,
+)
 from api.billing.provider import WebhookEvent
 from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
@@ -222,6 +228,90 @@ def assert_can_purchase(db: Session, user: User, plan) -> None:
                 )
 
 
+# ─────────────── Согласие на автосписание при обычной оплате ───────────────
+
+def consent_strict() -> bool:
+    """
+    Строгий режим: платёж с автопродлением без поля consent отклоняется.
+
+    По умолчанию выключен — переходный период: сборка фронта из кеша браузера
+    поле consent ещё не шлёт (галочку она проверяла сама), и отказ сломал бы ей
+    оплату. Включается env BILLING_CONSENT_STRICT=1 + recreate api, когда хвост
+    старых клиентов иссяк (строки autopay_consent_version='legacy' перестали
+    появляться). Явный consent=false отклоняется всегда, в обоих режимах.
+    """
+    return os.getenv("BILLING_CONSENT_STRICT", "").strip().lower() in ("1", "true", "yes")
+
+
+def check_autopay_consent(consent: bool | None) -> bool:
+    """
+    Гейт согласия для платежа с автопродлением. True — согласие получено и его
+    надо записать; False — старый фронт без поля (переходный период, пишем
+    только метку 'legacy'). Нет согласия — ValueError с текстом для UI.
+    """
+    if consent is True:
+        return True
+    if consent is None and not consent_strict():
+        return False
+    raise ValueError("Требуется согласие на автоматическое списание")
+
+
+def _save_autopay_consent(db: Session, sub: Subscription, given: bool, ip: str | None) -> None:
+    """
+    Пишет согласие на строку подписки: момент + версия текста + IP, либо метку
+    'legacy' (старый фронт, согласия сервер не видел).
+
+    Отдельный UPDATE в savepoint, а не поля ORM-объекта: если код выкатили
+    раньше миграции 120 и колонок ещё нет, оплата не должна падать — теряем
+    только запись согласия (и пишем об этом в лог).
+    """
+    try:
+        with db.begin_nested():
+            if given:
+                db.execute(sa_text("""
+                    UPDATE subscriptions
+                    SET autopay_consent_at = :at, autopay_consent_version = :ver,
+                        autopay_consent_ip = :ip
+                    WHERE id = :id
+                """), {
+                    "at": datetime.now(timezone.utc), "ver": AUTOPAY_CONSENT_VERSION,
+                    "ip": (ip or "")[:45] or None, "id": sub.id,
+                })
+            else:
+                db.execute(sa_text(
+                    "UPDATE subscriptions SET autopay_consent_version = :ver WHERE id = :id"
+                ), {"ver": AUTOPAY_CONSENT_LEGACY, "id": sub.id})
+    except Exception as e:
+        log.error(
+            "autopay consent: не записал для sub=%s (given=%s) — миграция 120 применена? %s",
+            sub.id, given, e,
+        )
+        return
+    if not given:
+        log.warning(
+            "autopay consent: sub=%s user=%s — фронт не прислал consent (старая сборка), "
+            "пропускаю по переходному периоду", sub.id, sub.user_id,
+        )
+
+
+def _copy_autopay_consent(db: Session, src_id: int, dst_id: int | None) -> None:
+    """Перенос согласия с заявки на привязку СБП на подписку, созданную списанием."""
+    if not dst_id or dst_id == src_id:
+        return
+    try:
+        with db.begin_nested():
+            db.execute(sa_text("""
+                UPDATE subscriptions
+                SET autopay_consent_at = (SELECT autopay_consent_at FROM subscriptions WHERE id = :src),
+                    autopay_consent_version = (SELECT autopay_consent_version FROM subscriptions WHERE id = :src),
+                    autopay_consent_ip = (SELECT autopay_consent_ip FROM subscriptions WHERE id = :src)
+                WHERE id = :dst
+            """), {"src": src_id, "dst": dst_id})
+        db.commit()
+    except Exception as e:
+        log.error("autopay consent: не перенёс с sub=%s на sub=%s: %s", src_id, dst_id, e)
+
+
 
 def create_checkout_for_user(
     db: Session,
@@ -232,9 +322,16 @@ def create_checkout_for_user(
     recurrent: bool = False,
     rail: str = "card",
     source: dict | None = None,
+    consent: bool | None = None,
+    consent_ip: str | None = None,
 ) -> dict:
     """
     Создаёт subscription(pending) + платёж у провайдера.
+
+    consent — согласие на автосписание из окна оплаты. Обязательно, когда платёж
+    с автопродлением (recurrent=True или СБП); None — старый фронт без поля,
+    см. check_autopay_consent. Момент, версия текста и consent_ip пишутся на
+    строку подписки.
 
     rail='card' (по умолчанию) → возвращает confirmation_url (redirect на оплату).
     rail='sbp' → СБП по QR: возвращает qr_image (картинка) + qr_payload (ссылка),
@@ -277,6 +374,12 @@ def create_checkout_for_user(
         recurrent = False
         return_url = _demo_return_url(return_url)
 
+    # Согласие на автосписание — только там, где оно будет: карта с
+    # Recurrent="Y" и СБП (всегда с привязкой счёта). Проверяем ДО создания
+    # строки подписки и платежа у банка.
+    autopay = recurrent or rail == "sbp"
+    consent_given = check_autopay_consent(consent) if autopay else False
+
     # Тестовая цена ЮKassa: ТОЛЬКО для тест-юзеров этого провайдера — НЕ
     # глобальный override (реальный юзер не должен купить Basic за 5₽).
     checkout_amount = test_price_for(user, plan.amount)
@@ -301,6 +404,8 @@ def create_checkout_for_user(
     )
     db.add(sub)
     db.flush()  # нужен sub.id до commit'а
+    if autopay:
+        _save_autopay_consent(db, sub, consent_given, consent_ip)
 
     # 2. Зовём провайдера. user.email/phone используется провайдером
     # для построения Receipt (54-ФЗ).
@@ -1644,6 +1749,8 @@ SBP_BINDING_TTL_MINUTES = 30
 def start_sbp_binding(
     db: Session, user: User, plan_id: str, data_type: str = "PAYLOAD",
     source: dict | None = None,
+    consent: bool | None = None,
+    consent_ip: str | None = None,
 ) -> dict:
     """
     Шаг 1: заявка на привязку счёта по СБП. Денег НЕ двигает.
@@ -1669,6 +1776,10 @@ def start_sbp_binding(
     if not hasattr(provider, "add_account_qr"):
         raise ValueError("Привязка счёта по СБП сейчас недоступна")
 
+    # Привязка счёта — это и есть согласие на будущие списания: без него заявку
+    # в банк не отправляем (None — старый фронт, см. check_autopay_consent).
+    consent_given = check_autopay_consent(consent)
+
     # Гасим прошлые незавершённые заявки этого юзера: иначе их RequestKey'и
     # копятся, а подтверждение новой привязки делает старые INACTIVE.
     for stale in db.query(Subscription).filter(
@@ -1691,6 +1802,7 @@ def start_sbp_binding(
     )
     db.add(sub)
     db.flush()
+    _save_autopay_consent(db, sub, consent_given, consent_ip)
 
     res = provider.add_account_qr(  # type: ignore[attr-defined]
         customer_key=str(user.id),
@@ -1778,6 +1890,10 @@ def poll_sbp_binding(db: Session, user: User, subscription_id: int) -> dict:
                 "payment_method_id": pm.id,
                 "message": "Счёт привязан, но списание не прошло. Попробуйте ещё раз.",
             }
+
+        # Согласие клиент дал на заявке; подписку (и строку для спора) создало
+        # списание — переносим на неё, при любом исходе списания.
+        _copy_autopay_consent(db, sub.id, result.get("subscription_id"))
 
         if result.get("ok"):
             return {

@@ -70,4 +70,4 @@ jobs:
       - name: Brain and content factory tests
         env:
           DB_URL: postgresql+pg8000://ci:ci@127.0.0.1:1/ci
-        run: python -m pytest -q research/brain research/content_pipeline_v2 tests/test_funds_flow_notify.py tests/test_funds_flow_streak.py tests/test_record_card.py tests/test_funds_card.py tests/test_strength_notify.py tests/test_buffett_notify.py tests/test_fund_cbr_notify.py tests/test_signal_prefs.py tests/test_hype_digest.py tests/test_tg_webapp.py tests/test_browser_login.py tests/test_renewal_period_start.py tests/test_renew_retry_limit.py
+        run: python -m pytest -q research/brain research/content_pipeline_v2 tests/test_funds_flow_notify.py tests/test_funds_flow_streak.py tests/test_record_card.py tests/test_funds_card.py tests/test_strength_notify.py tests/test_buffett_notify.py tests/test_fund_cbr_notify.py tests/test_signal_prefs.py tests/test_hype_digest.py tests/test_tg_webapp.py tests/test_browser_login.py tests/test_renewal_period_start.py tests/test_renew_retry_limit.py tests/test_checkout_consent.py tests/test_bank_webhook_log.py tests/test_paid_no_method_alert.py
