@@ -18,7 +18,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from sqlalchemy import and_ as sa_and_
 from sqlalchemy import or_ as sa_or_
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from api.billing.factory import (
@@ -440,6 +442,55 @@ def _paid_until(db: Session, sub: Subscription, now: datetime) -> datetime:
     return renewal_period_start(now, [r[0] for r in prev])
 
 
+# Сколько после активации принимаем привязку карты из опоздавшего webhook'а.
+LATE_BINDING_HOURS = 24
+
+
+def find_double_charge(db: Session, sub: Subscription) -> Subscription | None:
+    """
+    Другая оплаченная подписка того же tier, которая активировалась, ПОКА `sub`
+    ждала оплаты (между её созданием и активацией). Обе оплачены за один и тот
+    же период — это двойное списание.
+
+    Обычное продление сюда не попадает: его строка создаётся и активируется в
+    один момент, втиснуться между нечему.
+    """
+    if sub.is_trial or not sub.yk_payment_id or sub.started_at is None or sub.created_at is None:
+        return None
+    return db.query(Subscription).filter(
+        Subscription.user_id == sub.user_id,
+        Subscription.id != sub.id,
+        Subscription.tier == sub.tier,
+        Subscription.is_trial.is_(False),
+        Subscription.yk_payment_id.isnot(None),
+        Subscription.amount > 0,
+        Subscription.status == "active",
+        Subscription.started_at > sub.created_at,
+        Subscription.started_at <= sub.started_at,
+    ).order_by(Subscription.started_at.desc()).first()
+
+
+def _log_double_charge(db: Session, sub: Subscription) -> None:
+    """Событие для FRAME · Касса (admin_notify, kind='double_charge').
+
+    В savepoint: сбой журнала не должен откатить активацию оплаченной подписки.
+    """
+    try:
+        with db.begin_nested():
+            new_id = db.execute(sa_text("""
+                INSERT INTO billing_events
+                    (kind, user_id, subscription_id, payment_method_id, new_status, amount)
+                VALUES ('double_charge', :uid, :sid, :pm, 'active', :amount)
+                RETURNING id
+            """), {
+                "uid": sub.user_id, "sid": sub.id,
+                "pm": sub.payment_method_id, "amount": sub.amount,
+            }).scalar()
+            db.execute(sa_text("SELECT pg_notify('billing_event', :id)"), {"id": str(new_id)})
+    except Exception as e:
+        log.error("double_charge: не записал событие для sub=%s: %s", sub.id, e)
+
+
 def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | None:
     """
     Активирует подписку после webhook.payment.succeeded.
@@ -462,6 +513,31 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
         return None
 
     if sub.status == "active":
+        # Подписку уже включил /sync со страницы «Оплата прошла» (GetState), а
+        # он привязку карты не приносит — RebillId/AccountToken есть только в
+        # webhook'е. Раньше опоздавший webhook здесь просто выходил, и клиент
+        # оставался с оплаченной подпиской без автопродления (sub 342, 20.11.2026:
+        # у банка карта с RebillId есть, у нас нет). Досохраняем привязку.
+        # Подпись webhook'а уже проверена в parse_webhook. Окно сутки — чтобы
+        # повтор старого уведомления не вернул карту, которую клиент отвязал.
+        if (
+            sub.payment_method_id is None
+            and not sub.is_trial
+            and (event.rebill_id or event.account_token)
+            and sub.started_at is not None
+            and _aware(sub.started_at) > datetime.now(timezone.utc) - timedelta(hours=LATE_BINDING_HOURS)
+        ):
+            pm = _upsert_payment_method(db, sub.user_id, event)
+            if pm:
+                sub.payment_method_id = pm.id
+                if event.payment_method:
+                    sub.yk_method = event.payment_method
+                db.commit()
+                log.info(
+                    "activate_from_webhook: sub=%s уже активна — досохранил привязку pm=%s "
+                    "из опоздавшего webhook'а", sub.id, pm.id,
+                )
+                return sub
         log.info("activate_from_webhook: already active (idempotent) sub=%s", sub.id)
         return sub  # идемпотентно
 
@@ -509,6 +585,9 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
     # Активируем
     plan = get_plan(sub.plan_id)
     now = datetime.now(timezone.utc)
+    # Автосписание (charge_recurrent) создаёт строку уже с payment_method_id;
+    # у оплаты на форме он появляется только ниже, из webhook'а.
+    is_user_purchase = sub.payment_method_id is None
     sub.status = "active"
     # started_at = момент оплаты (по нему считает выручку /admin/stats).
     # Срок считаем от конца уже оплаченного периода того же tier: продление
@@ -545,14 +624,32 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
         # (б) ЛЮБОГО активного ТРИАЛА — покупка/конверсия закрывает пробный период,
         # чтобы он не списался повторно (ревью #1/#3). is_trial есть только у
         # триал-строк → реальные платные подписки тем же/выше tier не затрагиваются.
-        if old_sub.is_trial or TIER_LEVELS.get(old_sub.tier, 0) < new_level:
+        # (в) подписки ТОГО ЖЕ tier, если новую клиент оплатил сам на форме:
+        # автопродление должно остаться одно — у только что купленной. Сроки
+        # при этом складываются (_paid_until). Продления крона сюда не попадают
+        # (is_user_purchase=False): продлеваемую строку закрывает Guard 1.
+        same_tier_repurchase = is_user_purchase and old_sub.tier == sub.tier
+        if old_sub.is_trial or TIER_LEVELS.get(old_sub.tier, 0) < new_level or same_tier_repurchase:
             old_sub.cancelled_at = now
             log.info(
                 "activate_from_webhook: %s — отключено авто-продление подписки #%s "
                 "(tier=%s, is_trial=%s, дослужит до %s)",
-                "конверсия/покупка поверх триала" if old_sub.is_trial else f"upgrade to {sub.tier}",
+                "конверсия/покупка поверх триала" if old_sub.is_trial
+                else "покупка поверх того же тарифа" if same_tier_repurchase
+                else f"upgrade to {sub.tier}",
                 old_sub.id, old_sub.tier, old_sub.is_trial, old_sub.expires_at,
             )
+
+    # Двойное списание: пока эта оплата ждала подтверждения, за тот же тариф
+    # прошла ещё одна (крон продлил, пока форма была открыта, или клиент оплатил
+    # две формы). Сроки уже сложились, деньги сами не возвращаем — зовём админа.
+    twin = find_double_charge(db, sub)
+    if twin is not None:
+        log.warning(
+            "activate_from_webhook: ДВОЙНОЕ СПИСАНИЕ user=%s tier=%s: sub=%s и sub=%s",
+            sub.user_id, sub.tier, twin.id, sub.id,
+        )
+        _log_double_charge(db, sub)
 
     # Поднимаем роль user'а если нужно
     user = db.query(User).filter(User.id == sub.user_id).first()
@@ -747,6 +844,129 @@ def _retry_blocked(sub: Subscription, attempts: list, now: datetime) -> str | No
     return None
 
 
+# Сколько крон ждёт незакрытую форму оплаты, прежде чем перестать о ней
+# спрашивать банк. Форма живёт час (tbank.checkout_form_ttl_minutes), но формы,
+# открытые до этого изменения, жили сутки — отсюда 25ч.
+CHECKOUT_WAIT_HOURS = 25
+# Оплаченную форму обычно активирует webhook банка (он же приносит привязку
+# карты для автопродления — GetState её не отдаёт). Крон активирует сам, только
+# если форма старше этого срока: значит webhook потерялся.
+CHECKOUT_WEBHOOK_GRACE_HOURS = 2
+
+_CHECKOUT_DEAD_STATES = ("REJECTED", "CANCELED", "REVERSED", "DEADLINE_EXPIRED")
+_CHECKOUT_REFUND_STATES = ("REFUNDED", "PARTIAL_REFUNDED")
+
+
+def follow_up_condition():
+    """
+    Какая более новая подписка того же tier значит «этот уровень уже продлён»
+    (Guard 1 в renew_expiring_subs и в письме-напоминании):
+      - active — оплачена;
+      - pending С payment_method_id — автосписание в полёте (СБП подтверждается
+        не сразу), повторять нельзя.
+    pending БЕЗ payment_method_id — форма оплаты, которую клиент открыл сам.
+    Раньше она тоже считалась, и брошенная форма (висит в pending вечно)
+    навсегда выключала автопродление. Теперь такие формы сверяет с банком
+    _reconcile_open_checkouts.
+    """
+    return sa_or_(
+        Subscription.status == "active",
+        sa_and_(Subscription.status == "pending", Subscription.payment_method_id.isnot(None)),
+    )
+
+
+def checkout_state(status: str | None) -> str:
+    """Статус платежа у банка → 'paid' | 'dead' | 'refunded' | 'open'."""
+    st = (status or "").upper()
+    if st == "CONFIRMED":
+        return "paid"
+    if st in _CHECKOUT_DEAD_STATES:
+        return "dead"
+    if st in _CHECKOUT_REFUND_STATES:
+        return "refunded"
+    return "open"  # NEW / FORM_SHOWED / AUTHORIZING / 3DS_CHECKING / AUTHORIZED / ...
+
+
+def _reconcile_open_checkouts(db: Session, sub: Subscription, now: datetime) -> str | None:
+    """
+    Перед автосписанием: спросить банк про формы оплаты, которые клиент открыл
+    сам и которые у нас ещё pending. Закрывает гонку «клиент платит на форме,
+    а крон в эту же минуту списывает продление».
+
+      оплачена          → ждём webhook банка, а если он потерялся — активируем
+                          сами (активация выключит автопродление старой);
+      отклонена/истекла → помечаем failed;
+      ещё открыта или банк не ответил → возвращаем причину: продление
+                          откладывается до следующего запуска крона.
+
+    Возвращает причину отложить списание или None, если списывать можно.
+    """
+    cutoff = now - timedelta(hours=CHECKOUT_WAIT_HOURS)
+    forms = db.query(Subscription).filter(
+        Subscription.user_id == sub.user_id,
+        Subscription.id != sub.id,
+        Subscription.status == "pending",
+        Subscription.is_trial.is_(False),
+        Subscription.payment_method_id.is_(None),
+        Subscription.yk_payment_id.isnot(None),
+        Subscription.created_at > cutoff,
+    ).order_by(Subscription.created_at.asc()).all()
+    if not forms:
+        return None
+
+    user = db.query(User).filter(User.id == sub.user_id).first()
+    if not user:
+        return None
+    provider = get_provider_for(user)
+    if provider.name in ("stub", "tbank_demo") or not hasattr(provider, "verify_payment"):
+        # stub — внешнего состояния нет; демо-терминал денег не принимает.
+        return None
+
+    wait: str | None = None
+    for form in forms:
+        try:
+            info = provider.verify_payment(form.yk_payment_id)  # type: ignore[attr-defined]
+        except Exception as e:
+            log.warning("renew: GetState формы sub_%s упал: %s", form.id, e)
+            info = None
+        if info is None:
+            wait = wait or f"форма оплаты sub_{form.id}: банк не ответил"
+            continue
+        state = checkout_state(info.get("Status"))
+        if state == "open":
+            wait = wait or f"форма оплаты sub_{form.id} ещё открыта ({info.get('Status')})"
+            continue
+        if state == "paid" and _aware(form.created_at) > now - timedelta(hours=CHECKOUT_WEBHOOK_GRACE_HOURS):
+            wait = wait or f"форма оплаты sub_{form.id} оплачена, ждём webhook банка"
+            continue
+        try:
+            amount = float(info.get("Amount", 0)) / 100.0  # копейки → рубли
+        except (ValueError, TypeError):
+            amount = None
+        event = WebhookEvent(
+            payment_id=form.yk_payment_id,
+            event_type={"paid": "payment.succeeded", "refunded": "refund.succeeded"}.get(
+                state, "payment.canceled"),
+            payment_method=info.get("PaymentMethod") or "bank_card",
+            amount=amount,
+            provider_name=provider.name,
+        )
+        try:
+            if state == "paid":
+                if activate_from_webhook(db, event) is None:
+                    # Оплачена, но активировать не вышло (сумма/проверка) —
+                    # не списываем вслепую, разберёмся на следующем запуске.
+                    wait = wait or f"форма оплаты sub_{form.id} оплачена, активация не прошла"
+            else:
+                cancel_by_webhook(db, event)
+        except Exception as e:
+            db.rollback()
+            log.error("renew: сверка формы sub_%s упала: %s", form.id, e, exc_info=True)
+            wait = wait or f"форма оплаты sub_{form.id}: ошибка сверки"
+    db.refresh(sub)
+    return wait
+
+
 def renewal_terms(sub: Subscription) -> tuple[str, int, Decimal | float, int]:
     """Что спишет продление этой подписки: (plan_id, discount_pct, discount_rub, periods_left).
 
@@ -777,9 +997,10 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
     продлевает доступ.
 
     Защита от дублей:
-    - Если для того же user + plan_id уже есть pending/active sub созданная
-      после текущей — пропускаем (значит уже продлили в прошлом запуске или
-      юзер сам купил)
+    - Незакрытые формы оплаты клиента сверяем с банком (_reconcile_open_checkouts):
+      оплаченную активируем, открытую ждём, брошенную закрываем.
+    - Если для того же user + tier уже есть более новая оплаченная подписка
+      или автосписание в полёте (follow_up_condition) — пропускаем.
     - payment_method.deleted_at IS NOT NULL — пропускаем (карта удалена)
 
     Запускать раз в час из orchestrator'а. Окно: от hours_window до конца
@@ -829,11 +1050,25 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
         # tier_yearly) — матч по plan_id его бы не увидел → крон списал бы год
         # ПОВЕРХ уже успешного месяца. Любая более новая pending/active подписка
         # того же tier = «этот уровень уже продлили» → skip.
+        #
+        # Перед ним — сверка с банком незакрытых форм оплаты клиента: оплаченную
+        # активируем (тогда Guard 1 / cancelled_at ниже остановят продление),
+        # ещё открытую ждём до следующего часа, брошенную закрываем.
+        wait_reason = _reconcile_open_checkouts(db, sub, now)
+        if wait_reason:
+            log.info("renew: sub_%s skip — %s", sub.id, wait_reason)
+            summary["skipped"] += 1
+            continue
+        if sub.cancelled_at is not None:
+            log.info("renew: sub_%s skip — автопродление выключено новой покупкой", sub.id)
+            summary["skipped"] += 1
+            continue
+
         existing_renewal = db.query(Subscription).filter(
             Subscription.user_id == sub.user_id,
             Subscription.tier == sub.tier,
             Subscription.id != sub.id,
-            Subscription.status.in_(("pending", "active")),
+            follow_up_condition(),
             Subscription.created_at > sub.created_at,
         ).first()
         if existing_renewal:
