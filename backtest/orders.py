@@ -27,6 +27,9 @@
 'tv100' — как TradingView v6 по умолчанию: маржа 100 % стоимости позиции, при нехватке — маржин-колл на вчетверо
 больший объём (правило TV); 'none' — без проверок. Фандинг вечных фьючерсов (data/funding.csv.gz, ISS SWAPRATE) — с
 позиции, открытой к вечернему клирингу: лонг платит положительную своп-разницу, шорт получает.
+Доход на свободные деньги — только если стратегия просит: CASH_YIELD = 0.5 → на капитал минус занятое ГО каждый
+календарный день начисляется (ключевая ставка − 0.5) % годовых (как фонд денежного рынка; ставка — store.series()).
+Нет строки — как раньше, деньги лежат без процента.
 """
 import math
 import numpy as np, pandas as pd
@@ -153,6 +156,10 @@ class Engine:
         self.i, self._seq, self.day = 0, 0, None
         self.fund = funding_series(st)
         self.eq_rows, self._mc_day, self.rolls = [], 0, 0
+        cy = a.get('cash_yield')
+        self.cash_minus = None if cy is None else float(cy)
+        self.cash_rate = store.series().get('key_rate') if self.cash_minus is not None else None
+        self.cash_income = 0.0
 
     def seq(self):
         self._seq += 1
@@ -326,6 +333,17 @@ class Engine:
         self.C[self.i] = new                  # до конца свечи позиция оценивается уже по цене нового контракта
         self.rolls += 1
 
+    def accrue_cash(self, d0, d1, px):
+        """Процент на свободные деньги за календарные дни от d0 до d1 (CASH_YIELD): (капитал − ГО) × (ключевая − x) %."""
+        if self.cash_minus is None or self.cash_rate is None or not len(self.cash_rate): return
+        r = self.cash_rate[:pd.Timestamp(d0)]
+        if not len(r): return
+        days = (pd.Timestamp(d1) - pd.Timestamp(d0)).days
+        free = self.equity_at(px) - self.go_used(px)
+        if days <= 0 or free <= 0: return
+        x = free * max(0.0, float(r.iloc[-1]) - self.cash_minus) / 100 / 365 * days
+        self.realized += x; self.cash_income += x
+
     def charge_funding(self, d):
         if self.fund is None or not self.open: return
         x = self.fund.get(pd.Timestamp(d))
@@ -352,7 +370,7 @@ def run(ns, b, p, st, acct=None, guard=None, rolls=None, call_init=True):
     rolls — {индекс последней свечи контракта: цена нового − цена старого в ту же минуту} (pyengine.roll_gaps).
     call_init=False — init() уже вызван (проверка на заглядывание сама считает индикаторы и охраняет массивы)."""
     if call_init and callable(ns.get('init')): ns['init'](b, p)
-    eng = Engine(b, st, {**(acct or {}), 'pyramiding': ns.get('PYRAMIDING')})
+    eng = Engine(b, st, {**(acct or {}), 'pyramiding': ns.get('PYRAMIDING'), 'cash_yield': ns.get('CASH_YIELD')})
     do_roll = bool(ns.get('ROLL', True)) and rolls is not None
     S = Strategy(eng)
     on_bar, n = ns['on_bar'], len(b)
@@ -363,6 +381,7 @@ def run(ns, b, p, st, acct=None, guard=None, rolls=None, call_init=True):
         if d != eng.day:
             if eng.day is not None and charged != eng.day:           # в прошлый день клиринга не было в данных — списать сейчас
                 eng.charge_funding(eng.day)
+            if eng.day is not None: eng.accrue_cash(eng.day, d, eng.C[i - 1])
             eng.new_day(d)
         if eng.M[i] >= CLEARING_MIN and charged != d:                 # позиция дожила до вечернего клиринга
             eng.charge_funding(d); charged = d
@@ -393,7 +412,7 @@ def run(ns, b, p, st, acct=None, guard=None, rolls=None, call_init=True):
                      'qty': r['qty'], 'notional': r['notional'], 'go': r['go'], 'equity_in': r['equity_in'],
                      'comm_rub': r['comm_rub'], 'spread_rub': r['spread_rub'], 'funding_rub': r['funding_rub'], 'pnl_rub': r['pnl_rub'],
                      'entry_id': r['entry_id']})
-    summary = {'фандинг_руб': round(eng.funding_paid), 'принудительных_закрытий': eng.liquidated, 'переносов': eng.rolls,
+    summary = {'фандинг_руб': round(eng.funding_paid), **({'доход_на_деньги_руб': round(eng.cash_income)} if eng.cash_minus is not None else {}), 'принудительных_закрытий': eng.liquidated, 'переносов': eng.rolls,
                'маржин_коллов_TV': eng.margin_calls, 'пропущено': eng.skips, 'капитал': eng.capital}
     return rows, eng.eq_rows, summary
 
@@ -633,4 +652,62 @@ def on_bar(i, b, s, p):
             s.entry("T", LONG if pos > 0 else SHORT, abs(target) - abs(pos))
         else:
             s.close(qty=abs(pos) - abs(target))
+'''
+
+
+STRENGTH_TEMPLATE = '''# «Сила рынка»: купить индекс на дне, держать, пока большинство акций в тренде (исследование 27.11.2026,
+# research/lab/strength_swing: V9 + шорт S3). Ширина = доля акций IMOEX выше EMA (b.ext, значение дня готово вечером,
+# поэтому решение утром следующего дня — по вчерашнему; заявка исполняется по открытию следующей свечи).
+#   вход в лонг: ширина ≤ buy_below;
+#   выход: ширина побывала ≥ trend_level и потом exit_days дней подряд ниже него; или стоп: IMOEX упал на stop от входа
+#          (после стопа новый вход — только когда ширина поднимется выше buy_below + 10 и снова опустится);
+#   шорт (short): "none" — вне лонга деньги; "S3" — после выхода из лонга шорт, пока ширина не опустится до short_until;
+#          "all" — шорт всё время вне лонга.
+# CASH_YIELD: свободные деньги (капитал − ГО) приносят ключевую ставку − 0.5 % — как фонд денежного рынка.
+MODE = "orders"
+CASH_YIELD = 0.5
+PARAMS = {"ema": 200, "buy_below": 25, "trend_level": 50, "exit_days": 5, "stop": 0.10, "short": "S3",
+          "short_until": 25, "lev": 1.0, "trade_from": ""}
+
+
+def init(b, p):
+    w = ext_before_day(b, "breadth" + str(int(p["ema"])))      # ширина на вчера (на каждую свечу)
+    ix = ext_before_day(b, "IMOEX")                             # закрытие IMOEX на вчера
+    first = np.where(b.new_day)[0]
+    want = np.zeros(len(b))
+    st, armed, below, entry, locked, short_on = 0, False, 0, 0.0, False, False
+    L, T, N = float(p["buy_below"]), float(p["trend_level"]), int(p["exit_days"])
+    for k, a in enumerate(first):
+        z = first[k + 1] if k + 1 < len(first) else len(b)
+        x, px = w[a], ix[a]
+        if x == x and px == px:
+            if st == 1:
+                if x >= T: armed = True
+                below = below + 1 if x < T else 0
+                if px <= entry * (1 - float(p["stop"])):
+                    st, locked, short_on = 0, True, True
+                elif armed and below >= N:
+                    st, short_on = 0, True
+            else:
+                if locked and x > L + 10: locked = False
+                if not locked and x <= L:
+                    st, armed, below, entry, short_on = 1, False, 0, px, False
+            if st == 0 and short_on and x <= float(p["short_until"]): short_on = False
+        side = st if st == 1 else (-1 if (p["short"] == "all" or (p["short"] == "S3" and short_on)) else 0)
+        want[a:z] = side
+    b.want = want
+
+
+def on_bar(i, b, s, p):
+    if not b.new_day[i] or (p["trade_from"] and str(b.date[i]) < p["trade_from"]):
+        return
+    want, pos = int(b.want[i]), s.position_size
+    if (pos > 0) - (pos < 0) == want:
+        return
+    if want == 0:
+        s.close_all()
+        return
+    q = int(s.equity * p["lev"] / (b.close[i] * s.point_value))
+    if q >= 1:
+        s.entry("S", LONG if want > 0 else SHORT, q)              # противоположный вход = разворот позиции
 '''

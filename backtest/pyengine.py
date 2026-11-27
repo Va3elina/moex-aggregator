@@ -41,6 +41,7 @@ class Bars:
         self.prev_close = np.repeat(last_close, np.diff(np.r_[first, n])) if n else self.close
         self.adj = np.zeros(n)            # сдвиг цены из-за смен контракта (set_adj): close − adj — непрерывный ряд
         self.hist = None                  # длинная история базового актива: Series[дата → закрытие] (attach_hist)
+        self.ext = {}                     # дневные ряды: «Сила рынка», ставка, индексы — {имя: Series[дата → значение]}
 
     def __len__(self): return len(self.close)
 
@@ -76,6 +77,8 @@ class Bars:
         b.last_of_contract = b.last_of_contract.copy(); b.last_of_contract[-1] = True
         h = getattr(self, 'hist', None)
         b.hist = h[h.index < pd.Timestamp(b.date[-1])] if h is not None and len(b.date) else h
+        cut = pd.Timestamp(b.date[-1]) if len(b.date) else None
+        b.ext = {k: v[v.index < cut] for k, v in getattr(self, 'ext', {}).items()} if cut is not None else {}
         return b
 
 
@@ -145,14 +148,25 @@ def attach_hist(st, b):
 
 
 def prepare(st, b):
-    """Разницы контрактов для переноса позиции + непрерывный ряд и длинная история для индикаторов."""
+    """Разницы контрактов для переноса позиции + непрерывный ряд и длинная история для индикаторов + дневные ряды b.ext."""
     rolls = set_adj(b, roll_gaps(st, b))
     attach_hist(st, b)
+    b.ext = dict(store.series())
     return rolls
 
 
+def ext_before_day(b, name):
+    """Значение дневного ряда b.ext[name] на каждую свечу — последнее за день СТРОГО ДО дня свечи (значение «Силы рынка»
+    за день готово только вечером, поэтому сегодняшнее брать нельзя). Нет ряда — массив NaN."""
+    s = (getattr(b, 'ext', None) or {}).get(name)
+    if s is None or not len(s) or not len(b): return np.full(len(b), np.nan)
+    days = pd.to_datetime(b.date)
+    k = np.searchsorted(s.index.values, days.values, side='left') - 1
+    return np.where(k >= 0, s.values[np.clip(k, 0, None)], np.nan)
+
+
 def load(code):
-    ns = {'__name__': 'strategy', 'np': np, 'pd': pd, 'LONG': orders.LONG, 'SHORT': orders.SHORT}
+    ns = {'__name__': 'strategy', 'np': np, 'pd': pd, 'LONG': orders.LONG, 'SHORT': orders.SHORT, 'ext_before_day': ext_before_day}
     exec(compile(code, 'strategy.py', 'exec'), ns)
     if not callable(ns.get('on_bar')): raise ValueError('в коде нет функции on_bar(i, b, pos, p)')
     return ns
@@ -213,6 +227,7 @@ def lookahead_check(code, b, params, st, acct=None):
     std = _STD
     ns = load(code); base = Bars.__new__(Bars); base.__dict__.update({k: v for k, v in b.__dict__.items() if k in std})
     base.hist = getattr(b, 'hist', None)                     # длинная история: у полной копии — целиком
+    base.ext = getattr(b, 'ext', {})
     if callable(ns.get('init')): ns['init'](base, params)
     user = {k: v for k, v in base.__dict__.items() if k not in std and isinstance(v, np.ndarray) and v.shape[:1] == (n,)}
     for frac in (0.35, 0.6, 0.85):
