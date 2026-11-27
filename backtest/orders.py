@@ -673,6 +673,8 @@ PARAMS = {"ema": 200, "buy_below": 25, "trend_level": 50, "exit_days": 5, "stop"
 def init(b, p):
     w = ext_before_day(b, "breadth" + str(int(p["ema"])))      # ширина на вчера (на каждую свечу)
     ix = ext_before_day(b, "IMOEX")                             # закрытие IMOEX на вчера
+    if np.isnan(w).all() or np.isnan(ix).all():
+        raise ValueError("нет дневных рядов «Силы рынка» / IMOEX (series.pkl): воркер ещё не загрузил их из БД")
     first = np.where(b.new_day)[0]
     want = np.zeros(len(b))
     st, armed, below, entry, locked, short_on = 0, False, 0, 0.0, False, False
