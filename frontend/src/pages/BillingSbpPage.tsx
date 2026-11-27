@@ -80,12 +80,19 @@ export default function BillingSbpPage() {
     if (!nav.subscription_id || pollingRef.current) return;
     pollingRef.current = true;
     let cancelled = false;
-    let attempts = 0;
-    const maxAttempts = 90; // 90 × 2с = 3 мин: подтверждение в банке руками
+    let inFlight = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // Ждём по времени, а не по числу попыток: пока юзер в приложении банка,
+    // телефон усыпляет вкладку и таймеры стоят. 30 мин = срок жизни заявки
+    // на сервере (SBP_BINDING_TTL_MINUTES).
+    const deadline = Date.now() + 30 * 60 * 1000;
 
     const tick = async () => {
-      if (cancelled) return;
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      if (timer) { clearTimeout(timer); timer = null; }
       const s = await poll();
+      inFlight = false;
       if (cancelled) return;
 
       if (s?.status === 'charged') {
@@ -102,17 +109,25 @@ export default function BillingSbpPage() {
         return;
       }
 
-      attempts++;
-      if (attempts >= maxAttempts) {
+      if (Date.now() >= deadline) {
         setPhase('expired');
         return;
       }
-      setTimeout(tick, 2000);
+      timer = setTimeout(tick, 2000);
     };
-    setTimeout(tick, 2000);
+    // Вернулся из банка на вкладку — проверяем сразу, не ждём таймер.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    timer = setTimeout(tick, 2000);
 
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
   }, [nav.subscription_id, poll, navigate]);
 
