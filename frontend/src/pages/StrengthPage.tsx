@@ -55,6 +55,7 @@ const PERIOD_DAYS: Record<Period, number> = {
 };
 
 const EMA_PERIOD = 200; // Fixed EMA period
+const SMOOTH_WINDOW = 63; // ≈ 3 месяца торговых дней — слой «Сглаживание 3 месяца»
 
 // Секторы строятся динамически из ответа API (поле sector)
 
@@ -77,6 +78,9 @@ export default function StrengthPage() {
     const [emaPeriod, setEmaPeriod] = usePersistedState<20 | 50 | 100 | 200>('frame:strength:emaPeriod', EMA_PERIOD);
     const [chartMode, setChartMode] = usePersistedState<ChartMode>('frame:strength:chartMode', 'histogram');
     const [showPrice, setShowPrice] = usePersistedState('frame:strength:showPrice', true);
+    // Сглаживание: скользящее среднее силы рынка за ~3 месяца (63 торговых дня) —
+    // как «Сумма за 3 месяца» в «Деньгах фондов». Показывает большие волны без коротких провалов.
+    const [smooth3m, setSmooth3m] = usePersistedState('frame:strength:smooth3m', false);
 
     // Onboarding tour
     const tour = useOnboardingTour('strength');
@@ -195,11 +199,20 @@ export default function StrengthPage() {
     // Данные для графиков
     const breadthData = useMemo(() => {
         if (!history?.data) return [];
-        return history.data.map(point => ({
+        const raw = history.data.map(point => ({
             time: point.date,
             value: point.percent_above
         }));
-    }, [history]);
+        if (!smooth3m) return raw;
+        // Скользящее среднее за SMOOTH_WINDOW точек (только прошлое, без заглядывания).
+        // В начале выбранного периода окно короче — среднее по доступным точкам.
+        let sum = 0;
+        return raw.map((d, i) => {
+            sum += d.value;
+            if (i >= SMOOTH_WINDOW) sum -= raw[i - SMOOTH_WINDOW].value;
+            return { time: d.time, value: sum / Math.min(i + 1, SMOOTH_WINDOW) };
+        });
+    }, [history, smooth3m]);
 
     const imoexData = useMemo(() => {
         if (!history?.imoex) return [];
@@ -389,6 +402,7 @@ export default function StrengthPage() {
                         layers={[
                             { key: 'price', label: t('Индекс'), hint: priceChartLabel, checked: showPrice, onChange: setShowPrice },
                             { key: 'histogram', label: t('Гистограмма'), hint: t('Столбики вместо линии'), checked: chartMode === 'histogram', onChange: (v: boolean) => setChartMode(v ? 'histogram' : 'line') },
+                            { key: 'smooth3m', label: t('Сглаживание 3 месяца'), hint: t('Среднее силы рынка за скользящие 3 месяца (63 торговых дня). Убирает короткие провалы и всплески, показывает большие волны.'), checked: smooth3m, onChange: setSmooth3m },
                         ]}
                     />
                     <CsvExportButton
@@ -622,7 +636,9 @@ export default function StrengthPage() {
                          style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 16 }}>
                         <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                             <ChartLegend
-                                items={[{ color: 'var(--accent)', label: t('% акций выше EMA{{n}}', { n: emaPeriod }) }]}
+                                items={[{ color: 'var(--accent)', label: smooth3m
+                                    ? t('% акций выше EMA{{n}}, среднее за 3 месяца', { n: emaPeriod })
+                                    : t('% акций выше EMA{{n}}', { n: emaPeriod }) }]}
                                 fontWeight={600}
                                 style={{ color: 'var(--text-primary)' }}
                             />
