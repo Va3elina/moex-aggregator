@@ -26,6 +26,8 @@ import TierPlanCard, { TIER_META, type PlanVariant } from '../pricing/TierPlanCa
 import { apiFetch } from '../../services/api';
 import { signupUrlForIntent, type CheckoutIntent } from '../../utils/checkoutIntent';
 import { rememberPurchaseSource } from '../../utils/purchaseSource';
+import { useSale } from '../../hooks/useSale';
+import SaleCards from '../sale/SaleCards';
 
 interface TierCard {
   tier: string;
@@ -47,6 +49,8 @@ export default function LandingPricing() {
   const [data, setData] = useState<PlansResponse | null>(null);
   // Годовой по умолчанию — как на /pricing (выгоднее, и цена сопоставима «в лоб»).
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly');
+  // На время акции вместо обычной сетки — карточки со скидкой (только год).
+  const sale = useSale();
 
   useEffect(() => {
     let alive = true;
@@ -121,7 +125,19 @@ export default function LandingPricing() {
         </p>
       </section>
 
-      {paid.length > 0 && (
+      {sale && (
+        <section className="bf-scene" style={{ marginTop: 'clamp(28px, 4vw, 48px)' }}>
+          <SaleCards
+            sale={sale}
+            action={(p) => ({
+              label: t('Оформить со скидкой'),
+              onClick: () => startSignup({ kind: 'plan', planId: p.planId }),
+            })}
+          />
+        </section>
+      )}
+
+      {!sale && paid.length > 0 && (
         <section style={{ marginTop: 'clamp(28px, 4vw, 48px)' }}>
           {/* Переключатель Месяц / Год — копия блока с /pricing (компактный,
               размеры в px: root font-size 20px делает rem-классы в 1.25x). */}

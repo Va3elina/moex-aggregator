@@ -1,0 +1,254 @@
+/* Акция («Чёрная пятница») — стили по макетам design/black-friday/*.html.
+   Только токены темы сайта: --accent, --bg-primary/secondary, --text-primary/
+   secondary, рамки 1.5px, жёсткая тень на hover. Всё под префиксом .bf-, чтобы
+   после акции ни один стиль не влиял на обычные страницы. */
+
+.bf-scene {
+  --bf-ink: var(--bg-primary);
+  --bf-panel: var(--bg-secondary);
+  --bf-cream: var(--text-primary);
+  --bf-muted: var(--text-secondary);
+  background: var(--bf-ink);
+  color: var(--bf-cream);
+}
+
+.bf-display {
+  font-family: 'Archivo', 'Inter', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+}
+.bf-eyebrow {
+  font-family: 'Archivo', 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+.bf-heat { color: var(--accent); }
+
+/* ── Обратный отсчёт ─────────────────────────────────────────────── */
+.bf-count { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; width: 100%; max-width: 440px; }
+.bf-cell { border-radius: 12px; background: var(--bf-ink); padding: 14px 0 12px; text-align: center; }
+.bf-cell.on-ink { background: var(--bf-panel); }
+.bf-cell .bf-num {
+  display: block; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 40px; line-height: 1;
+  letter-spacing: -0.02em; font-feature-settings: 'tnum' 1, 'zero' 1; color: var(--bf-cream);
+}
+.bf-cell .bf-lbl {
+  display: block; margin-top: 8px; font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--bf-muted);
+}
+
+/* ── Кнопка ──────────────────────────────────────────────────────── */
+.bf-cta {
+  display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+  padding: 18px 28px;
+  font-family: 'Inter', sans-serif; font-weight: 800; font-size: 15px;
+  letter-spacing: 0.16em; text-transform: uppercase; text-decoration: none; text-align: center;
+  color: var(--text-primary); background: var(--accent);
+  border: 1.5px solid var(--text-primary); border-radius: 12px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease; cursor: pointer;
+}
+.bf-cta:hover:not(:disabled) { transform: translate(-3px, -3px); box-shadow: 6px 6px 0 var(--text-primary); }
+.bf-cta:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: 2px 2px 0 var(--text-primary); }
+.bf-cta:disabled { opacity: 0.5; cursor: not-allowed; }
+.bf-cta.bf-ghost { background: transparent; }
+
+/* ── Общая шапка акции: заголовок, скидка, подарок, таймер ───────── */
+.bf-head { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.bf-head .bf-title { font-size: clamp(52px, 9vw, 112px); white-space: nowrap; }
+.bf-head .bf-title.bf-plain { font-size: clamp(40px, 7vw, 84px); white-space: normal; }
+.bf-head .bf-big { margin-top: 18px; font-size: clamp(30px, 4.4vw, 52px); line-height: 1; }
+.bf-head .bf-sub {
+  margin-top: 12px; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(17px, 1.6vw, 22px);
+  color: var(--accent); letter-spacing: -0.01em;
+}
+.bf-head .bf-ends { margin: 30px 0 12px; font-size: 14.5px; font-weight: 600; }
+
+/* ── Кнопка в шапке сайта (вместо Plus) ──────────────────────────── */
+.bf-hbtn {
+  display: inline-flex; flex-direction: column; align-items: center; text-align: center; gap: 1px;
+  white-space: nowrap; text-decoration: none; cursor: pointer; flex-shrink: 0;
+  padding: 5px 14px 6px; border-radius: 12px; background: var(--accent); color: var(--text-primary);
+  border: 1.5px solid var(--text-primary); transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.bf-hbtn .bf-l1 { font-family: 'Archivo', 'Inter', sans-serif; font-weight: 800; font-size: 14px; letter-spacing: -0.01em; line-height: 1.1; }
+.bf-hbtn .bf-l2 { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 11px; line-height: 1.15; }
+.bf-hbtn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--text-primary); }
+.bf-hbtn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--text-primary); }
+.bf-hbtn.bf-compact { padding: 4px 10px 5px; border-radius: 10px; }
+.bf-hbtn.bf-compact .bf-l1 { font-size: 12px; }
+.bf-hbtn.bf-compact .bf-l2 { font-size: 10px; }
+.bf-hbtn.bf-tiny { padding: 6px 9px; border-radius: 10px; }
+.bf-hbtn.bf-tiny .bf-l1 { font-size: 13px; }
+
+/* ── Баннер на главной (гости) ───────────────────────────────────── */
+.bf-hero { min-height: calc(100vh - 65px); display: flex; flex-direction: column; }
+.bf-hero-in {
+  flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 520px; align-items: center; gap: clamp(32px, 6vw, 112px);
+  max-width: 1320px; width: 100%; margin: 0 auto; padding: clamp(40px, 6vh, 72px) clamp(20px, 4vw, 56px);
+}
+.bf-hero-in > * { min-width: 0; }
+.bf-hero .bf-title { font-size: clamp(64px, 10.4vw, 172px); }
+.bf-hero .bf-title span { display: block; }
+.bf-hero .bf-title .bf-w2 { padding-bottom: 0.08em; }
+.bf-hero .bf-lead {
+  margin-top: clamp(22px, 3vh, 34px); max-width: 540px; font-size: clamp(16px, 0.5vw + 0.8rem, 20px); line-height: 1.55;
+  color: color-mix(in srgb, var(--bf-cream) 78%, transparent);
+}
+.bf-card { background: var(--bf-panel); border: 1.5px solid var(--bf-cream); border-radius: 16px; padding: clamp(24px, 2.6vw, 40px); }
+.bf-card .bf-eyebrow { color: var(--bf-muted); }
+.bf-card .bf-big { margin-top: 14px; font-size: clamp(40px, 4vw, 64px); line-height: 0.95; }
+.bf-card .bf-sub {
+  margin-top: 14px; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(18px, 1.3vw, 24px);
+  letter-spacing: -0.01em; color: var(--accent);
+}
+.bf-card .bf-ends { margin: clamp(26px, 2.6vw, 34px) 0 12px; font-size: 15px; font-weight: 600; }
+.bf-card .bf-count { max-width: none; }
+.bf-card .bf-cta { margin-top: clamp(22px, 2.4vw, 28px); }
+.bf-scroll { text-align: center; padding-bottom: 28px; color: color-mix(in srgb, var(--bf-cream) 50%, transparent); font-size: 10px; }
+
+/* ── Всплывающее окно ────────────────────────────────────────────── */
+.bf-pop-backdrop {
+  position: fixed; inset: 0; z-index: 9990; background: rgba(0, 0, 0, 0.5);
+  display: grid; place-items: center; padding: 16px;
+}
+.bf-pop {
+  position: relative; width: 100%; max-width: 640px; text-align: center; overflow: hidden;
+  border: 2px solid var(--text-primary); border-radius: 16px; max-height: calc(100dvh - 32px); overflow-y: auto;
+}
+.bf-pop-in { padding: 44px 48px 30px; display: flex; flex-direction: column; align-items: center; }
+.bf-pop .bf-head .bf-title { margin-top: 6px; font-size: clamp(48px, 14vw, 86px); }
+.bf-pop .bf-head .bf-big { margin-top: 22px; font-size: clamp(34px, 9vw, 52px); }
+.bf-pop .bf-head .bf-sub { margin-top: 14px; font-size: clamp(17px, 4.5vw, 22px); }
+.bf-pop .bf-cta { margin-top: 26px; max-width: 440px; }
+.bf-pop-x {
+  position: absolute; top: 16px; right: 16px; z-index: 2; width: 34px; height: 34px; border-radius: 50%;
+  border: 1.5px solid var(--text-primary); display: grid; place-items: center; color: var(--text-primary);
+  background: var(--bg-primary); cursor: pointer;
+}
+.bf-pop-x:hover { opacity: 0.7; }
+.bf-later {
+  margin-top: 16px; font-size: 13px; font-weight: 600; color: var(--text-secondary);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer; background: none; border: 0;
+}
+.bf-later:hover { color: var(--text-primary); }
+
+/* ── Страница тарифов: шапка и карточки ──────────────────────────── */
+.bf-pricing { padding: clamp(24px, 4vw, 48px) 0 8px; }
+.bf-grid {
+  margin: clamp(36px, 5vw, 64px) auto 0; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 860px;
+}
+.bf-plan {
+  position: relative; display: flex; flex-direction: column; padding: 34px 32px 30px; text-align: center;
+  background: var(--bf-panel); border: 1.5px solid var(--bf-cream); border-radius: 16px;
+}
+.bf-plan.bf-best { border-width: 2px; border-color: var(--accent); }
+.bf-badge {
+  position: absolute; top: -14px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  padding: 5px 14px; border-radius: 999px; background: var(--accent); color: var(--text-primary);
+  border: 1.5px solid var(--text-primary);
+  font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.bf-plan .bf-name { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 24px; letter-spacing: -0.02em; }
+.bf-plan .bf-pct {
+  margin-top: 10px; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(76px, 8vw, 104px);
+  letter-spacing: -0.05em; line-height: 1;
+}
+.bf-plan .bf-pct sup { font-size: 0.36em; vertical-align: 0.95em; margin-left: 0.04em; letter-spacing: 0; }
+.bf-plan .bf-price {
+  margin-top: 22px; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(36px, 3.6vw, 46px);
+  letter-spacing: -0.03em; line-height: 1; color: var(--accent); white-space: nowrap;
+}
+.bf-plan .bf-per { margin-top: 8px; font-size: 14px; font-weight: 600; color: var(--bf-muted); }
+.bf-plan .bf-rule { margin: 22px 0 16px; display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; color: var(--bf-muted); }
+.bf-plan .bf-rule::before, .bf-plan .bf-rule::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--bf-cream) 22%, transparent); }
+.bf-plan .bf-month { font-size: 15px; color: var(--bf-muted); }
+.bf-plan .bf-month s { margin-right: 8px; }
+.bf-plan .bf-month b { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 22px; letter-spacing: -0.02em; color: var(--bf-cream); white-space: nowrap; }
+.bf-plan .bf-save { margin-top: 18px; font-size: 14px; line-height: 1.6; }
+.bf-plan .bf-save b { font-weight: 800; }
+.bf-plan .bf-cta { margin-top: 26px; font-size: 14px; letter-spacing: 0.12em; padding: 16px 20px; }
+.bf-plan .bf-mine { margin-top: 12px; font-size: 12.5px; line-height: 1.5; font-weight: 600; color: var(--bf-muted); }
+.bf-fine { margin: 24px auto 0; max-width: 720px; text-align: center; font-size: 13px; line-height: 1.6; color: var(--bf-muted); }
+.bf-jump {
+  display: block; margin: 18px auto 0; text-align: center; font-size: 13.5px; font-weight: 700;
+  color: var(--bf-cream); text-decoration: underline; text-underline-offset: 4px; background: none; border: 0; cursor: pointer;
+}
+.bf-divider { margin: clamp(56px, 8vw, 96px) 0 0; padding-top: 40px; border-top: 1.5px solid var(--text-primary); text-align: center; }
+.bf-divider .bf-eyebrow { color: var(--text-secondary); }
+.bf-divider h2 {
+  margin-top: 12px; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(28px, 3.2vw, 40px);
+  letter-spacing: -0.03em; color: var(--text-primary);
+}
+.bf-divider p { margin-top: 10px; font-size: 14.5px; color: var(--text-secondary); }
+
+/* ── Окно оплаты и окно перехода на Basic ────────────────────────── */
+.bf-tag {
+  padding: 3px 10px; border-radius: 999px; background: var(--accent); border: 1.5px solid var(--text-primary);
+  font-size: 11px; font-weight: 800; color: var(--text-primary); white-space: nowrap;
+}
+.bf-pricebox { background: var(--bg-secondary); border-radius: 16px; padding: 18px 16px 16px; text-align: center; }
+.bf-period {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent); font-size: 13px; font-weight: 700; color: var(--text-primary);
+}
+.bf-period b { padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--text-primary); font-size: 11px; font-weight: 800; }
+.bf-pm { margin-top: 10px; display: flex; align-items: baseline; justify-content: center; gap: 8px; }
+.bf-pm s { font-size: 17px; font-weight: 600; color: var(--text-muted); }
+.bf-pm strong { font-family: 'Archivo', sans-serif; font-size: 40px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; white-space: nowrap; color: var(--text-primary); }
+.bf-pm span { font-size: 15px; font-weight: 600; color: var(--text-secondary); }
+.bf-yr { margin-top: 4px; font-size: 13px; color: var(--text-secondary); }
+.bf-gift { margin-top: 8px; font-family: 'Archivo', sans-serif; font-size: 15px; font-weight: 800; color: var(--accent); }
+.bf-until { margin-top: 8px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.bf-until b { color: var(--text-primary); font-weight: 700; }
+
+.bf-steps { background: var(--bg-secondary); border-radius: 16px; padding: 16px; }
+.bf-step { position: relative; display: grid; grid-template-columns: 22px 1fr; gap: 12px; text-align: left; }
+.bf-step + .bf-step { margin-top: 16px; }
+.bf-dot {
+  width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--text-primary);
+  display: grid; place-items: center; font-size: 11px; font-weight: 800; background: var(--bg-primary); color: var(--text-primary);
+}
+.bf-step.bf-now .bf-dot { background: var(--text-primary); color: var(--bg-primary); }
+.bf-step.bf-next .bf-dot { background: var(--accent); border-color: var(--accent); }
+.bf-step:not(:last-child)::after {
+  content: ''; position: absolute; left: 10.5px; top: 24px; bottom: -14px; width: 1.5px;
+  background: color-mix(in srgb, var(--text-primary) 30%, transparent);
+}
+.bf-step b { display: block; font-size: 14px; font-weight: 800; color: var(--text-primary); }
+.bf-step i { display: block; margin-top: 3px; font-style: normal; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.bf-step em { font-style: normal; font-weight: 700; color: var(--text-primary); }
+.bf-lose {
+  margin-top: 12px; padding: 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); text-align: left;
+  border: 1.5px dashed color-mix(in srgb, var(--text-primary) 45%, transparent);
+}
+.bf-lose b { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-primary); }
+.bf-back {
+  display: block; width: 100%; margin-top: 10px; text-align: center; font-size: 13px; font-weight: 700; color: var(--text-secondary);
+  text-decoration: underline; text-underline-offset: 3px; background: none; border: 0; cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .bf-hero { min-height: 0; }
+  .bf-hero-in { grid-template-columns: 1fr; gap: 32px; padding-top: 36px; align-content: start; }
+  .bf-hero .bf-title { font-size: clamp(64px, 21vw, 120px); }
+  .bf-hero .bf-lead { font-size: 16px; }
+  .bf-card .bf-big { font-size: clamp(40px, 11vw, 56px); }
+  .bf-card .bf-cta { font-size: 13px; letter-spacing: 0.1em; padding: 16px 18px; }
+  .bf-scroll { display: none; }
+}
+@media (max-width: 760px) {
+  .bf-grid { grid-template-columns: 1fr; gap: 30px; }
+  .bf-plan.bf-best { order: -1; }
+  .bf-plan { padding: 30px 20px 24px; }
+  .bf-head .bf-title { font-size: clamp(48px, 14vw, 64px); }
+  .bf-cell .bf-num { font-size: 28px; }
+  .bf-cell .bf-lbl { font-size: 9px; letter-spacing: 0.1em; }
+  .bf-count { gap: 8px; }
+}
+@media (max-width: 600px) {
+  .bf-pop-in { padding: 58px 20px 22px; }
+  .bf-pop .bf-cta { font-size: 13px; letter-spacing: 0.1em; padding: 16px 14px; }
+}

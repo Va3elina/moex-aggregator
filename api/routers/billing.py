@@ -15,7 +15,7 @@ Routes:
   - не заданы → Stub (все платежи fake, для прогона инфраструктуры)
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from api.billing import service as billing_service
 from api.billing import invites as invite_service
+from api.billing import sale as sale_rules
 from api.billing import trial as trial_service
 from api.billing import webhook_log
 from api.billing.factory import (
@@ -31,7 +32,7 @@ from api.billing.factory import (
     get_provider_for,
     get_yookassa_provider,
 )
-from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, retention_terms, tiers_grouped
+from api.billing.plans import TIER_LEVELS, TRIAL_DAYS, get_plan, list_public_plans, retention_terms, tiers_grouped
 from api.billing.source import clean_source
 from api.billing.tiers import user_tier
 from api.database import get_db
@@ -62,6 +63,13 @@ class CheckoutRequest(BaseModel):
     # фронта из кеша — пропускаем, пока не включён BILLING_CONSENT_STRICT
     # (service.check_autopay_consent). Явный false отклоняется всегда.
     consent: bool | None = None
+    # Сумма, которую клиент видел на экране. Если сервер выставил бы другую
+    # (акция началась или закончилась, пока страница была открыта, либо лимит
+    # акции уже использован) — платёж не создаётся, фронт перезагружает цены.
+    expected_amount: float | None = None
+    # Клиент подтвердил переход на тариф ниже действующего (окно «Перейти на
+    # Basic»): см. service.assert_can_purchase(switch_down=True).
+    switch_down: bool = False
 
 
 class CheckoutResponse(BaseModel):
@@ -122,7 +130,10 @@ async def features_matrix():
 
 
 @router.get("/plans")
-async def list_plans(user: User | None = Depends(get_current_user_optional)):
+async def list_plans(
+    user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
     """
     Возвращает все тарифы для отображения на Pricing-странице.
     Структура — сгруппировано по tier (free / basic / pro),
@@ -149,10 +160,40 @@ async def list_plans(user: User | None = Depends(get_current_user_optional)):
                     plan_card["amount"] = billing_service.test_price_for(
                         user, plan_card["amount"]
                     )
+    # Акция: цена со скидкой на годовых планах. eligible=False — этот аккаунт
+    # по акции уже покупал (лимит один раз), ему показываем обычные цены.
+    sale = sale_rules.active_sale()
+    sale_block = None
+    if sale is not None:
+        eligible = user is None or not billing_service._promo_used(db, user.id, sale.code)
+        sale_block = {
+            "code": sale.code,
+            "title": sale.title,
+            "pct_max": sale.max_pct,
+            "starts_at": sale.start.isoformat(),
+            "ends_at": sale.end.isoformat(),
+            "monthly_available": sale.monthly_available,
+            "eligible": eligible,
+        }
+        if eligible:
+            for tier_card in tiers:
+                plan_card = tier_card.get("yearly")
+                plan = get_plan(plan_card["plan_id"]) if plan_card else None
+                # Тест-аккаунту цены акции тоже отдаём: он видит ту же витрину,
+                # что и клиенты, а спишется с него тест-цена (она в предпросмотре).
+                if plan is not None and sale_rules.is_sale_plan(plan, sale):
+                    plan_card["sale_amount"] = sale_rules.sale_price(plan, sale)
+                    plan_card["sale_pct"] = sale.pct(plan.tier)
+                    plan_card["sale_list_amount"] = sale_rules.list_price_12m(plan)
+                    plan_card["sale_gift_days"] = sale.gift_days(plan.tier)
     response: dict = {
         "provider": provider.name,
         "currency": "RUB",
         "tiers": tiers,
+        "sale": sale_block,
+        # Тест-аккаунт оплаты (BILLING_TEST_USER_IDS): фронт показывает ему
+        # страницу тарифов как покупателю, даже если его роль — admin.
+        "tester": user is not None and billing_service.is_test_user(user),
         # Публичный флаг для гостевого trial-тизера (гость не может звать /status).
         # trial_eligible для залогиненных по-прежнему считается в /status.
         "trial_enabled": trial_service.TRIAL_ENABLED,
@@ -278,6 +319,22 @@ class SbpBindRequest(BaseModel):
     # Согласие на автосписание — как в CheckoutRequest: привязка счёта всегда
     # с автопродлением, поэтому нужно всегда.
     consent: bool | None = None
+    expected_amount: float | None = None   # см. CheckoutRequest
+    switch_down: bool = False              # см. CheckoutRequest
+
+
+def _check_expected_amount(db: Session, user: User, plan, expected: float | None) -> None:
+    """409, если цена на экране клиента расходится с той, что спишется."""
+    if expected is None:
+        return
+    actual = billing_service.test_price_for(
+        user, billing_service.checkout_offer(db, user, plan)["amount"]
+    )
+    if abs(float(actual) - float(expected)) > 0.5:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Цена изменилась. Обновите страницу, чтобы увидеть актуальную стоимость.",
+        )
 
 
 @router.post("/sbp/bind")
@@ -294,12 +351,16 @@ async def sbp_bind_start(
     фронт показывает по ней QR (десктоп) или ведёт по ней же (телефон). Дальше
     фронт опрашивает GET /sbp/bind/{subscription_id}.
     """
+    _sbp_plan = get_plan(body.plan_id)
+    if _sbp_plan is not None:
+        _check_expected_amount(db, user, _sbp_plan, body.expected_amount)
     try:
         return billing_service.start_sbp_binding(
             db=db, user=user, plan_id=body.plan_id, data_type=body.data_type,
             source=clean_source(body.source, body.source_feature),
             consent=body.consent,
             consent_ip=request.client.host if request.client else None,
+            switch_down=body.switch_down,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -328,6 +389,61 @@ async def sbp_bind_state(
         raise HTTPException(502, "Не удалось проверить привязку счёта")
 
 
+@router.get("/checkout/preview")
+async def checkout_preview(
+    plan_id: str,
+    switch_down: bool = False,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Что клиент получит, оплатив план сейчас: сумма, срок доступа, дни за
+    остаток младшего тарифа, дата и сумма следующего списания. Фронт показывает
+    это в окне оплаты ДО платежа. Считает та же service.checkout_offer, что
+    выставляет сумму в платеже.
+    """
+    plan = get_plan(plan_id)
+    if not plan:
+        raise HTTPException(400, f"Unknown plan_id: {plan_id}")
+    blocked = None
+    try:
+        billing_service.assert_can_purchase(db, user, plan, switch_down=switch_down)
+    except ValueError as e:
+        blocked = str(e)
+    offer = billing_service.checkout_offer(db, user, plan)
+    # Действующая подписка — для окна «Перейти на Basic»: какой тариф сейчас,
+    # до какого дня он оплачен и включено ли у него автопродление.
+    cur = billing_service.current_subscription(db, user)
+    cur_plan = get_plan(cur.plan_id) if cur else None
+    current = None
+    if cur is not None and not cur.is_trial:
+        current = {
+            "tier": cur.tier,
+            "title": cur_plan.title if cur_plan else cur.tier,
+            "expires_at": cur.expires_at.isoformat() if cur.expires_at else None,
+            "autorenew": cur.cancelled_at is None and cur.payment_method_id is not None,
+            "is_higher": TIER_LEVELS.get(cur.tier, 0) > TIER_LEVELS.get(plan.tier, 0),
+        }
+    sale = sale_rules.active_sale()
+    return {
+        "plan_id": plan.plan_id,
+        "blocked": blocked,
+        "current": current,
+        "amount": billing_service.test_price_for(user, offer["amount"]),
+        "full_amount": offer["full_amount"],
+        "promo_code": offer["promo_code"],
+        "sale_title": sale.title if (sale and offer["promo_code"]) else None,
+        "starts_at": offer["starts_at"].isoformat(),
+        "expires_at": offer["expires_at"].isoformat(),
+        "bonus_days": offer["bonus_days"],
+        "bonus_from": offer["bonus_from"],
+        "gift_days": offer["gift_days"],
+        # Автопродление — всегда по полной цене плана, за сутки до конца доступа.
+        "renew_amount": offer["full_amount"],
+        "renew_at": (offer["expires_at"] - timedelta(hours=24)).isoformat(),
+    }
+
+
 @router.post("/checkout", response_model=CheckoutResponse)
 async def checkout(
     body: CheckoutRequest,
@@ -345,6 +461,8 @@ async def checkout(
 
     if body.rail not in ("card", "sbp"):
         raise HTTPException(400, f"Unknown rail: {body.rail}")
+
+    _check_expected_amount(db, user, plan, body.expected_amount)
 
     # Определяем return_url — куда T-Bank вернёт пользователя после оплаты.
     # Если клиент не прислал — строим из Referer.
@@ -365,6 +483,7 @@ async def checkout(
             source=clean_source(body.source, body.source_feature),
             consent=body.consent,
             consent_ip=request.client.host if request.client else None,
+            switch_down=body.switch_down,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

@@ -181,3 +181,22 @@ AUTOPAY_CONSENT_COLUMNS = ("autopay_consent_at", "autopay_consent_version", "aut
 Subscription.__table__.append_column(Column("autopay_consent_at", DateTime(timezone=True), nullable=True))
 Subscription.__table__.append_column(Column("autopay_consent_version", String(16), nullable=True))
 Subscription.__table__.append_column(Column("autopay_consent_ip", String(45), nullable=True))
+
+
+# === Акция и пересчёт остатка при повышении тарифа (123_sale_promo.sql) ===
+# promo_code — метка акции, по цене которой куплена подписка (sale.Sale.code);
+#              по ней же считается «один раз на аккаунт».
+# bonus_days — сколько дней добавлено за неиспользованный остаток младшего
+#              тарифа (sale.bonus_days).
+# Как и согласие выше, в ORM-маппинг не входят: пишет и читает их только
+# service (прямой SQL в savepoint), чтобы код без миграции не ронял биллинг.
+# gift_days  — подарочные дни акции сверх оплаченного срока.
+# converted_into / converted_expires_at — на ЗАКРЫТОЙ младшей подписке: в какую
+#              подписку переведён её остаток и до какого дня она действовала бы.
+#              Нужны, чтобы вернуть её при возврате денег за старшую.
+SALE_COLUMNS = ("promo_code", "bonus_days", "gift_days", "converted_into", "converted_expires_at")
+Subscription.__table__.append_column(Column("promo_code", String(32), nullable=True))
+Subscription.__table__.append_column(Column("bonus_days", Integer, nullable=True))
+Subscription.__table__.append_column(Column("gift_days", Integer, nullable=True))
+Subscription.__table__.append_column(Column("converted_into", Integer, nullable=True))
+Subscription.__table__.append_column(Column("converted_expires_at", DateTime(timezone=True), nullable=True))

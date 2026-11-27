@@ -17,7 +17,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { dateLocale } from '../i18n';
 import {
-  X, Heart, Check,
+  X, Heart,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
   CalendarDays, Banknote, LayoutGrid, Settings,
   type LucideIcon,
@@ -30,6 +30,14 @@ import { capturePurchaseSource, purchaseSourcePayload } from '../utils/purchaseS
 import { captureTgPayToken, claimTgPayToken } from '../utils/tgPayClaim';
 import { CSV_EXPORT_ENABLED, PUBLIC_API_ENABLED } from '../config/features';
 import TierPlanCard, { TIER_META } from '../components/pricing/TierPlanCard';
+import { ConsentRow, MethodOption } from '../components/pricing/CheckoutBits';
+import { giftLabel, isSaleLive, parseSale, resetSaleCache, type RawPlans, type SaleTier } from '../hooks/useSale';
+import { SaleHead } from '../components/sale/SaleParts';
+import SaleCards, { type SaleCardAction } from '../components/sale/SaleCards';
+import SwitchDownModal from '../components/sale/SwitchDownModal';
+import {
+  fetchCheckoutPreview, fmtDay, fmtDayLong, startsLater, type CheckoutPreview,
+} from '../utils/checkoutPreview';
 import {
   INTENT_PARAM_NAMES,
   emailStepUrl,
@@ -71,6 +79,17 @@ interface PlansResponse {
    * после пробы 20.09.2026 — GetQr отвечает Success при сумме от 10 ₽.
    */
   sbp_qr_enabled?: boolean;
+  /** Акция, если она сейчас идёт (api/billing/SALE.md). Разбирает parseSale. */
+  sale?: RawPlans['sale'];
+  /** Тест-аккаунт оплаты: тарифы показываются как покупателю, даже админу. */
+  tester?: boolean;
+}
+
+/** Что окно оплаты показывает по акции: проценты и цены выбранного тарифа. */
+interface SaleView {
+  title: string;
+  endsAt: number;
+  tier: SaleTier;
 }
 
 // Зеркало api/billing/plans.py::TIER_LEVELS — для сравнения «выше/ниже».
@@ -136,6 +155,15 @@ export default function PricingPage() {
   const [agreementConsent, setAgreementConsent] = useState<boolean>(false);
   // Триал ждёт подтверждения согласия (как pendingPlanId, но для /trial/start).
   const [pendingTrial, setPendingTrial] = useState<{ tier: string; period: 'monthly' | 'yearly' } | null>(null);
+  // Покупка тарифа НИЖЕ действующего («Перейти на Basic»): то же pendingPlanId,
+  // но окно другое (SwitchDownModal) и в запрос уходит switch_down.
+  const [pendingSwitchDown, setPendingSwitchDown] = useState(false);
+  // Предпросмотр покупки с сервера: сумма, срок, дата и сумма продления.
+  // Хранится вместе с ключом запроса: ответ на прошлый выбор не должен
+  // показаться в окне нового.
+  const [previewState, setPreviewState] = useState<{ key: string; data: CheckoutPreview | null } | null>(null);
+  // Момент окончания акции прошёл при открытой странице — перерисоваться.
+  const [, setSaleEnded] = useState(0);
 
   // Email теперь собирается и подтверждается ДО оплаты (сразу после регистрации/
   // OAuth или в профиле). В чекауте поля email больше нет — вместо этого
@@ -143,7 +171,7 @@ export default function PricingPage() {
   // гейт в billing/service.py (anti-bypass).
 
   // Загружаем план при mount
-  useEffect(() => {
+  const loadPlans = () =>
     // apiFetch, а не голый fetch: terminal_key для SpeedPay backend отдаёт
     // ПО ЮЗЕРУ (новым — демо-терминал), для этого нужен Authorization.
     apiFetch('/api/billing/plans')
@@ -151,15 +179,44 @@ export default function PricingPage() {
       .then((d: PlansResponse) => {
         setData(d);
         setLoading(false);
-      })
-      .catch(e => {
-        setError(t('Не удалось загрузить тарифы'));
-        setLoading(false);
-        console.error(e);
       });
+  useEffect(() => {
+    loadPlans().catch(e => {
+      setError(t('Не удалось загрузить тарифы'));
+      setLoading(false);
+      console.error(e);
+    });
     // t — стабильный, планы грузим один раз при mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // === Акция ===
+  // Всё акционное на странице живёт только пока сервер отдаёт акцию И её срок
+  // не вышел: после окончания страница сама возвращается к обычному виду.
+  const parsedSale = useMemo(() => parseSale(data), [data]);
+  const sale = isSaleLive(parsedSale) && (user?.role !== 'admin' || !!data?.tester) ? parsedSale : null;
+  const saleEndsAt = parsedSale?.endsAt;
+  useEffect(() => {
+    if (!saleEndsAt) return;
+    const left = saleEndsAt - Date.now();
+    if (left <= 0 || left > 2 ** 31 - 1) return;
+    const id = setTimeout(() => { resetSaleCache(); setSaleEnded((n) => n + 1); }, left);
+    return () => clearTimeout(id);
+  }, [saleEndsAt]);
+  // На акции с продажей только года месячный план оформить нельзя.
+  const yearlyOnly = !!sale && !sale.monthlyAvailable;
+
+  // Предпросмотр: что получит клиент, оплатив выбранный план сейчас.
+  const previewKey = pendingPlanId ? `${pendingPlanId}|${pendingSwitchDown ? 1 : 0}` : null;
+  useEffect(() => {
+    if (!pendingPlanId || !previewKey) return;
+    let alive = true;
+    fetchCheckoutPreview(pendingPlanId, pendingSwitchDown).then((pv) => {
+      if (alive) setPreviewState({ key: previewKey, data: pv });
+    });
+    return () => { alive = false; };
+  }, [pendingPlanId, pendingSwitchDown, previewKey]);
+  const preview = previewState && previewState.key === previewKey ? previewState.data : null;
 
   // Параллельно — реальный статус подписки user'а. Для гостя 401, billing=null.
   // Используется в render-time логике disabled-state кнопок (см. ниже).
@@ -175,16 +232,26 @@ export default function PricingPage() {
   }, [isAuthenticated]);
 
   // Текущий tier пользователя (для подсветки "твоего" тарифа)
+  const isTester = !!data?.tester;
   const currentTier = useMemo(() => {
     if (!isAuthenticated || !user) return 'guest';
     const role = (user.role || 'free').toLowerCase();
+    // Тест-аккаунт оплаты с ролью admin проходит путь обычного покупателя.
+    if (role === 'admin' && isTester) return 'free';
     return role === 'user' ? 'free' : role;
-  }, [user, isAuthenticated]);
+  }, [user, isAuthenticated, isTester]);
 
   // Клик "Купить" — открываем модалку согласий (НЕ создаём checkout сразу).
   // Гость → регистрация, но выбранный план едет с ним в ?next= и доигрывается
   // на возврате (см. эффект намерения ниже), а не теряется, как раньше.
-  const handleCheckout = (planId: string) => {
+  const handleCheckout = (rawPlanId: string, opts?: { switchDown?: boolean }) => {
+    // Акция с продажей только года: месячный план (например, из старой ссылки
+    // ?plan=basic_monthly) заменяем годовым того же тарифа.
+    let planId = rawPlanId;
+    if (yearlyOnly && data) {
+      const owner = data.tiers.find((x) => x.monthly?.plan_id === rawPlanId);
+      if (owner?.yearly) planId = owner.yearly.plan_id;
+    }
     const intent: CheckoutIntent = { kind: 'plan', planId };
     if (!isAuthenticated) {
       navigate(signupUrlForIntent(intent));
@@ -203,15 +270,37 @@ export default function PricingPage() {
     }
     setError(null);
     setAgreementConsent(false);
+    setPendingSwitchDown(!!opts?.switchDown);
     setPendingPlanId(planId);
   };
 
   // Закрыть модалку без покупки
   const closeConsent = () => {
     setPendingPlanId(null);
+    setPendingSwitchDown(false);
     setPendingTrial(null);
     setAgreementConsent(false);
   };
+
+  // Сервер отказал в оплате. 409 — цена на экране устарела (акция началась или
+  // закончилась, лимит акции уже использован): перечитываем тарифы, чтобы
+  // человек увидел актуальную сумму, а не платил по неожиданной.
+  const failCheckout = (status: number, message: string) => {
+    if (status === 409) {
+      resetSaleCache();
+      loadPlans().catch(() => { /* останутся прежние цены, текст ошибки объяснит */ });
+    }
+    setError(message);
+    setCheckoutLoading(null);
+    setPendingPlanId(null);
+    setPendingSwitchDown(false);
+  };
+  // Поля запроса оплаты, общие для карты и СБП.
+  const checkoutExtras = () => ({
+    // Сумма, которую человек видит в окне: сервер сверит её со своей.
+    ...(preview ? { expected_amount: preview.amount } : {}),
+    ...(pendingSwitchDown ? { switch_down: true } : {}),
+  });
 
   // Старт триала: гость → регистрация; неподтверждённый email → верификация;
   // иначе открываем consent-модалку в trial-режиме (tier+period с карточки).
@@ -364,12 +453,15 @@ export default function PricingPage() {
           plan_id: planId,
           data_type: isPhone ? 'PAYLOAD' : 'IMAGE',
           consent: agreementConsent,
+          ...checkoutExtras(),
           ...src,
         }),
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok || !body.payload) {
-        throw new Error(body.detail || body.error?.message || t('Не удалось начать привязку счёта'));
+        bankWin?.close();
+        failCheckout(resp.status, body.detail || body.error?.message || t('Не удалось начать привязку счёта'));
+        return;
       }
       if (bankWin && body.data_type !== 'IMAGE') {
         bankWin.opener = null;
@@ -388,9 +480,7 @@ export default function PricingPage() {
       });
     } catch (e) {
       bankWin?.close();
-      setError(e instanceof Error ? e.message : t('Ошибка'));
-      setCheckoutLoading(null);
-      setPendingPlanId(null);
+      failCheckout(0, e instanceof Error ? e.message : t('Ошибка'));
     }
   };
 
@@ -415,20 +505,20 @@ export default function PricingPage() {
           // неё и запишет момент согласия, версию текста и IP на подписку.
           consent: agreementConsent,
           rail,
+          ...checkoutExtras(),
           ...src,
         }),
       });
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData.detail || errData.error?.message || t('Ошибка создания платежа'));
+        failCheckout(resp.status, errData.detail || errData.error?.message || t('Ошибка создания платежа'));
+        return;
       }
       const body = await resp.json();
       // Карта: full-page redirect на pay.tbank.ru (или /billing/stub).
-      window.location.href = body.confirmation_url;
+      window.location.assign(body.confirmation_url);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('Ошибка'));
-      setCheckoutLoading(null);
-      setPendingPlanId(null);
+      failCheckout(0, e instanceof Error ? e.message : t('Ошибка'));
     }
   };
 
@@ -444,13 +534,80 @@ export default function PricingPage() {
   );
   if (!data) return null;
 
+  // === Действующая подписка глазами карточек ===
+  // У тест-аккаунта-админа /status отдаёт tier 'admin' — берём тариф подписки.
+  const subTier = (b: BillingStatus) => (b.tier === 'admin' && b.plan_id ? b.plan_id.split('_')[0] : b.tier);
+  const effectiveTierAll = billing?.is_active ? subTier(billing) : currentTier;
+  const effectiveLevelAll = TIER_LEVELS[effectiveTierAll] ?? 0;
+  const paidUntil = billing?.is_active ? fmtDay(billing.expires_at) : null;
+  const tierTitle = (tier: string) => data.tiers.find((x) => x.tier === tier)?.title ?? tier;
+
+  // Кнопка и подпись карточки на акции: гость и Free оформляют; подписчик того
+  // же тарифа прибавляет год к своему сроку; с Basic на Pro — переход вверх с
+  // пересчётом остатка; с Pro на Basic — окно перехода (SwitchDownModal).
+  const saleAction = (p: SaleTier): SaleCardAction => {
+    const cardLevel = TIER_LEVELS[p.tier] ?? 0;
+    const busy = checkoutLoading === p.planId;
+    const active = !!billing?.is_active;
+    if (active && cardLevel < effectiveLevelAll) {
+      const from = tierTitle(effectiveTierAll);
+      return {
+        label: t('Перейти на {{tier}}', { tier: p.title }),
+        hint: <>{t('{{tier}} останется до {{date}},', { tier: from, date: paidUntil })}<br />{t('{{tier}} начнётся после него', { tier: p.title })}</>,
+        onClick: () => handleCheckout(p.planId, { switchDown: true }),
+        disabled: busy,
+      };
+    }
+    if (active && cardLevel === effectiveLevelAll) {
+      return {
+        label: busy ? t('Создаём...') : t('Продлить {{tier}} на год', { tier: p.title }),
+        hint: <>{t('Ваш тариф · оплачен до {{date}}', { date: paidUntil })}<br />{t('Год прибавится к этому сроку')}</>,
+        onClick: () => handleCheckout(p.planId),
+        disabled: busy,
+      };
+    }
+    if (active && cardLevel > effectiveLevelAll) {
+      const from = tierTitle(effectiveTierAll);
+      return {
+        label: busy ? t('Создаём...') : t('Перейти на {{tier}}', { tier: p.title }),
+        hint: <>{t('{{tier}} начнётся сразу,', { tier: p.title })}<br />{t('остаток {{tier}} превратится в дополнительные дни', { tier: from })}</>,
+        onClick: () => handleCheckout(p.planId),
+        disabled: busy,
+      };
+    }
+    return {
+      label: busy ? t('Создаём...') : t('Оформить со скидкой'),
+      onClick: () => handleCheckout(p.planId),
+      disabled: busy,
+    };
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
-      {/* Заголовок без описательной подписи — оставляем чистый «Тарифы»,
-          подробности по способам оплаты есть в блоке внизу. */}
+      {sale ? (
+        /* === Акция: шапка с таймером и карточки со скидкой (только год) === */
+        <div className="bf-scene bf-pricing">
+          <SaleHead sale={sale} titleAs="h1" />
+          <SaleCards sale={sale} action={saleAction} />
+          <p className="bf-fine">
+            {t('Цена фиксируется на весь оплаченный год. Продление через год — по обычной цене годового тарифа, напомним за 3 дня до списания. Отключить автопродление можно в профиле в любой момент.')}{' '}
+            <Link to="/offer#sale-terms" style={{ color: 'inherit', textDecoration: 'underline' }}>{t('Условия акции')}</Link>
+          </p>
+          <button
+            type="button"
+            className="bf-jump"
+            onClick={() => document.getElementById('tariff-compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          >
+            {t('Что входит в тарифы')} ↓
+          </button>
+        </div>
+      ) : (
+      /* Заголовок без описательной подписи — оставляем чистый «Тарифы»,
+          подробности по способам оплаты есть в блоке внизу. */
       <div className="text-center mb-6 md:mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-theme-primary">{t('Тарифы')}</h1>
       </div>
+      )}
 
       {/* Плашка «Мы пересматриваем тарифный план» убрана 2026-08-24: тарифы
           зафиксированы, предупреждать не о чем. Способы оплаты раскрыты в
@@ -524,6 +681,7 @@ export default function PricingPage() {
           CTA-размера и перетягивал внимание с карточек. Размеры в px inline,
           а не Tailwind-классами: root font-size 20px делает rem-классы в 1.25x,
           и text-xs/py-1 дали бы не тот масштаб. */}
+      {!sale && (<>
       <div className="flex justify-center mb-6">
         <div
           className="inline-flex rounded-full border"
@@ -580,7 +738,7 @@ export default function PricingPage() {
           // Источник истины — billing.tier (актуальный server-side state),
           // fallback на currentTier из user.role. Сравниваем уровни через
           // TIER_LEVELS (зеркало api/billing/plans.py).
-          const effectiveTier = billing?.is_active ? billing.tier : currentTier;
+          const effectiveTier = billing?.is_active ? subTier(billing) : currentTier;
           const effectiveLevel = TIER_LEVELS[effectiveTier] ?? 0;
           const cardLevel = TIER_LEVELS[tier.tier] ?? 0;
 
@@ -595,10 +753,12 @@ export default function PricingPage() {
             billing?.plan_id === variant.plan_id &&
             !billing?.cancelled_at;
           // Tier ниже текущего → blocked (downgrade недоступен пока активная).
-          const isLowerTier = !isAdmin && billing?.is_active && cardLevel < effectiveLevel;
+          // Tier ниже текущего: не блокируем, а ведём в окно перехода — старший
+          // тариф дослужит оплаченный срок, новый начнётся после него.
+          const isLowerTier = !isAdmin && !!billing?.is_active && cardLevel < effectiveLevel;
           // Tier выше текущего ИЛИ same-tier-other-period → можно покупать.
           // Тарифы скрыты для admin (у него и так full access).
-          const isLocked = isSamePlan || isLowerTier || isAdmin;
+          const isLocked = isSamePlan || isAdmin;
 
           // Можно ли начать бесплатный пробный период с этой карточки:
           // фича включена, tier платный, нет активной подписки, и юзер eligible
@@ -641,16 +801,22 @@ export default function PricingPage() {
                   title={
                     isAdmin
                       ? t('У админа полный доступ ко всем функциям')
-                      : isSamePlan
-                      ? t('Этот план уже активен. Изменить — после окончания текущего периода.')
-                      : t('У вас активен более высокий тариф ({{tier}})', { tier: effectiveTier.toUpperCase() })
+                      : t('Этот план уже активен. Изменить — после окончания текущего периода.')
                   }
                 >
                   {isAdmin
                     ? t('Admin-доступ')
-                    : isSamePlan
-                    ? t('Текущий план')
-                    : t('Меньший тариф')}
+                    : t('Текущий план')}
+                </button>
+              ) : isLowerTier ? (
+                <button
+                  onClick={() => variant && handleCheckout(variant.plan_id, { switchDown: true })}
+                  disabled={!variant || checkoutLoading === variant.plan_id}
+                  className="w-full py-3 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 border"
+                  style={{ borderColor: meta.color, color: meta.color, background: 'transparent' }}
+                  title={t('{{tier}} останется до конца оплаченного срока, затем начнётся этот тариф', { tier: tierTitle(effectiveTier) })}
+                >
+                  {t('Перейти на {{tier}}', { tier: tier.title })}
                 </button>
               ) : canTrial ? (
                 <button
@@ -687,6 +853,7 @@ export default function PricingPage() {
           );
         })}
       </div>
+      </>)}
 
       {/* Ошибка checkout */}
       {error && (
@@ -695,8 +862,17 @@ export default function PricingPage() {
         </div>
       )}
 
+      {/* На акции карточки без списка возможностей — он здесь, отдельным блоком. */}
+      {sale && (
+        <div className="bf-divider" id="tariff-compare">
+          <div className="bf-eyebrow">{t('Тарифы')}</div>
+          <h2>{t('Что входит в каждый тариф')}</h2>
+          <p>{t('Возможности те же, что и без акции — меняется только цена')}</p>
+        </div>
+      )}
+
       {/* Сравнительная таблица тарифов — детальная матрица по индикаторам */}
-      <ComparisonMatrix />
+      <ComparisonMatrix bare={!!sale} />
 
       {/* Способы оплаты — обязательный блок по требованиям эквайринга Т-Банка
           (логотипы принимаемых ПС + логотип Банка-эквайера + URL на tbank.ru). */}
@@ -726,8 +902,35 @@ export default function PricingPage() {
           соглашение + (если выбрано) рекуррент перед редиректом на T-Bank.
           Это требование ФЗ-152 (явное согласие) + общая защита от
           случайных списаний. */}
-      {pendingPlanId && (
+      {pendingPlanId && pendingSwitchDown && (() => {
+        const tcard = data.tiers.find(
+          (x) => x.monthly?.plan_id === pendingPlanId || x.yearly?.plan_id === pendingPlanId,
+        );
+        if (!tcard) return null;
+        return (
+          <SwitchDownModal
+            toTitle={tcard.title}
+            yearly={tcard.yearly?.plan_id === pendingPlanId}
+            preview={preview}
+            hasSbp={!!data.sbp_qr_enabled}
+            consent={agreementConsent}
+            onConsentChange={setAgreementConsent}
+            onConfirm={(rail) => (rail === 'sbp' ? confirmSbpBinding() : confirmCheckout('card'))}
+            onClose={closeConsent}
+            isLoading={checkoutLoading === pendingPlanId}
+          />
+        );
+      })()}
+
+      {pendingPlanId && !pendingSwitchDown && (
         <ConsentModal
+          preview={preview}
+          saleView={(() => {
+            // Окно в оформлении акции — только для годового плана по цене акции.
+            if (!sale) return undefined;
+            const st = sale.tiers.find((x) => x.planId === pendingPlanId);
+            return st ? { title: sale.title, endsAt: sale.endsAt, tier: st } : undefined;
+          })()}
           planChoice={(() => {
             // Выбор периода прямо в модалке: карточка показывает годовой тариф
             // в пересчёте на месяц, а списывается сразу год — полную сумму
@@ -741,8 +944,10 @@ export default function PricingPage() {
             return {
               title: tcard.title,
               selectedPlanId: pendingPlanId,
-              monthly: tcard.monthly && tcard.monthly.plan_id !== activePlanId ? tcard.monthly : null,
-              yearly: tcard.yearly && tcard.yearly.plan_id !== activePlanId ? tcard.yearly : null,
+              // На акции с продажей только года месячного варианта нет; а годовой по
+              // акции можно купить и поверх такого же активного (год прибавится).
+              monthly: !yearlyOnly && tcard.monthly && tcard.monthly.plan_id !== activePlanId ? tcard.monthly : null,
+              yearly: tcard.yearly && (sale || tcard.yearly.plan_id !== activePlanId) ? tcard.yearly : null,
               onSelect: (planId: string) => {
                 setPendingPlanId(planId);
                 setPeriod(planId === tcard.yearly?.plan_id ? 'yearly' : 'monthly');
@@ -819,7 +1024,13 @@ function ConsentModal({
   canConfirm,
   trialInfo,
   planChoice,
+  preview,
+  saleView,
 }: {
+  /** Предпросмотр покупки с сервера (null — ещё грузится или не нужен). */
+  preview?: CheckoutPreview | null;
+  /** Задан — окно в оформлении акции (макет 6-checkout.html). */
+  saleView?: SaleView;
   // Checkout-режим: выбор периода с полной суммой списания (см. PeriodOption).
   planChoice?: {
     title: string;
@@ -860,7 +1071,24 @@ function ConsentModal({
 
   // Сумма и период автосписания для текста согласия (ЗоЗПП/Единые правила:
   // согласие на автосписание — отдельное, неотмеченное, с суммой и периодом).
-  const renewAmount = trialInfo ? trialInfo.amount : chosen?.amount ?? 0;
+  // По акции сегодня списывается цена акции, а продление — по обычной цене
+  // плана: в согласии стоит именно сумма продления и дата первого списания.
+  const isSale = !!saleView && !trialInfo && !!chosen && chosen.plan_id === saleView.tier.planId;
+  const payNow = preview && preview.plan_id === chosen?.plan_id
+    ? preview.amount
+    : isSale ? saleView!.tier.saleAmount : chosen?.amount ?? 0;
+  const renewAt = preview && preview.plan_id === chosen?.plan_id ? fmtDay(preview.renew_at) : null;
+  // Срок прибавляется к уже оплаченному и/или к нему добавлены дни за остаток
+  // младшего тарифа — показываем итоговую дату одной строкой.
+  const pv = preview && preview.plan_id === chosen?.plan_id ? preview : null;
+  const termLine = pv && (startsLater(pv) || pv.bonus_days > 0)
+    ? (pv.bonus_days > 0
+      ? t('Остаток {{from}} превратится в {{n}} дн. — доступ до {{date}}', {
+          from: (pv.bonus_from ?? '').replace(/^./, (c) => c.toUpperCase()), n: pv.bonus_days, date: fmtDay(pv.expires_at),
+        })
+      : t('Срок прибавится к оплаченному — доступ до {{date}}', { date: fmtDay(pv.expires_at) }))
+    : null;
+  const renewAmount = trialInfo ? trialInfo.amount : (isSale ? saleView!.tier.amount : chosen?.amount ?? 0);
   const renewPeriodRu = trialInfo
     ? trialInfo.periodRu
     : chosen && planChoice?.yearly && chosen === planChoice.yearly ? t('год') : t('месяц');
@@ -880,8 +1108,10 @@ function ConsentModal({
         className="relative w-full max-w-md rounded-2xl border p-6 overflow-y-auto"
         style={{
           background: 'var(--bg-primary)',
-          borderColor: 'var(--border-color)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
+          // Окно акции — как в макете: рамка цвета текста, без тени.
+          borderColor: isSale ? 'var(--text-primary)' : 'var(--border-color)',
+          borderWidth: isSale ? 1.5 : undefined,
+          boxShadow: isSale ? 'none' : '0 24px 64px rgba(0,0,0,0.4)',
           maxHeight: 'calc(100dvh - 48px)',  // мобилка: не вылезать за экран, кнопка не скрыта
         }}
         onClick={(e) => e.stopPropagation()}
@@ -913,6 +1143,7 @@ function ConsentModal({
           }}
         >
           {trialInfo ? t('Бесплатный пробный период') : planChoice ? t('Тариф {{tier}}', { tier: planChoice.title }) : t('Подтверждение')}
+          {isSale && <span className="bf-tag" style={{ marginLeft: 10, verticalAlign: 4 }}>{saleView!.title}</span>}
         </h2>
         <p
           style={{
@@ -924,7 +1155,9 @@ function ConsentModal({
         >
           {trialInfo
             ? t('Бесплатно {{n}} дней, затем автоматическое списание.', { n: trialInfo.days })
-            : t('Выберите период')}
+            : isSale
+              ? t('Цена акции действует до {{date}}', { date: fmtDayLong(saleView!.endsAt) })
+              : t('Выберите период')}
         </p>
 
         {trialInfo && (
@@ -946,7 +1179,28 @@ function ConsentModal({
           </div>
         )}
 
-        {planChoice && chosen && (() => {
+        {isSale && (() => {
+          // Окно акции: период один (год), поэтому вместо переключателя — метка.
+          // В блоке четыре строки: скидка, цена в месяц (обычная зачёркнута),
+          // сумма за год, подарок. Остальное — на странице тарифов.
+          const st = saleView!.tier;
+          const gift = giftLabel(pv ? pv.gift_days : st.giftDays, t);
+          return (
+            <div className="bf-pricebox mb-4">
+              <span className="bf-period">{t('На год')} <b>−{st.pct}%</b></span>
+              <div className="bf-pm">
+                <s>{fmt(st.monthlyAmount)}&nbsp;₽</s>
+                <strong>{fmt(Math.round(payNow / 12))}&nbsp;₽</strong>
+                <span>{t('/мес')}</span>
+              </div>
+              <div className="bf-yr">{t('{{sum}} ₽ за год', { sum: fmt(payNow) })}</div>
+              {gift && <div className="bf-gift">{gift}</div>}
+              {termLine && <div className="bf-until">{termLine}</div>}
+            </div>
+          );
+        })()}
+
+        {!isSale && planChoice && chosen && (() => {
           // Вариант C: переключатель периода-«таблетка» + крупная цена за месяц.
           const isYear = chosen === planChoice.yearly;
           const yearDiscountPct = planChoice.monthly && planChoice.yearly && yearlySaving > 0
@@ -1017,6 +1271,7 @@ function ConsentModal({
                     : t('{{sum}} ₽ раз в год', { sum: fmt(chosen.amount) }))
                   : t('Списание {{sum}} ₽ каждый месяц', { sum: fmt(chosen.amount) })}
               </span>
+              {termLine && <span className="bf-until" style={{ marginTop: 0 }}>{termLine}</span>}
             </div>
           );
         })()}
@@ -1048,7 +1303,7 @@ function ConsentModal({
           </div>
         )}
 
-        {chosen && (
+        {chosen && !isSale && (
           <div
             className="flex items-baseline justify-between gap-3 mb-4 pt-3"
             style={{ borderTop: '1px solid var(--border-color)' }}
@@ -1057,7 +1312,7 @@ function ConsentModal({
               {t('Спишется сегодня')}
             </span>
             <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-              {fmt(chosen.amount)} ₽
+              {fmt(payNow)} ₽
             </span>
           </div>
         )}
@@ -1071,7 +1326,12 @@ function ConsentModal({
           label={
             <>
               {t('Согласен на автоматическое списание')}{' '}
-              {t('{{sum}} ₽ раз в {{period}}', { sum: fmt(renewAmount), period: renewPeriodRu })}{' '}
+              {t('{{sum}} ₽ раз в {{period}}', { sum: fmt(renewAmount), period: renewPeriodRu })}
+              {isSale && (
+                <> — {renewAt
+                  ? t('по обычной цене, первое {{date}}', { date: renewAt })
+                  : t('по обычной цене')} —</>
+              )}{' '}
               {t('по')}{' '}
               <Link to="/recurring" target="_blank" style={linkStyle}>
                 {t('Договору о рекуррентных платежах')}
@@ -1098,7 +1358,9 @@ function ConsentModal({
             ? (trialInfo ? t('Открываем…') : t('Создаём…'))
             : trialInfo
               ? t('Начать бесплатно')
-              : t('Оплатить')}
+              : isSale
+                ? t('Оплатить {{sum}} ₽', { sum: fmt(payNow) })
+                : t('Оплатить')}
         </button>
         {!canConfirm && !isLoading && (
           <p className="mt-2 text-center" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -1122,145 +1384,6 @@ function ConsentModal({
 }
 
 /**
- * MethodOption — строка выбора способа оплаты (вариант C): значок, название,
- * пояснение и отметка справа.
- */
-function MethodOption({
-  kind,
-  selected,
-  disabled,
-  onSelect,
-  title,
-  note,
-}: {
-  kind: 'tpay' | 'sbp';
-  selected: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  title: string;
-  note: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      disabled={disabled}
-      onClick={onSelect}
-      className="w-full flex items-center gap-3 text-left mb-2 p-3 rounded-xl border transition-colors"
-      style={{
-        borderColor: selected ? 'var(--accent)' : 'var(--border-color)',
-        background: selected ? 'rgba(255,92,43,0.06)' : 'transparent',
-        minHeight: 56,
-      }}
-    >
-      <PayMark kind={kind} />
-      <span className="flex-1 min-w-0">
-        <span className="block" style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</span>
-        <span className="block mt-0.5" style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.35 }}>{note}</span>
-      </span>
-      <span
-        className="flex-shrink-0 flex items-center justify-center"
-        style={{
-          width: 20,
-          height: 20,
-          borderRadius: '50%',
-          border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border-color)'}`,
-          background: selected ? 'var(--accent)' : 'transparent',
-          color: 'var(--bg-primary)',
-        }}
-      >
-        {selected && <Check size={12} strokeWidth={3} />}
-      </span>
-    </button>
-  );
-}
-
-/**
- * PayMark — значок способа оплаты в развилке «Как оплатить».
- *
- * СБП — официальный знак из медиакита НСПК (sbp.nspk.ru/file/logo.zip,
- * SBP_logo_RGB, уменьшен до 160px). Лежит в public/pay/sbp.png.
- * Карта/T-Pay — плашка T-Pay в public/pay/tpay.svg (2.4:1). В том же боксе
- * 36×26 она встаёт в 36×15 — по высоте как видимый знак СБП (~15px).
- */
-function PayMark({ kind }: { kind: 'tpay' | 'sbp' }) {
-  // Знак СБП на 30% крупнее (47×34), T-Pay прежнего размера; оба в боксе
-  // одной ширины, чтобы подписи справа стояли ровно.
-  const [w, h] = kind === 'sbp' ? [47, 34] : [36, 26];
-  return (
-    <span className="shrink-0 flex items-center justify-center" style={{ width: 47, height: 34 }}>
-      <img
-        src={kind === 'sbp' ? '/pay/sbp.png' : '/pay/tpay.svg'}
-        alt=""
-        aria-hidden="true"
-        width={w}
-        height={h}
-        style={{ width: w, height: h, objectFit: 'contain' }}
-      />
-    </span>
-  );
-}
-
-/**
- * ConsentRow — одна строка с галочкой и подписью.
- */
-function ConsentRow({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: React.ReactNode;
-}) {
-  return (
-    <label
-      className="flex items-start gap-2.5 cursor-pointer select-none mb-3 px-2.5 py-2 rounded-lg border transition-colors"
-      style={{
-        borderColor: checked ? 'var(--accent)' : 'var(--border-color)',
-        background: checked ? 'rgba(255,92,43,0.06)' : 'transparent',
-      }}
-    >
-      <span
-        className="relative inline-flex flex-shrink-0 items-center justify-center mt-0.5"
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: 4,
-          background: checked ? 'var(--accent)' : 'transparent',
-          border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--border-color)'}`,
-          color: 'var(--bg-primary)',
-          transition: 'background 0.18s ease, border-color 0.18s ease',
-        }}
-      >
-        {checked && <Check size={11} strokeWidth={3} />}
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          style={{
-            position: 'absolute',
-            opacity: 0,
-            inset: 0,
-            cursor: 'pointer',
-          }}
-        />
-      </span>
-      <span
-        style={{
-          fontSize: 12,
-          color: 'var(--text-primary)',
-          lineHeight: 1.4,
-        }}
-      >
-        {label}
-      </span>
-    </label>
-  );
-}
-
-/**
  * ComparisonMatrix — детальная таблица сравнения тарифов по каждому индикатору.
  * Источник истины — api/billing/features.py. Здесь — hand-crafted, потому что
  * нужно человекочитаемое описание каждой строки, а не raw matrix.
@@ -1268,7 +1391,8 @@ function ConsentRow({
  * Mobile (< 640px): table расщепляется в 3 card-секции (по tier'у) через CSS.
  * Desktop: классическая горизонтальная матрица 3 столбца × N строк.
  */
-function ComparisonMatrix() {
+/** bare — без своей рамки и заголовка: на акции их даёт блок над таблицей. */
+function ComparisonMatrix({ bare = false }: { bare?: boolean }) {
   const { t } = useTranslation();
   // Структура: [section_title, icon, [row_label, free_val, basic_val, pro_val]]
   // Строки — русские ключи, переводятся при рендере через t().
@@ -1457,7 +1581,8 @@ function ComparisonMatrix() {
   };
 
   return (
-    <div className="mt-12 pt-8 border-t" style={{ borderColor: 'var(--border-color)' }}>
+    <div className={bare ? 'mt-8' : 'mt-12 pt-8 border-t'} style={{ borderColor: 'var(--border-color)' }}>
+      {!bare && (
       <h3
         className="text-center mb-6 font-bold"
         style={{
@@ -1468,6 +1593,7 @@ function ComparisonMatrix() {
       >
         {t('Что входит в каждый тариф')}
       </h3>
+      )}
 
       <div className="overflow-x-auto -mx-4 px-4 styled-scrollbar">
         <table

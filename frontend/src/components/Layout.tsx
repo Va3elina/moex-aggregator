@@ -20,6 +20,9 @@ import PageSEO from './PageSEO';
 import MobileFallbackChrome from './mobile/MobileFallbackChrome';
 import OnboardingTour from './onboarding/OnboardingTour';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
+import { useSale } from '../hooks/useSale';
+import SaleHeaderButton from './sale/SaleHeaderButton';
+import SalePopup from './sale/SalePopup';
 import { getTerminalIntroTour } from '../data/tours/terminal-intro';
 
 /* Маршруты с собственной мобильной версией (ResponsiveRoute → Mobile*Page
@@ -125,6 +128,9 @@ export default function Layout() {
   // тот же юзер увидит его, когда зайдёт с десктопа.
   const pageTourKey = PAGE_TOUR_KEYS[location.pathname.replace(/\/+$/, '') || '/'];
   const terminalTour = useOnboardingTour('terminal-intro', { gatedBy: pageTourKey });
+  // Акция (useSale отдаёт её только пока она идёт): кнопка в шапке вместо Plus
+  // и всплывающее окно поверх индикаторов. После окончания — снова Plus.
+  const sale = useSale();
 
   const isEditorial = theme.startsWith('editorial');
   // Compact header (laptop 1024-1280): уменьшенные logo + icons чтобы
@@ -144,6 +150,7 @@ export default function Layout() {
       return (
         <>
           <PageSEO />
+          <SalePopup />
           <Outlet />
         </>
       );
@@ -151,6 +158,7 @@ export default function Layout() {
     return (
       <>
         <PageSEO />
+        <SalePopup />
         <MobileFallbackChrome>
           <Outlet />
         </MobileFallbackChrome>
@@ -504,7 +512,10 @@ export default function Layout() {
               {/* Plus button — CTA для перехода на /pricing.
                   Скрыта на мобильных (xl:block). Не показывается admin'у
                   (бессмысленно — у него full access). */}
-              {user?.role !== 'admin' && (
+              {user?.role !== 'admin' && sale && (
+                <SaleHeaderButton sale={sale} className="hidden xl:inline-flex" />
+              )}
+              {user?.role !== 'admin' && !sale && (
                 <button
                   onClick={() => navigate(pricingUrlFrom('header'))}
                   className={
@@ -689,6 +700,10 @@ export default function Layout() {
         open={terminalTour.open}
         onClose={terminalTour.close}
       />
+
+      {/* Всплывающее окно акции: один раз при первом открытии индикатора и ещё
+          раз в последние сутки акции (правила — в самом компоненте). */}
+      <SalePopup />
 
       {/* SEO: per-page <title>/<meta>/canonical/JSON-LD breadcrumbs.
           Один компонент на весь Layout — резолвит метаданные через

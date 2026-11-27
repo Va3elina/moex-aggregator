@@ -18,6 +18,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import FrameLogo from '../FrameLogo';
 import { useViewportWidth } from '../../config/fluidScale';
 import MobileAnomalyBell from '../anomaly/MobileAnomalyBell';
+import { useSale } from '../../hooks/useSale';
+import SaleHeaderButton from '../sale/SaleHeaderButton';
 
 interface MobileTopBarProps {
   /** Если задан — на месте логотипа рендерится ← back-кнопка. */
@@ -31,6 +33,9 @@ export default function MobileTopBar({ onBack }: MobileTopBarProps) {
   const { user } = useAuth();
   const { theme, cycleTheme } = useTheme();
   const isLight = theme === 'editorial-light';
+  // На время акции вместо «PLUS» — кнопка акции. На узких телефонах две строки
+  // рядом с логотипом не помещаются: остаётся одна, со скидкой.
+  const sale = useSale();
 
   // Первая буква имени для аватара (D, А, и т.д.)
   const avatar = user?.email?.[0]?.toUpperCase() ?? 'Г';
@@ -64,9 +69,13 @@ export default function MobileTopBar({ onBack }: MobileTopBarProps) {
         >
           {isLight ? <Moon size={16} strokeWidth={2.2} /> : <Sun size={16} strokeWidth={2.2} />}
         </button>
-        <Link to={pricingUrlFrom('header')} className="fm-icon-btn fm-plus" style={{ textDecoration: 'none' }}>
-          PLUS
-        </Link>
+        {sale ? (
+          <SaleHeaderButton sale={sale} size={vw < 400 ? 'tiny' : 'compact'} />
+        ) : (
+          <Link to={pricingUrlFrom('header')} className="fm-icon-btn fm-plus" style={{ textDecoration: 'none' }}>
+            PLUS
+          </Link>
+        )}
         <Link to="/profile" className="fm-icon-btn fm-avatar" style={{ textDecoration: 'none' }}>
           {avatar}
         </Link>
