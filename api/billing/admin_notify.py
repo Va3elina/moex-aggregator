@@ -294,12 +294,60 @@ def _render_payment_failed(db: Session, ev, sub: Subscription, user, pm) -> str 
     return "\n".join(lines)
 
 
+def _render_double_charge(db: Session, sub: Subscription, user) -> str | None:
+    """Две оплаты за один тариф (service.find_double_charge). Возврат — решение админа."""
+    from api.billing.service import find_double_charge
+
+    twin = find_double_charge(db, sub)
+    if twin is None:
+        return None  # вторую оплату уже вернули/отменили
+    pair = sorted((twin, sub), key=lambda s: s.started_at)
+
+    def _row(n: int, s: Subscription) -> str:
+        pm = None
+        if s.payment_method_id:
+            pm = db.query(UserPaymentMethod).filter(UserPaymentMethod.id == s.payment_method_id).first()
+        renew = "автопродление включено" if (
+            s.cancelled_at is None and pm is not None and pm.deleted_at is None
+        ) else "автопродление выключено"
+        return (
+            f"{n}. {_plan_name(s)}, <b>{_rub(s.amount)}</b>, "
+            f"{s.started_at.astimezone(MSK):%d.%m %H:%M} МСК\n"
+            f"   sub #{s.id}, платёж {html.escape(str(s.yk_payment_id))}, {renew}"
+        )
+
+    paid_until = max(s.expires_at for s in pair if s.expires_at)
+    return "\n".join([
+        "🚨 <b>Двойное списание за один тариф</b>",
+        _who(user, sub.user_id),
+        "",
+        _row(1, pair[0]),
+        _row(2, pair[1]),
+        "",
+        f"Сроки сложились, доступ до {_d(paid_until)}.",
+        "Возврат автоматически НЕ сделан. Если клиент платить дважды не собирался, "
+        "верните одну из оплат вручную (админка → возврат по номеру sub).",
+    ])
+
+
 def _render_autorenew_off(db: Session, sub: Subscription, user, pm) -> str | None:
     if sub.is_trial:
         return None  # триал гасится покупкой/конверсией
     other = _other_active(db, sub)
     if other is not None and other.id > sub.id:
         return None  # апгрейд: старой подписке выключили продление автоматически
+    # Покупка поверх того же тарифа: продление переехало на другую действующую
+    # подписку (её id может быть и меньше — форму открыли до автосписания).
+    now = datetime.now(timezone.utc)
+    moved = db.query(Subscription.id).filter(
+        Subscription.user_id == sub.user_id,
+        Subscription.id != sub.id,
+        Subscription.status == "active",
+        Subscription.cancelled_at.is_(None),
+        Subscription.expires_at > now,
+    ).first()
+    if moved is not None:
+        return None
     lines = [
         "🚪 <b>Отказ от автопродления</b>",
         _who(user, sub.user_id),
@@ -370,6 +418,8 @@ def _render_event(db: Session, ev) -> str | None:
 
     if kind == "payment":
         return _render_payment(db, sub, user, pm)
+    if kind == "double_charge":
+        return _render_double_charge(db, sub, user)
     if kind == "payment_failed":
         return _render_payment_failed(db, ev, sub, user, pm)
     if kind == "autorenew_off":

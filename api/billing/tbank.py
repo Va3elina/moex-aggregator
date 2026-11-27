@@ -33,6 +33,7 @@ import os
 import re
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -43,6 +44,29 @@ from api.ru_tls import RU_TLS_VERIFY
 log = logging.getLogger(__name__)
 
 TBANK_API_BASE = "https://securepay.tinkoff.ru/v2"
+
+
+def checkout_form_ttl_minutes() -> int:
+    """Сколько минут живёт форма оплаты (Init.RedirectDueDate). 0 — не задавать
+    (тогда у T-Bank сутки по умолчанию).
+
+    Час вместо суток: пока форма открыта, крон откладывает автопродление той же
+    подписки (service._reconcile_open_checkouts), чтобы не списать дважды.
+    Короткий срок ограничивает эту отсрочку.
+    """
+    try:
+        return max(int(os.getenv("TBANK_FORM_TTL_MINUTES", "60")), 0)
+    except ValueError:
+        return 60
+
+
+def _redirect_due_date() -> str | None:
+    """RedirectDueDate в формате T-Bank: YYYY-MM-DDTHH:MM:SS+03:00 (МСК)."""
+    ttl = checkout_form_ttl_minutes()
+    if ttl <= 0:
+        return None
+    msk = timezone(timedelta(hours=3))
+    return (datetime.now(msk) + timedelta(minutes=ttl)).strftime("%Y-%m-%dT%H:%M:%S+03:00")
 
 # ─── Receipt (54-ФЗ) ────────────────────────────────────────────────────
 # Включать ТОЛЬКО когда:
@@ -275,6 +299,11 @@ class TBankProvider:
             body["Recurrent"] = "Y"
             body["CustomerKey"] = customer_key[:36]  # T-Bank лимит 36 символов
 
+        # Срок жизни формы (участвует в подписи, поэтому до Token).
+        due = _redirect_due_date()
+        if due:
+            body["RedirectDueDate"] = due
+
         # Token — считаем до добавления DATA и Receipt (они в подписи не участвуют)
         body["Token"] = self._make_token(body)
 
@@ -378,6 +407,9 @@ class TBankProvider:
             "Recurrent": "Y",
             "CustomerKey": customer_key[:36],
         }
+        due = _redirect_due_date()
+        if due:
+            body["RedirectDueDate"] = due
         body["Token"] = self._make_token(body)  # DATA/Receipt в подписи не участвуют
         data_block: dict[str, str] = {"QR": "true"}
         if metadata:

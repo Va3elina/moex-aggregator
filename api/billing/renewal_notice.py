@@ -25,7 +25,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.billing.plans import get_plan
-from api.billing.service import apply_renewal_discount, renewal_terms, test_price_for
+from api.billing.service import (
+    apply_renewal_discount,
+    follow_up_condition,
+    renewal_terms,
+    test_price_for,
+)
 from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
 from api.models.user import User
@@ -134,7 +139,7 @@ def send_renewal_reminders(db: Session, now: datetime | None = None) -> dict:
             Subscription.user_id == sub.user_id,
             Subscription.tier == sub.tier,
             Subscription.id != sub.id,
-            Subscription.status.in_(("pending", "active")),
+            follow_up_condition(),
             Subscription.created_at > sub.created_at,
         ).first()
         pm = db.query(UserPaymentMethod).filter(UserPaymentMethod.id == sub.payment_method_id).first()
