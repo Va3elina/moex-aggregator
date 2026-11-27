@@ -339,3 +339,23 @@ def test_strength_template_runs():
     rows, eq, summ = orders.run(ns, b, ns['PARAMS'], 'CNYRUBF', ACCT)
     assert list(b.want) == [1.0] * 6                                    # ширина 20 ≤ 25 → лонг с первого дня
     assert summ['капитал'] == 1_000_000
+
+
+def test_strength_cross_template_exits_on_first_cross_down():
+    # вход при ≤ 25; выход — сила рынка пересекла 50 вверх, затем в первый же день под 50; стопа нет (IMOEX −20 % не выбивает)
+    days = pd.bdate_range('2026-06-01', periods=10)
+    parts = [bars([(10, 10, 10, 10)], day=str(d.date())) for d in days]
+    df = pd.DataFrame({'open': np.concatenate([p.open for p in parts]), 'high': np.concatenate([p.high for p in parts]),
+                       'low': np.concatenate([p.low for p in parts]), 'close': np.concatenate([p.close for p in parts]),
+                       'volume': 1.0, 'secid': 'CNYRUBF', 'lsttrade': pd.Timestamp('2100-01-01'),
+                       't': np.concatenate([p.t for p in parts]).astype('datetime64[ns]')})
+    df['d'] = df.t.dt.normalize(); df['m'] = (df.t.dt.hour * 60 + df.t.dt.minute).astype('int16')
+    b = pyengine.Bars(df)
+    prev = pd.bdate_range('2026-05-29', periods=10)                     # значение дня действует со следующего дня
+    width = [30, 20, 40, 49, 55, 52, 49, 45, 30, 60]
+    imoex = [2500, 2500, 2300, 2000, 2000, 2100, 2200, 2200, 2200, 2200]
+    b.ext = {'breadth200': pd.Series(width, index=prev, dtype=float), 'IMOEX': pd.Series(imoex, index=prev, dtype=float)}
+    ns = pyengine.load(orders.STRENGTH_CROSS_TEMPLATE)
+    assert ns['PARAMS']['exit_days'] == 1 and ns['PARAMS']['stop'] == 0 and ns['PARAMS']['short'] == 'none'
+    orders.run(ns, b, ns['PARAMS'], 'CNYRUBF', ACCT)
+    assert list(b.want) == [0, 1, 1, 1, 1, 1, 0, 0, 0, 0]                # 49 до взвода не выход; выход на первом 49 после 55
