@@ -89,7 +89,8 @@ def _py_template() -> str:
 def _py_examples() -> list[dict]:
     from backtest import pyengine, orders
     return [{'name': 'Пример: пересечение двух EMA', 'code': pyengine.TEMPLATE},
-            {'name': 'Сила рынка: дно → тренд (индекс)', 'code': orders.STRENGTH_TEMPLATE}]
+            {'name': 'Сила рынка: дно → тренд (индекс)', 'code': orders.STRENGTH_TEMPLATE},
+            {'name': 'Сила рынка: вход 25 → выход на пересечении 50 вниз', 'code': orders.STRENGTH_CROSS_TEMPLATE}]
 
 
 def _inspect(code: str) -> dict:
