@@ -1,8 +1,5 @@
 {
   "Лучшее предложение": "Best offer",
-  "то есть": "that is",
-  "/ месяц": "/ month",
-  "Экономия —": "You save",
   "Чёрная пятница": "Black Friday",
   "скидки до −{{n}}%": "up to −{{n}}% off",
   "Распродажа уже началась. Все индикаторы российского рынка на одном экране — со скидкой.": "The sale is on. Every Russian market indicator on one screen — at a discount.",
@@ -57,5 +54,6 @@
   "{{sum}} ₽ за год": "{{sum}} ₽ per year",
   "по обычной цене, первое {{date}}": "at the regular price, first on {{date}}",
   "по обычной цене": "at the regular price",
-  "Условия акции": "Sale terms"
+  "Условия акции": "Sale terms",
+  "за год вместо": "per year instead of"
 }

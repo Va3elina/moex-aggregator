@@ -161,16 +161,9 @@
   margin-top: 22px; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(36px, 3.6vw, 46px);
   letter-spacing: -0.03em; line-height: 1; color: var(--accent); white-space: nowrap;
 }
-.bf-plan .bf-per { margin-top: 8px; font-size: 14px; font-weight: 600; color: var(--bf-muted); }
-.bf-plan .bf-rule { margin: 22px 0 16px; display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; color: var(--bf-muted); }
-.bf-plan .bf-rule::before, .bf-plan .bf-rule::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--bf-cream) 22%, transparent); }
-.bf-plan .bf-month { font-size: 15px; color: var(--bf-muted); }
-.bf-plan .bf-month s { margin-right: 8px; }
-.bf-plan .bf-month b { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 22px; letter-spacing: -0.02em; color: var(--bf-cream); white-space: nowrap; }
-.bf-plan .bf-save { margin-top: 18px; font-size: 14px; line-height: 1.6; }
-.bf-plan .bf-save b { font-weight: 800; }
+.bf-plan .bf-per { margin-top: 10px; font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--bf-muted); }
 .bf-plan .bf-cta { margin-top: 26px; font-size: 14px; letter-spacing: 0.12em; padding: 16px 20px; }
-.bf-plan .bf-mine { margin-top: 12px; font-size: 12.5px; line-height: 1.5; font-weight: 600; color: var(--bf-muted); }
+.bf-plan .bf-mine { margin-top: 12px; font-size: 14px; line-height: 1.5; font-weight: 500; color: var(--bf-muted); }
 .bf-fine { margin: 24px auto 0; max-width: 720px; text-align: center; font-size: 13px; line-height: 1.6; color: var(--bf-muted); }
 .bf-jump {
   display: block; margin: 18px auto 0; text-align: center; font-size: 13.5px; font-weight: 700;

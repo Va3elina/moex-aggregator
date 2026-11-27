@@ -1,6 +1,8 @@
 /**
- * SaleCards — карточки тарифов на время акции (макет 5-pricing.html): скидка,
- * цена года, цена в пересчёте на месяц (обычная зачёркнута), экономия, подарок.
+ * SaleCards — карточки тарифов на время акции. В карточке три числа и три
+ * размера шрифта: скидка (крупно), цена за год рядом с зачёркнутой прежней,
+ * мелкая строка про подарок. Пересчёт на месяц и «экономия» убраны как шум:
+ * зачёркнутая цена уже показывает, от чего скидка.
  * Списка возможностей в карточках нет — он в таблице сравнения ниже.
  *
  * Что написано на кнопке и под ней, решает страница (гость, подписчик того же
@@ -32,7 +34,6 @@ export default function SaleCards({ sale, action }: {
     <section className="bf-grid">
       {sale.tiers.map((p) => {
         const best = hasBest && p.pct === bestPct;
-        const perMonth = Math.round(p.saleAmount / 12);
         const gift = giftLabel(p.giftDays, t);
         const a = action(p);
         return (
@@ -41,15 +42,9 @@ export default function SaleCards({ sale, action }: {
             <div className="bf-name">{p.title}</div>
             <div className="bf-pct">−{p.pct}<sup>%</sup></div>
             <div className="bf-price">{fmtRub(p.saleAmount)}&nbsp;₽</div>
-            <div className="bf-per">{t('за год')}</div>
-            <div className="bf-rule">{t('то есть')}</div>
-            <div className="bf-month">
-              <s>{fmtRub(p.monthlyAmount)}&nbsp;₽</s>
-              <b>{fmtRub(perMonth)}&nbsp;₽</b> {t('/ месяц')}
-            </div>
-            <div className="bf-save">
-              {t('Экономия —')} <b>{fmtRub(p.listAmount - p.saleAmount)}&nbsp;₽</b> {t('в год')}
-              {gift && <><br />{gift}</>}
+            <div className="bf-per">
+              {t('за год вместо')} <s>{fmtRub(p.listAmount)}&nbsp;₽</s>
+              {gift && <> · {gift}</>}
             </div>
             <button
               type="button"
