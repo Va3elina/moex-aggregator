@@ -32,6 +32,8 @@ import {
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import ThermalLinesHero from '../components/landing/ThermalLinesHero';
+import { useSale } from '../hooks/useSale';
+import SaleHero from '../components/sale/SaleHero';
 import IndicatorGroup, { type Indicator } from '../components/landing/IndicatorGroup';
 import MultiChartShowcase from '../components/landing/MultiChartShowcase';
 import LandingPricing from '../components/landing/LandingPricing';
@@ -121,13 +123,17 @@ const PATTERNS_INDICATORS: Indicator[] = [
 
 export default function LandingPage() {
   const { t } = useTranslation();
+  // На время акции первый экран — баннер распродажи; после неё — прежний.
+  const sale = useSale();
   return (
     <div>
+      {sale && <SaleHero sale={sale} />}
 
       {/* ═══ HERO — full viewport с Dune-style thermal lines анимацией ═══
           Фон секции — var(--accent), поверх 3 анимированные "тепловые ленты"
           с переливом цвета сверху-вниз. Анимация в ThermalLinesHero компоненте.
           Текст белый поверх accent — консистентно в обеих editorial темах. */}
+      {!sale && (
       <ThermalLinesHero height="100vh">
         <div className="h-full flex flex-col items-center justify-center text-center px-4 md:px-6">
           <div className="max-w-3xl mx-auto">
@@ -180,6 +186,7 @@ export default function LandingPage() {
           </div>
         </div>
       </ThermalLinesHero>
+      )}
 
       {/* Wrapper для остального контента с обычным layout-padding */}
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-20">

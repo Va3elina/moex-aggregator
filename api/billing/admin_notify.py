@@ -486,6 +486,14 @@ def _render_event(db: Session, ev) -> str | None:
         return _render_payment(db, sub, user, pm)
     if kind == "double_charge":
         return _render_double_charge(db, sub, user)
+    if kind == "promo_twice":
+        return "\n".join([
+            "🚨 <b>Вторая покупка по акции</b>", _who(user, sub.user_id), "",
+            f"Тариф: {_plan_name(sub)}, <b>{_rub(sub.amount)}</b>, sub #{sub.id}",
+            f"Доступ до {_d(sub.expires_at)}",
+            "По правилам акции — одна покупка на аккаунт. Клиент оплатил две формы, "
+            "открытые одновременно. Возврат автоматически НЕ сделан — решите вручную.",
+        ])
     if kind == KIND_PAID_NO_METHOD:
         return _render_paid_no_method(db, sub, user, pm)
     if kind == "payment_failed":

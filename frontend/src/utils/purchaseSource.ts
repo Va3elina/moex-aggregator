@@ -20,9 +20,11 @@ export type PurchaseSource =
   | 'header'        // кнопка Plus в шапке
   | 'landing'       // главная страница
   | 'profile'       // профиль: «Сменить тариф» и блок тарифа
-  | 'tg_bot';       // бот оплаты @FrameDataPayBot, feature = кампания из /start
+  | 'tg_bot'        // бот оплаты @FrameDataPayBot, feature = кампания из /start
+  | 'sale_banner'   // баннер акции на главной
+  | 'sale_popup';   // всплывающее окно акции поверх индикаторов
 
-const SOURCES: readonly PurchaseSource[] = ['paywall', 'delay_banner', 'header', 'landing', 'profile', 'tg_bot'];
+const SOURCES: readonly PurchaseSource[] = ['paywall', 'delay_banner', 'header', 'landing', 'profile', 'tg_bot', 'sale_banner', 'sale_popup'];
 const KEY = 'frame_purchase_src';
 const TTL_MS = 24 * 3600 * 1000;
 

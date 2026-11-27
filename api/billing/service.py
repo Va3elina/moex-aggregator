@@ -23,6 +23,7 @@ from sqlalchemy import or_ as sa_or_
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
+from api.billing import sale as sale_rules
 from api.billing.factory import (
     get_payment_provider,
     get_provider_by_name,
@@ -187,14 +188,23 @@ def _demo_return_url(return_url: str) -> str:
     return f"{origin}/billing/unavailable"
 
 
-def assert_can_purchase(db: Session, user: User, plan) -> None:
+def assert_can_purchase(db: Session, user: User, plan, switch_down: bool = False) -> None:
     """
+    switch_down=True — клиент на странице тарифов подтвердил переход на тариф
+    ниже действующего («Перейти на Basic»): покупка разрешается, тариф выше
+    дослуживает оплаченный срок, его автопродление выключится в момент оплаты
+    (activate_from_webhook), а новая подписка начнётся после него.
+
     Гейты покупки, общие для всех способов оплаты: админ, подтверждённый
     email, запрет дубля/понижения тарифа. Кидает ValueError с текстом для UI.
     Вынесено из create_checkout_for_user, чтобы СБП-привязка
     (start_sbp_binding) проходила ровно те же проверки.
     """
-    if getattr(user, "role", None) == "admin":
+    # Админу подписка не нужна — кроме тест-аккаунта (BILLING_TEST_USER_IDS):
+    # он проходит настоящий путь оплаты по тест-цене (BILLING_TEST_PRICE_RUB),
+    # чтобы проверить платёж на проде. Роль admin при этом не меняется
+    # (sync_user_role её не трогает).
+    if getattr(user, "role", None) == "admin" and not is_test_user(user):
         raise ValueError("У админа полный доступ — оформление подписок не требуется")
 
     # === Гейт верификации email (ANTI-BYPASS, серверная проверка из БД) ===
@@ -208,6 +218,10 @@ def assert_can_purchase(db: Session, user: User, plan) -> None:
     if (not user.is_verified) or user_email.endswith("@oauth.local"):
         raise ValueError("Подтвердите email перед оплатой")
 
+    now = datetime.now(timezone.utc)
+    sale = sale_rules.active_sale(now)
+    offer = checkout_offer(db, user, plan, now)
+
     active_sub = current_subscription(db, user)
     # is_trial исключаем из дедуп-гейта: во время пробного периода юзер ДОЛЖЕН
     # иметь возможность оформить платную подписку досрочно (купленная active того
@@ -217,15 +231,29 @@ def assert_can_purchase(db: Session, user: User, plan) -> None:
         if active_plan:
             active_level = TIER_LEVELS.get(active_plan.tier, 0)
             card_level = TIER_LEVELS.get(plan.tier, 0)
-            if card_level < active_level:
+            if card_level < active_level and not switch_down:
                 raise ValueError(
                     f"У вас уже активен более высокий тариф ({active_plan.tier}). "
                     "Понижение тарифа возможно после окончания текущего периода."
                 )
-            if card_level == active_level and active_sub.plan_id == plan.plan_id:
+            if (card_level == active_level and active_sub.plan_id == plan.plan_id
+                    and not offer["promo_code"]):
+                # По акции тот же план купить можно: год прибавится к оплаченному.
                 raise ValueError(
                     "Этот план уже активен. Сменить период — после окончания текущего."
                 )
+
+    if sale is not None and not sale.monthly_available and plan.period == "monthly":
+        raise ValueError(
+            f"Во время акции «{sale.title}» оформить можно только годовую подписку."
+        )
+
+    # Потолок оплаченного срока — для любых покупок, включая акционные.
+    if sale_rules.exceeds_paid_ahead_cap(now, offer["expires_at"]):
+        raise ValueError(
+            f"Доступ уже оплачен до {offer['starts_at'].astimezone(sale_rules.MSK):%d.%m.%Y}. "
+            "Оплатить подписку больше чем на 3 года вперёд нельзя."
+        )
 
 
 # ─────────────── Согласие на автосписание при обычной оплате ───────────────
@@ -324,6 +352,7 @@ def create_checkout_for_user(
     source: dict | None = None,
     consent: bool | None = None,
     consent_ip: str | None = None,
+    switch_down: bool = False,
 ) -> dict:
     """
     Создаёт subscription(pending) + платёж у провайдера.
@@ -355,7 +384,7 @@ def create_checkout_for_user(
     #       иначе → разрешаем (period switch / upgrade)
     #   - active sub с cancelled_at (юзер отменил, доступ до expires) →
     #       разрешаем продление того же плана и всё что выше
-    assert_can_purchase(db, user, plan)
+    assert_can_purchase(db, user, plan, switch_down=switch_down)
 
     # Роутинг: новые юзеры (env BILLING_DEMO_SINCE) — на демо-терминал T-Bank,
     # тест-юзеры ЮKassa (env YOOKASSA_TEST_USER_IDS) — в ЮKassa, остальные —
@@ -382,7 +411,8 @@ def create_checkout_for_user(
 
     # Тестовая цена ЮKassa: ТОЛЬКО для тест-юзеров этого провайдера — НЕ
     # глобальный override (реальный юзер не должен купить Basic за 5₽).
-    checkout_amount = test_price_for(user, plan.amount)
+    offer = checkout_offer(db, user, plan)
+    checkout_amount = test_price_for(user, offer["amount"])
     if provider.name == "yookassa":
         test_price = os.getenv("YOOKASSA_TEST_PRICE_RUB", "").strip()
         if test_price:
@@ -406,6 +436,7 @@ def create_checkout_for_user(
     db.flush()  # нужен sub.id до commit'а
     if autopay:
         _save_autopay_consent(db, sub, consent_given, consent_ip)
+    _set_sale_fields(db, sub, promo_code=offer["promo_code"])
 
     # 2. Зовём провайдера. user.email/phone используется провайдером
     # для построения Receipt (54-ФЗ).
@@ -536,15 +567,209 @@ def renewal_period_start(now: datetime, prev_expires: list[datetime | None]) -> 
 
 def _paid_until(db: Session, sub: Subscription, now: datetime) -> datetime:
     """Конец уже оплаченного доступа того же tier (без триалов) или now."""
-    prev = db.query(Subscription.expires_at).filter(
-        Subscription.user_id == sub.user_id,
-        Subscription.id != sub.id,
-        Subscription.tier == sub.tier,
+    return _paid_until_for(db, sub.user_id, sub.tier, now, exclude_id=sub.id)
+
+
+def _paid_until_for(db: Session, user_id: int, tier: str, now: datetime,
+                    exclude_id: int | None = None) -> datetime:
+    # Тарифы НЕ НИЖЕ покупаемого: новый срок продолжает уже оплаченный, а не
+    # идёт параллельно ему. Тот же тариф — обычное сложение сроков; старший
+    # (Basic куплен при действующем отменённом Pro) — Basic начнётся после Pro,
+    # иначе клиент оплатил бы дни, которыми не может воспользоваться.
+    q = db.query(Subscription.expires_at).filter(
+        Subscription.user_id == user_id,
+        Subscription.tier.in_(sale_rules.same_or_higher_tiers(tier) or [tier]),
         Subscription.status == "active",
         Subscription.is_trial.is_(False),
         Subscription.expires_at > now,
-    ).all()
-    return renewal_period_start(now, [r[0] for r in prev])
+    )
+    if exclude_id is not None:
+        q = q.filter(Subscription.id != exclude_id)
+    return renewal_period_start(now, [r[0] for r in q.all()])
+
+
+def _convertible_lower_subs(db: Session, user_id: int, tier: str, now: datetime,
+                            exclude_id: int | None = None) -> list[Subscription]:
+    """Оплаченные действующие подписки младших тарифов, остаток которых
+    пересчитывается в дни `tier`. Триалы и инвайты не в счёт — за них не платили."""
+    q = db.query(Subscription).filter(
+        Subscription.user_id == user_id,
+        Subscription.status == "active",
+        Subscription.is_trial.is_(False),
+        Subscription.yk_payment_id.isnot(None),
+        Subscription.amount > 0,
+        Subscription.expires_at > now,
+    )
+    if exclude_id is not None:
+        q = q.filter(Subscription.id != exclude_id)
+    return [s for s in q.all() if sale_rules.upgrade_ratio(s.tier, tier)]
+
+
+def _promo_used(db: Session, user_id: int, code: str) -> bool:
+    """Покупал ли аккаунт уже по этой акции (оплаченная и не возвращённая покупка).
+
+    Ошибка запроса (миграция 123 не применена) = «использовано»: без колонки
+    лимит «один раз на аккаунт» не проверить, значит по акции не продаём.
+    """
+    try:
+        with db.begin_nested():
+            row = db.execute(sa_text("""
+                SELECT 1 FROM subscriptions
+                WHERE user_id = :uid AND promo_code = :code
+                  AND started_at IS NOT NULL AND status <> 'refunded'
+                LIMIT 1
+            """), {"uid": user_id, "code": code}).first()
+        return row is not None
+    except Exception as e:
+        log.error("sale: не смог проверить лимит акции user=%s: %s", user_id, e)
+        return True
+
+
+def _promo_code_of(db: Session, sub: Subscription) -> str | None:
+    """Метка акции подписки (колонка вне ORM); None и при ошибке запроса."""
+    try:
+        with db.begin_nested():
+            return db.execute(
+                sa_text("SELECT promo_code FROM subscriptions WHERE id = :id"), {"id": sub.id}
+            ).scalar()
+    except Exception as e:
+        log.error("sale: не прочитал promo_code sub=%s: %s", sub.id, e)
+        return None
+
+
+def _other_promo_purchase(db: Session, sub: Subscription, code: str) -> int | None:
+    """id другой оплаченной подписки этого клиента по той же акции (лимит — одна)."""
+    try:
+        with db.begin_nested():
+            return db.execute(sa_text("""
+                SELECT id FROM subscriptions
+                WHERE user_id = :uid AND promo_code = :code AND id <> :id
+                  AND started_at IS NOT NULL AND status <> 'refunded'
+                ORDER BY id LIMIT 1
+            """), {"uid": sub.user_id, "code": code, "id": sub.id}).scalar()
+    except Exception:
+        return None
+
+
+def _log_billing_event(db: Session, kind: str, sub: Subscription) -> None:
+    """Событие для FRAME · Касса; в savepoint, чтобы сбой журнала не откатил оплату."""
+    try:
+        with db.begin_nested():
+            new_id = db.execute(sa_text("""
+                INSERT INTO billing_events
+                    (kind, user_id, subscription_id, payment_method_id, new_status, amount)
+                VALUES (:kind, :uid, :sid, :pm, :st, :amount)
+                RETURNING id
+            """), {
+                "kind": kind, "uid": sub.user_id, "sid": sub.id,
+                "pm": sub.payment_method_id, "st": sub.status, "amount": sub.amount,
+            }).scalar()
+            db.execute(sa_text("SELECT pg_notify('billing_event', :id)"), {"id": str(new_id)})
+    except Exception as e:
+        log.error("billing event %s: не записал для sub=%s: %s", kind, sub.id, e)
+
+
+def _restore_converted(db: Session, sub: Subscription, now: datetime) -> int:
+    """
+    Деньги за `sub` вернули, а при её покупке остаток младшего тарифа был
+    переведён в её дни и младшая подписка закрыта. Возвращаем младшую к её
+    прежнему сроку — иначе клиент потерял бы оплаченный Basic вместе с
+    возвращённым Pro. Автопродление у неё остаётся выключенным.
+    """
+    try:
+        with db.begin_nested():
+            rows = db.execute(sa_text("""
+                SELECT id, converted_expires_at FROM subscriptions
+                WHERE converted_into = :id AND converted_expires_at IS NOT NULL
+            """), {"id": sub.id}).all()
+    except Exception as e:
+        log.error("sale: не нашёл переведённые подписки для sub=%s: %s", sub.id, e)
+        return 0
+    restored = 0
+    for old_id, old_expires in rows:
+        old = db.query(Subscription).filter(Subscription.id == old_id).first()
+        if old is None or old.status != "expired":
+            continue
+        if isinstance(old_expires, str):
+            old_expires = datetime.fromisoformat(old_expires)
+        if _aware(old_expires) <= now:
+            continue  # она бы уже закончилась сама
+        old.expires_at = old_expires
+        old.status = "active"
+        db.flush()
+        _set_sale_fields(db, old, clear_conversion=True)
+        restored += 1
+        log.info("refund sub=%s: подписка #%s (%s) восстановлена до %s",
+                 sub.id, old.id, old.tier, old_expires)
+    return restored
+
+
+def _set_sale_fields(db: Session, sub: Subscription, promo_code: str | None = None,
+                     bonus_days: int | None = None, gift_days: int | None = None,
+                     converted_into: int | None = None,
+                     converted_expires_at: datetime | None = None,
+                     clear_conversion: bool = False) -> None:
+    """Колонки акции/пересчёта — прямым UPDATE в savepoint (они вне ORM)."""
+    sets, params = [], {"id": sub.id}
+    if promo_code:
+        sets.append("promo_code = :promo")
+        params["promo"] = promo_code
+    if bonus_days:
+        sets.append("bonus_days = :bonus")
+        params["bonus"] = bonus_days
+    if gift_days:
+        sets.append("gift_days = :gift")
+        params["gift"] = gift_days
+    if converted_into:
+        sets.append("converted_into = :into")
+        sets.append("converted_expires_at = :cexp")
+        params["into"] = converted_into
+        params["cexp"] = converted_expires_at
+    if clear_conversion:
+        sets.append("converted_into = NULL")
+        sets.append("converted_expires_at = NULL")
+    if not sets:
+        return
+    try:
+        with db.begin_nested():
+            db.execute(sa_text(f"UPDATE subscriptions SET {', '.join(sets)} WHERE id = :id"), params)
+    except Exception as e:
+        log.error("sale: не записал %s для sub=%s: %s", list(params), sub.id, e)
+
+
+def checkout_offer(db: Session, user: User, plan, now: datetime | None = None) -> dict:
+    """
+    Что клиент получит, купив `plan` прямо сейчас: цена (с акцией или без),
+    с какого дня и до какого действует, сколько дней добавится за остаток
+    младшего тарифа. Одна функция для гейта покупки, создания платежа и
+    предпросмотра в окне оплаты — чтобы обещанное совпадало со списанным.
+    """
+    now = now or datetime.now(timezone.utc)
+    sale = sale_rules.active_sale(now)
+    amount, promo_code = float(plan.amount), None
+    gift = 0
+    if (sale is not None and sale_rules.is_sale_plan(plan, sale)
+            and not _promo_used(db, user.id, sale.code)):
+        amount, promo_code = sale_rules.sale_price(plan, sale), sale.code
+        gift = sale.gift_days(plan.tier)
+
+    starts_at = _paid_until_for(db, user.id, plan.tier, now)
+    bonus, bonus_from = 0, None
+    lower = _convertible_lower_subs(db, user.id, plan.tier, now)
+    for from_tier in {c.tier for c in lower}:
+        left = max(_aware(c.expires_at) for c in lower if c.tier == from_tier) - now
+        bonus += sale_rules.bonus_days(from_tier, plan.tier, left)
+        bonus_from = from_tier
+    return {
+        "amount": amount,
+        "full_amount": float(plan.amount),
+        "promo_code": promo_code,
+        "starts_at": starts_at,
+        "expires_at": starts_at + timedelta(days=plan.duration_days + bonus + gift),
+        "bonus_days": bonus,
+        "gift_days": gift,
+        "bonus_from": bonus_from if bonus else None,
+    }
 
 
 # Сколько после активации принимаем привязку карты из опоздавшего webhook'а.
@@ -701,6 +926,41 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
     sub.started_at = now
     period_start = _paid_until(db, sub, now)
     sub.expires_at = period_start + timedelta(days=plan.duration_days) if plan else None
+
+    # Повышение тарифа: неиспользованный остаток младшего тарифа переводим в
+    # дополнительные дни нового (sale.UPGRADE_DAYS_PER_DAY, 2 дня Basic = 1 день
+    # Pro) и закрываем младший — иначе один и тот же оплаченный срок сработал
+    # бы дважды.
+    converted = _convertible_lower_subs(db, sub.user_id, sub.tier, now, exclude_id=sub.id)
+    if converted and sub.expires_at is not None:
+        bonus = 0
+        for from_tier in {c.tier for c in converted}:
+            left = max(_aware(c.expires_at) for c in converted if c.tier == from_tier) - now
+            bonus += sale_rules.bonus_days(from_tier, sub.tier, left)
+        if bonus > 0:
+            sub.expires_at = sub.expires_at + timedelta(days=bonus)
+            for c in converted:
+                log.info(
+                    "activate_from_webhook: остаток подписки #%s (%s до %s) переведён в дни %s",
+                    c.id, c.tier, c.expires_at, sub.tier,
+                )
+                _set_sale_fields(db, c, converted_into=sub.id, converted_expires_at=c.expires_at)
+                c.expires_at = now
+                c.status = "expired"
+                if c.cancelled_at is None:
+                    c.cancelled_at = now
+            db.flush()
+            _set_sale_fields(db, sub, bonus_days=bonus)
+
+    # Покупка по акции: подарочные дни сверх оплаченного срока.
+    promo_code = _promo_code_of(db, sub)
+    promo_sale = sale_rules.sale_by_code(promo_code)
+    if promo_sale is not None and sub.expires_at is not None:
+        gift = promo_sale.gift_days(sub.tier)
+        if gift > 0:
+            sub.expires_at = sub.expires_at + timedelta(days=gift)
+            db.flush()
+            _set_sale_fields(db, sub, gift_days=gift)
     sub.yk_method = event.payment_method
 
     # Если webhook принёс RebillId (карта) ИЛИ AccountToken (СБП) — это был
@@ -734,13 +994,22 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
         # при этом складываются (_paid_until). Продления крона сюда не попадают
         # (is_user_purchase=False): продлеваемую строку закрывает Guard 1.
         same_tier_repurchase = is_user_purchase and old_sub.tier == sub.tier
-        if old_sub.is_trial or TIER_LEVELS.get(old_sub.tier, 0) < new_level or same_tier_repurchase:
+        # (г) подписки ВЫШЕ нового tier: клиент перешёл на тариф ниже (кнопка
+        # «Перейти на Basic»). Старший тариф дослуживает оплаченный срок, новая
+        # подписка начнётся после него (_paid_until), а продлеваться дальше
+        # должна только она. Без флага от формы: другого пути оплатить младший
+        # тариф при действующем неотменённом старшем нет (assert_can_purchase),
+        # а условие по факту оплаты не теряется на асинхронном СБП-списании.
+        switched_down = TIER_LEVELS.get(old_sub.tier, 0) > new_level and not sub.is_trial
+        if (old_sub.is_trial or TIER_LEVELS.get(old_sub.tier, 0) < new_level
+                or same_tier_repurchase or switched_down):
             old_sub.cancelled_at = now
             log.info(
                 "activate_from_webhook: %s — отключено авто-продление подписки #%s "
                 "(tier=%s, is_trial=%s, дослужит до %s)",
                 "конверсия/покупка поверх триала" if old_sub.is_trial
                 else "покупка поверх того же тарифа" if same_tier_repurchase
+                else f"переход на тариф ниже ({sub.tier})" if switched_down
                 else f"upgrade to {sub.tier}",
                 old_sub.id, old_sub.tier, old_sub.is_trial, old_sub.expires_at,
             )
@@ -755,6 +1024,13 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
             sub.user_id, sub.tier, twin.id, sub.id,
         )
         _log_double_charge(db, sub)
+
+    # Вторая покупка по одной акции (лимит — одна на аккаунт): клиент открыл две
+    # формы до оплаты первой. Деньги приняты, срок выдан — решает админ.
+    if promo_code and _other_promo_purchase(db, sub, promo_code) is not None:
+        log.warning("activate_from_webhook: вторая покупка по акции %s user=%s sub=%s",
+                    promo_code, sub.user_id, sub.id)
+        _log_billing_event(db, "promo_twice", sub)
 
     # Поднимаем роль user'а если нужно
     user = db.query(User).filter(User.id == sub.user_id).first()
@@ -788,6 +1064,8 @@ def cancel_by_webhook(db: Session, event: WebhookEvent) -> Subscription | None:
     now = datetime.now(timezone.utc)
     if event.event_type == "refund.succeeded":
         sub.status = "refunded"
+        db.flush()
+        _restore_converted(db, sub, now)
     else:
         # failed остаётся failed: charge_recurrent уже пометил отказ, а вебхук
         # CANCELED/REJECTED приходит следом. Раньше он превращал отказ в
@@ -1384,6 +1662,8 @@ def refund_subscription(
     prev_status = sub.status
     if sub.status == "active":
         sub.status = "refunded"
+        db.flush()
+        _restore_converted(db, sub, datetime.now(timezone.utc))
     elif sub.status == "pending":
         sub.status = "cancelled"
     # для refunded/cancelled/expired/failed — не трогаем
@@ -1562,9 +1842,15 @@ def charge_recurrent(
     discount_pct: int = 0,
     carry_periods: int = 0,
     discount_rub: Decimal | float = 0,
+    amount_override: float | None = None,
+    promo_code: str | None = None,
 ) -> dict:
     """
     Списать с сохранённой карты по plan_id — auto-renewal flow.
+
+    amount_override / promo_code — только для ПЕРВОГО списания по СБП-привязке
+    (poll_sbp_binding): покупка по цене акции. Продления их не передают и идут
+    по полной цене плана.
 
     carry_periods > 0 — скидка discount_pct переходит на новую запись, чтобы
     и следующее продление прошло со скидкой (retention на несколько месяцев).
@@ -1603,7 +1889,9 @@ def charge_recurrent(
     # клиент не списывался и молча терял доступ.
     # Тест-цена (BILLING_TEST_USER_IDS) действует и на продлении — иначе первое
     # списание 3₽, а следующее уже 2900₽ и тест рекуррента стоит как боевой.
-    base_amount = test_price_for(user, plan.amount)
+    base_amount = test_price_for(
+        user, amount_override if amount_override is not None else plan.amount
+    )
     effective_amount = apply_renewal_discount(base_amount, discount_pct, discount_rub)
     rub_off = Decimal(str(discount_rub or 0))  # нужен ниже: carry и описание платежа
 
@@ -1633,6 +1921,7 @@ def charge_recurrent(
     )
     db.add(sub)
     db.flush()
+    _set_sale_fields(db, sub, promo_code=promo_code)
 
     # 2. Init + Charge через провайдера
     # customer_key: T-Bank требует ТУ ЖЕ связку CustomerKey+RebillId что и при
@@ -1751,6 +2040,7 @@ def start_sbp_binding(
     source: dict | None = None,
     consent: bool | None = None,
     consent_ip: str | None = None,
+    switch_down: bool = False,
 ) -> dict:
     """
     Шаг 1: заявка на привязку счёта по СБП. Денег НЕ двигает.
@@ -1770,7 +2060,7 @@ def start_sbp_binding(
     plan = get_plan(plan_id)
     if not plan:
         raise ValueError(f"Unknown plan_id: {plan_id}")
-    assert_can_purchase(db, user, plan)
+    assert_can_purchase(db, user, plan, switch_down=switch_down)
 
     provider = get_provider_for(user)
     if not hasattr(provider, "add_account_qr"):
@@ -1794,7 +2084,7 @@ def start_sbp_binding(
         tier=plan.tier,
         period=plan.period,
         plan_id=plan.plan_id,
-        amount=test_price_for(user, plan.amount),
+        amount=test_price_for(user, checkout_offer(db, user, plan)["amount"]),
         currency="RUB",
         status="binding",
         yk_method="sbp",
@@ -1882,7 +2172,16 @@ def poll_sbp_binding(db: Session, user: User, subscription_id: int) -> dict:
         db.commit()
 
         try:
-            result = charge_recurrent(db, user, sub.plan_id, pm)
+            # Первое списание по СБП — та же покупка, что и на форме: цена
+            # акции и её метка считаются заново, на момент списания.
+            first_plan = get_plan(sub.plan_id)
+            first_offer = checkout_offer(db, user, first_plan) if first_plan else None
+            promo = first_offer["promo_code"] if first_offer else None
+            result = charge_recurrent(
+                db, user, sub.plan_id, pm,
+                amount_override=first_offer["amount"] if promo else None,
+                promo_code=promo,
+            )
         except Exception as e:  # провайдер лёг / сеть
             log.error("poll_sbp_binding: charge_qr упал sub=%s: %s", sub.id, e)
             return {
